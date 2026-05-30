@@ -5,7 +5,7 @@ set -e
 ./node_modules/.bin/prisma db execute --schema ./prisma/schema.prisma --file ./prisma/sql/postgres-performance.sql
 
 if [ "$SKIP_DB_SEED" != "true" ]; then
-  ./node_modules/.bin/tsx ./apps/api/prisma/seed.ts
+  ./apps/api/node_modules/.bin/tsx ./apps/api/prisma/seed.ts
 fi
 
 node apps/api/dist/src/main.js
