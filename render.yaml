@@ -1,0 +1,71 @@
+services:
+  - type: web
+    name: prescripsys-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    preDeployCommand: ./node_modules/.bin/prisma migrate deploy --schema ./prisma/schema.prisma && ./node_modules/.bin/prisma db execute --schema ./prisma/schema.prisma --file ./prisma/sql/postgres-performance.sql
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: API_PORT
+        value: 10000
+      - key: API_GLOBAL_PREFIX
+        value: api/v1
+      - key: CORS_ORIGIN
+        value: https://prescripsys-web.onrender.com
+      - key: DATABASE_URL
+        fromDatabase:
+          name: prescripsys-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: prescripsys-redis
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_TTL
+        value: 15m
+      - key: JWT_REFRESH_TTL
+        value: 30d
+      - key: BCRYPT_ROUNDS
+        value: 12
+
+  - type: web
+    name: prescripsys-web
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: NEXT_PUBLIC_API_URL
+        value: https://prescripsys-api.onrender.com/api/v1
+
+  - type: keyvalue
+    name: prescripsys-redis
+    plan: free
+    region: singapore
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+
+databases:
+  - name: prescripsys-db
+    plan: free
+    region: singapore
+    databaseName: prescripsys
+    user: prescripsys
+    ipAllowList: []
