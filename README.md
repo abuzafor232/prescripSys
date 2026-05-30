@@ -80,7 +80,7 @@ password: Password123!
 7. Import medicines from the provided CSV.
 
 ```bash
-pnpm medicine:import -- "C:\Users\abuza\Downloads\medicine_information_export.csv"
+pnpm medicine:import -- "/path/to/medicine_information_export.csv"
 ```
 
 8. Run development servers.
