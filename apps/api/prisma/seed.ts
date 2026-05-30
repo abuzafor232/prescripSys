@@ -1,6 +1,10 @@
 import { PERMISSIONS, ROLES } from "@bd-prescription/shared";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import {
+  buildMedicineSearchText,
+  normalizeSearchText
+} from "../src/common/utils/search-normalizer";
 
 const prisma = new PrismaClient();
 
@@ -153,6 +157,8 @@ async function main() {
     skipDuplicates: true
   });
 
+  await seedDemoMedicines();
+
   console.log({
     tenant: tenant.slug,
     email: "demo@rx.test",
@@ -178,6 +184,60 @@ async function main() {
       )
     );
   }
+}
+
+async function seedDemoMedicines() {
+  const source = "demo-seed";
+  const demoMedicines = [
+    ["Napa", "Paracetamol", "500 mg", "Tablet", "Beximco Pharmaceuticals"],
+    ["Napa Extra", "Paracetamol + Caffeine", "500 mg + 65 mg", "Tablet", "Beximco Pharmaceuticals"],
+    ["Ace", "Paracetamol", "500 mg", "Tablet", "Square Pharmaceuticals"],
+    ["Sergel", "Esomeprazole", "20 mg", "Capsule", "Healthcare Pharmaceuticals"],
+    ["Seclo", "Omeprazole", "20 mg", "Capsule", "Square Pharmaceuticals"],
+    ["Maxpro", "Esomeprazole", "20 mg", "Capsule", "Renata"],
+    ["Monas", "Montelukast", "10 mg", "Tablet", "ACME Laboratories"],
+    ["Fexo", "Fexofenadine", "120 mg", "Tablet", "Square Pharmaceuticals"],
+    ["Alatrol", "Cetirizine", "10 mg", "Tablet", "Square Pharmaceuticals"],
+    ["Histacin", "Chlorpheniramine Maleate", "4 mg", "Tablet", "Jayson Pharmaceuticals"],
+    ["Omidon", "Domperidone", "10 mg", "Tablet", "Incepta Pharmaceuticals"],
+    ["DP", "Domperidone", "10 mg", "Tablet", "Beximco Pharmaceuticals"],
+    ["Flagyl", "Metronidazole", "400 mg", "Tablet", "Sanofi"],
+    ["Zimax", "Azithromycin", "500 mg", "Tablet", "Square Pharmaceuticals"],
+    ["Azithrocin", "Azithromycin", "500 mg", "Tablet", "Acme Laboratories"],
+    ["Cef-3", "Cefixime", "200 mg", "Capsule", "Square Pharmaceuticals"],
+    ["Ciprocin", "Ciprofloxacin", "500 mg", "Tablet", "Square Pharmaceuticals"],
+    ["Ceevit", "Vitamin C", "250 mg", "Tablet", "Square Pharmaceuticals"],
+    ["LUBGEL EYE DROP", "Carboxymethylcellulose Sodium", "1%", "Eye Drop", "Popular Pharmaceuticals"],
+    ["OPTIMOX EYE DROP", "Moxifloxacin", "0.5%", "Eye Drop", "Popular Pharmaceuticals"],
+    ["PATADIN DS EYE DROP", "Olopatadine", "0.2%", "Eye Drop", "Popular Pharmaceuticals"]
+  ] as const;
+
+  await prisma.medicine.createMany({
+    data: demoMedicines.map(
+      ([brandName, genericName, strength, dosageForm, companyName]) => ({
+        tenantId: null,
+        globalKey: `${source}:${normalizeSearchText(`${brandName}-${genericName}-${strength}-${dosageForm}`)}`,
+        brandName,
+        genericName,
+        strength,
+        dosageForm,
+        companyName,
+        source,
+        normalizedBrand: normalizeSearchText(brandName),
+        normalizedGeneric: normalizeSearchText(genericName),
+        normalizedCompany: normalizeSearchText(companyName),
+        searchText: buildMedicineSearchText({
+          brandName,
+          genericName,
+          companyName,
+          strength,
+          dosageForm
+        }),
+        importedAt: new Date()
+      }) satisfies Prisma.MedicineCreateManyInput
+    ),
+    skipDuplicates: true
+  });
 }
 
 main()
