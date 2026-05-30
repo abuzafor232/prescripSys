@@ -1,10 +1,6 @@
 import { PERMISSIONS, ROLES } from "@bd-prescription/shared";
 import { Prisma, PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
-import {
-  buildMedicineSearchText,
-  normalizeSearchText
-} from "../src/common/utils/search-normalizer";
 
 const prisma = new PrismaClient();
 
@@ -238,6 +234,36 @@ async function seedDemoMedicines() {
     ),
     skipDuplicates: true
   });
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function buildMedicineSearchText(input: {
+  brandName: string;
+  genericName: string;
+  companyName?: string | null;
+  strength?: string | null;
+  dosageForm?: string | null;
+}) {
+  return normalizeSearchText(
+    [
+      input.brandName,
+      input.genericName,
+      input.companyName,
+      input.strength,
+      input.dosageForm
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
 }
 
 main()
