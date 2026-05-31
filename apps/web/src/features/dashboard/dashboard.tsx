@@ -20,8 +20,7 @@ const statCards = [
   { key: "income", label: "Income", icon: CircleDollarSign, tone: "text-emerald-600" }
 ] as const;
 
-function getTodayInputValue() {
-  const date = new Date();
+function getDateInputValue(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -29,15 +28,20 @@ function getTodayInputValue() {
   return `${year}-${month}-${day}`;
 }
 
+function getDefaultRange() {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 6);
+
+  return {
+    start: getDateInputValue(start),
+    end: getDateInputValue(end)
+  };
+}
+
 function parseDateInput(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
-}
-
-function getNormalizedRange(fromDate: string, toDate: string) {
-  return fromDate <= toDate
-    ? { start: fromDate, end: toDate }
-    : { start: toDate, end: fromDate };
 }
 
 function getDaysInRange(start: string, end: string) {
@@ -108,12 +112,7 @@ function formatDayCount(count: number) {
   return `${count} ${count === 1 ? "day" : "days"}`;
 }
 
-const defaultDate = getTodayInputValue();
-
-const defaultRange = {
-  from: defaultDate,
-  to: defaultDate
-};
+const defaultRange = getDefaultRange();
 
 const dateRangeInputClass =
   "h-9 min-w-[9.5rem] border-primary/30 bg-background font-medium text-foreground";
@@ -141,18 +140,28 @@ const quickActions = [
 ] as const;
 
 export function Dashboard() {
-  const [fromDate, setFromDate] = useState(defaultRange.from);
-  const [toDate, setToDate] = useState(defaultRange.to);
-  const normalizedRange = getNormalizedRange(fromDate, toDate);
-  const selectedDays = getDaysInRange(normalizedRange.start, normalizedRange.end);
+  const [startDate, setStartDate] = useState(defaultRange.start);
+  const [endDate, setEndDate] = useState(defaultRange.end);
+  const selectedDays = getDaysInRange(startDate, endDate);
   const summary = useMemo(
-    () => getRangeSummary(normalizedRange.start, normalizedRange.end),
-    [normalizedRange.end, normalizedRange.start]
+    () => getRangeSummary(startDate, endDate),
+    [endDate, startDate]
   );
-  const rangeLabel =
-    normalizedRange.start === normalizedRange.end
-      ? formatDisplayDate(normalizedRange.start)
-      : `${formatDisplayDate(normalizedRange.start)} - ${formatDisplayDate(normalizedRange.end)}`;
+  const rangeLabel = `${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}`;
+
+  function handleStartDateChange(value: string) {
+    const nextStart = value || defaultRange.start;
+
+    setStartDate(nextStart);
+    if (nextStart > endDate) setEndDate(nextStart);
+  }
+
+  function handleEndDateChange(value: string) {
+    const nextEnd = value || defaultRange.end;
+
+    setEndDate(nextEnd);
+    if (nextEnd < startDate) setStartDate(nextEnd);
+  }
 
   return (
     <div className="space-y-5">
@@ -166,21 +175,22 @@ export function Dashboard() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={dateLabelClass}>
-              From
+              Start Date
               <Input
                 className={dateRangeInputClass}
                 type="date"
-                value={fromDate}
-                onChange={(event) => setFromDate(event.target.value || defaultRange.from)}
+                value={startDate}
+                onChange={(event) => handleStartDateChange(event.target.value)}
               />
             </label>
             <label className={dateLabelClass}>
-              To
+              End Date
               <Input
                 className={dateRangeInputClass}
+                min={startDate}
                 type="date"
-                value={toDate}
-                onChange={(event) => setToDate(event.target.value || defaultRange.to)}
+                value={endDate}
+                onChange={(event) => handleEndDateChange(event.target.value)}
               />
             </label>
           </div>
