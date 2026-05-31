@@ -6,6 +6,7 @@ import {
   CalendarClock,
   FilePlus2,
   LayoutDashboard,
+  Pill,
   Search,
   Settings,
   UserRoundPlus
@@ -15,9 +16,10 @@ import { cn } from "@/lib/utils";
 
 const actions = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/prescriptions/new", label: "New Prescription", icon: FilePlus2 },
-  { href: "/patients", label: "Patients", icon: UserRoundPlus },
-  { href: "/appointments", label: "Appointments", icon: CalendarClock },
+  { href: "/appointments", label: "Appointment", icon: CalendarClock },
+  { href: "/prescriptions/new", label: "Prescription", icon: FilePlus2 },
+  { href: "/patients", label: "Patient", icon: UserRoundPlus },
+  { href: "/medicines", label: "Medicine", icon: Pill },
   { href: "/settings", label: "Settings", icon: Settings }
 ] as const;
 

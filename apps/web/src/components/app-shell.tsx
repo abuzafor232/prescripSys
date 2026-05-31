@@ -25,10 +25,10 @@ import { useSessionHydrated, useSessionStore } from "@/stores/session-store";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/appointments", label: "Appointment", icon: CalendarClock },
   { href: "/prescriptions/new", label: "Prescription", icon: FilePlus2 },
-  { href: "/patients", label: "Patients", icon: UsersRound },
-  { href: "/appointments", label: "Serials", icon: CalendarClock },
-  { href: "/medicines", label: "Medicines", icon: Pill },
+  { href: "/patients", label: "Patient", icon: UsersRound },
+  { href: "/medicines", label: "Medicine", icon: Pill },
   { href: "/settings", label: "Settings", icon: Settings }
 ] as const;
 

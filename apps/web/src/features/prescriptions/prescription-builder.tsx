@@ -19,7 +19,6 @@ import {
   Plus,
   Printer,
   RotateCcw,
-  Save,
   Search,
   Settings,
   Trash2,
@@ -307,15 +306,6 @@ const rightPanels: PanelKey[] = [
   "referral"
 ];
 
-const panelsWithGroups = new Set<PanelKey>([
-  "complaint",
-  "findings",
-  "investigation",
-  "diagnosis",
-  "medication",
-  "advice"
-]);
-
 const genderOptions: Array<{ label: string; value: PatientGender }> = [
   { label: "Male", value: "MALE" },
   { label: "Female", value: "FEMALE" },
@@ -336,15 +326,6 @@ const occupations = [
 
 const glassTypes = ["Distance", "Near", "Bifocal", "Progressive", "Contact Lens"];
 
-const complaintFavourites = [
-  "dimness of vision",
-  "Foreignbody sensation",
-  "Itching",
-  "Redness"
-];
-
-const complaintAlphabetFilters = ["ALL", "D", "F", "I", "R"];
-
 const historyTabs = [
   "Medical",
   "Investigation",
@@ -355,67 +336,6 @@ const historyTabs = [
 ] as const;
 
 type HistoryTab = (typeof historyTabs)[number];
-
-const historyTagsByTab: Record<HistoryTab, string[]> = {
-  Medical: [
-    "Hypertension (HTN)",
-    "Diabetes Mellitus (DM)",
-    "Heart Health",
-    "Bronchial Asthma (BA)",
-    "Tuberculosis (TB)",
-    "Coronary Artery Bypass Graft (CABG)",
-    "Vascular Heart Disease (VHD)",
-    "Rheumatic Heart Disease (RHD)",
-    "Congenital Heart Disease (CHD)",
-    "Chronic Obstructive Pulmonary Disease (COPD)",
-    "Coronary Artery Disease (CAD)",
-    "Ischemic Heart Disease (IHD)",
-    "Percutaneous Coronary Intervention (PCI)",
-    "Hypothyroidism",
-    "Hyperthyroidism",
-    "Chronic Liver Disease (CLD)"
-  ],
-  Investigation: [
-    "Previous CBC",
-    "Previous RBS",
-    "Previous HbA1c",
-    "Previous ECG",
-    "Previous Chest X-Ray",
-    "Previous USG",
-    "Previous Creatinine"
-  ],
-  Drug: [
-    "Drug allergy",
-    "Long-term steroid use",
-    "Anticoagulant use",
-    "Insulin use",
-    "Antihypertensive medication"
-  ],
-  Surgery: [
-    "Appendectomy",
-    "Cholecystectomy",
-    "Cataract surgery",
-    "Cardiac surgery",
-    "Caesarean section"
-  ],
-  Family: [
-    "Family history of diabetes",
-    "Family history of hypertension",
-    "Family history of heart disease",
-    "Family history of asthma",
-    "Family history of glaucoma"
-  ],
-  Personal: [
-    "Smoker",
-    "Non-smoker",
-    "Betel nut user",
-    "Alcohol use",
-    "Sedentary lifestyle",
-    "Regular exercise"
-  ]
-};
-
-const historyAlphabetFilters = ["All", "A", "B", "C", "D", "G", "H", "I", "M", "O", "P", "R", "S", "T", "V"];
 
 const medicationFavourites = [
   "AQUAFRESH LIQUIGEL PF EYE DROP 1%",
@@ -1361,7 +1281,6 @@ export function PrescriptionBuilder() {
                   <PrescriptionOptionTile
                     key={panel}
                     title={panelTitles[panel]}
-                    hasGroups={panelsWithGroups.has(panel)}
                     hasContent={panelHasContent(panel)}
                     onClear={() => clearPanel(panel)}
                     onOpen={() => setActivePanel(panel)}
@@ -1374,7 +1293,6 @@ export function PrescriptionBuilder() {
                   <PrescriptionOptionTile
                     key={panel}
                     title={panelTitles[panel]}
-                    hasGroups={panelsWithGroups.has(panel)}
                     hasContent={panelHasContent(panel)}
                     onClear={() => clearPanel(panel)}
                     onOpen={() => setActivePanel(panel)}
@@ -1492,15 +1410,14 @@ export function PrescriptionBuilder() {
           onChange={(value) => updateNote("complaint", value)}
           onClear={() => clearPanel("complaint")}
           onClose={() => setActivePanel(null)}
-          onStatus={showStatus}
         />
       ) : activePanel === "history" ? (
         <HistorySidebar
           value={notes.history}
           onAddTag={(tag) => appendNote("history", tag)}
           onChange={(value) => updateNote("history", value)}
+          onClear={() => clearPanel("history")}
           onClose={() => setActivePanel(null)}
-          onStatus={showStatus}
         />
       ) : activePanel === "findings" ? (
         <FindingsSidebar
@@ -1540,7 +1457,6 @@ export function PrescriptionBuilder() {
           onChange={(value) => updateNote("advice", value)}
           onClear={() => clearPanel("advice")}
           onClose={() => setActivePanel(null)}
-          onSaveTemplate={() => showStatus("success", "Advice template save option selected.")}
           onStatus={showStatus}
         />
       ) : activePanel === "investigation" ? (
@@ -1555,7 +1471,6 @@ export function PrescriptionBuilder() {
           onChange={(value) => updateNote("investigation", value)}
           onClear={() => clearPanel("investigation")}
           onClose={() => setActivePanel(null)}
-          onSaveTemplate={() => showStatus("success", "Investigation template save option selected.")}
           onStatus={showStatus}
         />
       ) : activePanel === "diagnosis" ? (
@@ -1569,7 +1484,6 @@ export function PrescriptionBuilder() {
           onChange={(value) => updateNote("diagnosis", value)}
           onClear={() => clearPanel("diagnosis")}
           onClose={() => setActivePanel(null)}
-          onSaveTemplate={() => showStatus("success", "Diagnosis template save option selected.")}
           onStatus={showStatus}
         />
       ) : activePanel === "followUp" ? (
@@ -1620,7 +1534,6 @@ type ComplaintSidebarProps = {
   onChange: (value: string) => void;
   onClear: () => void;
   onClose: () => void;
-  onStatus: (tone: "success" | "warning", text: string) => void;
 };
 
 function ComplaintSidebar({
@@ -1628,22 +1541,9 @@ function ComplaintSidebar({
   onAddTag,
   onChange,
   onClear,
-  onClose,
-  onStatus
+  onClose
 }: ComplaintSidebarProps) {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"favourite" | "group">("favourite");
-  const [sortMode, setSortMode] = useState<"alpha" | "frequent">("alpha");
-  const [alphabet, setAlphabet] = useState("ALL");
-
-  const filteredTags = complaintFavourites
-    .filter((tag) =>
-      alphabet === "ALL" ? true : tag.toUpperCase().startsWith(alphabet)
-    )
-    .filter((tag) => tag.toLowerCase().includes(query.trim().toLowerCase()))
-    .sort((a, b) =>
-      sortMode === "alpha" ? a.localeCompare(b) : complaintFavourites.indexOf(a) - complaintFavourites.indexOf(b)
-    );
 
   function addSearchText() {
     const text = query.trim();
@@ -1694,105 +1594,6 @@ function ComplaintSidebar({
               }}
             />
 
-            <div className="border-b">
-              <div className="flex gap-1">
-                <TabButton active={tab === "favourite"} onClick={() => setTab("favourite")}>
-                  Favourite
-                </TabButton>
-                <TabButton active={tab === "group"} onClick={() => setTab("group")}>
-                  Group
-                </TabButton>
-              </div>
-            </div>
-
-            {tab === "favourite" ? (
-              <div className="space-y-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                  <Button
-                    className="bg-primary text-primary-foreground"
-                    type="button"
-                    onClick={() => onStatus("success", "Remove Favourite(s) option selected.")}
-                  >
-                    Remove Favourite(s)
-                  </Button>
-                </div>
-
-                <div className="flex justify-end">
-                  <div className="inline-flex overflow-hidden rounded-md border">
-                    <button
-                      aria-label="Alphabetical"
-                      className={cn(
-                        "flex h-12 w-10 items-center justify-center border-r",
-                        sortMode === "alpha"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-background text-muted-foreground hover:bg-muted"
-                      )}
-                      title="Alphabetical"
-                      type="button"
-                      onClick={() => setSortMode("alpha")}
-                    >
-                      <ArrowDownAZ className="h-5 w-5" />
-                    </button>
-                    <button
-                      aria-label="Most Frequent"
-                      className={cn(
-                        "flex h-12 w-10 items-center justify-center",
-                        sortMode === "frequent"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-background text-muted-foreground hover:bg-muted"
-                      )}
-                      title="Most Frequent"
-                      type="button"
-                      onClick={() => setSortMode("frequent")}
-                    >
-                      <ArrowDown10 className="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {filteredTags.length ? (
-                    filteredTags.map((tag) => (
-                      <button
-                        key={tag}
-                        className="rounded bg-muted px-5 py-1.5 text-sm text-foreground hover:bg-primary hover:text-primary-foreground"
-                        type="button"
-                        onClick={() => onAddTag(tag)}
-                      >
-                        {tag}
-                      </button>
-                    ))
-                  ) : (
-                    <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
-                      No favourite complaints found.
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-1">
-                  {complaintAlphabetFilters.map((item) => (
-                    <button
-                      key={item}
-                      className={cn(
-                        "h-8 min-w-9 rounded-sm px-3 text-sm font-medium",
-                        alphabet === item
-                          ? "bg-accent text-accent-foreground"
-                          : "bg-primary text-primary-foreground hover:bg-primary/90"
-                      )}
-                      type="button"
-                      onClick={() => setAlphabet(item)}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                No groups found.
-              </div>
-            )}
-
             <div className="space-y-2 border-t pt-3">
               <Textarea
                 className="min-h-28 resize-y bg-background"
@@ -1809,31 +1610,9 @@ function ComplaintSidebar({
                   <RotateCcw className="h-4 w-4" />
                   Clear
                 </button>
-                <button
-                  className="text-primary hover:underline"
-                  type="button"
-                  onClick={() => onStatus("success", "Choose Template option selected.")}
-                >
-                  Choose Template
-                </button>
-                <button
-                  className="ml-auto inline-flex items-center gap-1 text-primary hover:underline"
-                  type="button"
-                  onClick={() => onStatus("success", "Complaint template save option selected.")}
-                >
-                  <Save className="h-4 w-4" />
-                  Save Template
-                </button>
               </div>
             </div>
           </div>
-        </div>
-
-        <div className="border-t bg-card px-4 py-3">
-          <Button size="sm" variant="outline" onClick={onClear}>
-            <RotateCcw className="h-4 w-4" />
-            Clear All
-          </Button>
         </div>
       </aside>
     </div>
@@ -1844,32 +1623,19 @@ type HistorySidebarProps = {
   value: string;
   onAddTag: (tag: string) => void;
   onChange: (value: string) => void;
+  onClear: () => void;
   onClose: () => void;
-  onStatus: (tone: "success" | "warning", text: string) => void;
 };
 
 function HistorySidebar({
   value,
   onAddTag,
   onChange,
-  onClose,
-  onStatus
+  onClear,
+  onClose
 }: HistorySidebarProps) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<HistoryTab>("Medical");
-  const [alphabet, setAlphabet] = useState("All");
-
-  const activeTags = historyTagsByTab[tab];
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredTags = activeTags.filter((tag) => {
-    const matchesSearch = normalizedQuery
-      ? tag.toLowerCase().includes(normalizedQuery)
-      : true;
-    const matchesAlphabet =
-      alphabet === "All" ? true : tag.toUpperCase().startsWith(alphabet.toUpperCase());
-
-    return matchesSearch && matchesAlphabet;
-  });
 
   function addSearchText() {
     const text = query.trim();
@@ -1878,21 +1644,9 @@ function HistorySidebar({
     setQuery("");
   }
 
-  function addCustomHistory() {
-    const text = query.trim();
-    if (!text) {
-      onStatus("warning", "Type a custom history item first.");
-      return;
-    }
-
-    onAddTag(text);
-    setQuery("");
-  }
-
   function goToNextTab() {
     const currentIndex = historyTabs.indexOf(tab);
     setTab(historyTabs[(currentIndex + 1) % historyTabs.length]);
-    setAlphabet("All");
   }
 
   return (
@@ -1927,10 +1681,7 @@ function HistorySidebar({
               <TabButton
                 key={item}
                 active={tab === item}
-                onClick={() => {
-                  setTab(item);
-                  setAlphabet("All");
-                }}
+                onClick={() => setTab(item)}
               >
                 {item}
               </TabButton>
@@ -1962,53 +1713,7 @@ function HistorySidebar({
             }}
           />
 
-          <div className="mt-5 max-h-40 overflow-y-auto pr-2">
-            <div className="flex flex-wrap gap-2">
-              {filteredTags.length ? (
-                filteredTags.map((tag) => (
-                  <button
-                    key={tag}
-                    className="rounded bg-muted px-5 py-1.5 text-sm text-foreground hover:bg-primary hover:text-primary-foreground"
-                    type="button"
-                    onClick={() => onAddTag(tag)}
-                  >
-                    {tag}
-                  </button>
-                ))
-              ) : (
-                <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
-                  No history items found.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-1">
-              {historyAlphabetFilters.map((item) => (
-                <button
-                  key={item}
-                  className={cn(
-                    "h-8 min-w-9 rounded-sm px-3 text-sm font-medium",
-                    alphabet === item
-                      ? "bg-accent text-accent-foreground"
-                      : "bg-primary text-primary-foreground hover:bg-primary/90"
-                  )}
-                  type="button"
-                  onClick={() => setAlphabet(item)}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-
-            <Button className="shrink-0" type="button" onClick={addCustomHistory}>
-              Add Custom
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="mt-auto pt-8">
+          <div className="mt-5">
             <Textarea
               className="min-h-32 resize-y bg-background"
               placeholder="Type here..."
@@ -2016,11 +1721,12 @@ function HistorySidebar({
               onChange={(event) => onChange(event.target.value)}
             />
             <button
-              className="mt-3 text-sm text-primary hover:underline"
+              className="mt-3 inline-flex items-center gap-1 text-sm text-primary hover:underline"
               type="button"
-              onClick={() => onStatus("success", "History template option selected.")}
+              onClick={onClear}
             >
-              Choose Template
+              <RotateCcw className="h-4 w-4" />
+              Clear
             </button>
           </div>
         </div>
@@ -2064,122 +1770,129 @@ function FindingsSidebar({
         {tab === "Basic" ? (
           <div className="overflow-hidden rounded-md border bg-card shadow-sm">
             <FindingsSection title="Preliminary">
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-1">
-                  <FieldLabel>B. Pressure (Sys./ Dias.)</FieldLabel>
-                  <div className="grid grid-cols-2 overflow-hidden rounded-md border">
-                    <Input
-                      className="rounded-none border-0 border-r"
-                      placeholder="up"
-                      value={findings.bpSystolic}
-                      onChange={(event) => onChange({ bpSystolic: event.target.value })}
-                    />
-                    <Input
-                      className="rounded-none border-0"
-                      placeholder="down"
-                      value={findings.bpDiastolic}
-                      onChange={(event) => onChange({ bpDiastolic: event.target.value })}
-                    />
+              <div className="space-y-4">
+                <div className="grid gap-4 lg:grid-cols-4">
+                  <div className="space-y-1">
+                    <FieldLabel>B. Pressure</FieldLabel>
+                    <div className="grid grid-cols-2 overflow-hidden rounded-md border">
+                      <Input
+                        className="rounded-none border-0 border-r"
+                        placeholder="up"
+                        value={findings.bpSystolic}
+                        onChange={(event) => onChange({ bpSystolic: event.target.value })}
+                      />
+                      <Input
+                        className="rounded-none border-0"
+                        placeholder="down"
+                        value={findings.bpDiastolic}
+                        onChange={(event) => onChange({ bpDiastolic: event.target.value })}
+                      />
+                    </div>
                   </div>
+                  <FindingInput
+                    label="Temp."
+                    value={findings.temperature}
+                    onChange={(value) => onChange({ temperature: value })}
+                  />
+                  <FindingInput
+                    label="Pulse"
+                    value={findings.pulse}
+                    onChange={(value) => onChange({ pulse: value })}
+                  />
+                  <FindingInput
+                    label="SpO2"
+                    value={findings.spo2}
+                    onChange={(value) => onChange({ spo2: value })}
+                  />
                 </div>
 
-                <div className="space-y-1">
-                  <FieldLabel>Height</FieldLabel>
-                  <div className="grid grid-cols-[1fr_1fr_auto_1fr] items-center gap-2">
-                    <Input
-                      placeholder="feet"
-                      value={findings.heightFeet}
-                      onChange={(event) => onChange({ heightFeet: event.target.value })}
-                    />
-                    <Input
-                      placeholder="inch"
-                      value={findings.heightInch}
-                      onChange={(event) => onChange({ heightInch: event.target.value })}
-                    />
-                    <span className="text-lg font-semibold">/</span>
-                    <Input
-                      placeholder="cm"
-                      value={findings.heightCm}
-                      onChange={(event) => onChange({ heightCm: event.target.value })}
-                    />
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <FindingInput
+                    label="Weight (kg)"
+                    value={findings.weight}
+                    onChange={(value) => onChange({ weight: value })}
+                  />
+                  <div className="space-y-1">
+                    <FieldLabel>Height</FieldLabel>
+                    <div className="grid grid-cols-[1fr_1fr_auto_1fr] items-center gap-2">
+                      <Input
+                        placeholder="feet"
+                        value={findings.heightFeet}
+                        onChange={(event) => onChange({ heightFeet: event.target.value })}
+                      />
+                      <Input
+                        placeholder="inch"
+                        value={findings.heightInch}
+                        onChange={(event) => onChange({ heightInch: event.target.value })}
+                      />
+                      <span className="text-lg font-semibold">/</span>
+                      <Input
+                        placeholder="cm"
+                        value={findings.heightCm}
+                        onChange={(event) => onChange({ heightCm: event.target.value })}
+                      />
+                    </div>
                   </div>
+                  <FindingInput
+                    label="Respiratory Rate"
+                    value={findings.respiratoryRate}
+                    onChange={(value) => onChange({ respiratoryRate: value })}
+                  />
                 </div>
 
-                <div className="space-y-1">
-                  <FieldLabel>OFC</FieldLabel>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      placeholder="cm"
-                      value={findings.ofcCm}
-                      onChange={(event) => onChange({ ofcCm: event.target.value })}
-                    />
-                    <Input
-                      placeholder="inch"
-                      value={findings.ofcInch}
-                      onChange={(event) => onChange({ ofcInch: event.target.value })}
-                    />
-                  </div>
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <FindingInput
+                    label="RBS"
+                    value={findings.rbs}
+                    onChange={(value) => onChange({ rbs: value })}
+                  />
+                  <FindingInput
+                    label="FBS"
+                    value={findings.fbs}
+                    onChange={(value) => onChange({ fbs: value })}
+                  />
+                  <FindingInput
+                    label="2-Hrs-ABF"
+                    value={findings.twoHourAbf}
+                    onChange={(value) => onChange({ twoHourAbf: value })}
+                  />
                 </div>
 
-                <FindingInput
-                  label="Pulse (bpm)"
-                  value={findings.pulse}
-                  onChange={(value) => onChange({ pulse: value })}
-                />
-                <FindingInput
-                  label="Temp. ('F)"
-                  value={findings.temperature}
-                  onChange={(value) => onChange({ temperature: value })}
-                />
-                <div className="space-y-1">
-                  <FieldLabel>Diabetes</FieldLabel>
-                  <div className="flex gap-2">
-                    <TriStateControl
-                      value={findings.diabetes}
-                      onChange={(value) => onChange({ diabetes: value })}
-                    />
-                    <Input
-                      value={findings.diabetesDetails}
-                      onChange={(event) => onChange({ diabetesDetails: event.target.value })}
-                    />
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <div className="space-y-1">
+                    <FieldLabel>OFC</FieldLabel>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        placeholder="cm"
+                        value={findings.ofcCm}
+                        onChange={(event) => onChange({ ofcCm: event.target.value })}
+                      />
+                      <Input
+                        placeholder="inch"
+                        value={findings.ofcInch}
+                        onChange={(event) => onChange({ ofcInch: event.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <FindingInput
+                    label="PFR (L/min.)"
+                    value={findings.pfr}
+                    onChange={(value) => onChange({ pfr: value })}
+                  />
+                  <div className="space-y-1">
+                    <FieldLabel>Diabetes</FieldLabel>
+                    <div className="flex gap-2">
+                      <TriStateControl
+                        value={findings.diabetes}
+                        onChange={(value) => onChange({ diabetes: value })}
+                      />
+                      <Input
+                        value={findings.diabetesDetails}
+                        onChange={(event) => onChange({ diabetesDetails: event.target.value })}
+                      />
+                    </div>
                   </div>
                 </div>
-
-                <FindingInput
-                  label="Weight (Kg)"
-                  value={findings.weight}
-                  onChange={(value) => onChange({ weight: value })}
-                />
-                <FindingInput
-                  label="PFR (L/min.)"
-                  value={findings.pfr}
-                  onChange={(value) => onChange({ pfr: value })}
-                />
-                <FindingInput
-                  label="Respiratory Rate (breaths/min.)"
-                  value={findings.respiratoryRate}
-                  onChange={(value) => onChange({ respiratoryRate: value })}
-                />
-                <FindingInput
-                  label="RBS (mmol/l)"
-                  value={findings.rbs}
-                  onChange={(value) => onChange({ rbs: value })}
-                />
-                <FindingInput
-                  label="FBS (mmol/l)"
-                  value={findings.fbs}
-                  onChange={(value) => onChange({ fbs: value })}
-                />
-                <FindingInput
-                  label="2-Hrs-ABF (mmol/l)"
-                  value={findings.twoHourAbf}
-                  onChange={(value) => onChange({ twoHourAbf: value })}
-                />
-                <FindingInput
-                  label="SpO2 (%)"
-                  value={findings.spo2}
-                  onChange={(value) => onChange({ spo2: value })}
-                />
               </div>
             </FindingsSection>
 
@@ -2463,7 +2176,6 @@ function MedicationSidebar({
   onQueryChange,
   onStatus
 }: MedicationSidebarProps) {
-  const [tab, setTab] = useState<"favourite" | "group">("favourite");
   const [sortMode, setSortMode] = useState<"alpha" | "frequent">("alpha");
   const [alphabet, setAlphabet] = useState("ALL");
   const [searchType, setSearchType] = useState("Trade");
@@ -2543,64 +2255,41 @@ function MedicationSidebar({
           </select>
         </div>
 
-        <div className="border-b">
-          <div className="flex gap-1">
-            <TabButton active={tab === "favourite"} onClick={() => setTab("favourite")}>
-              Favourite
-            </TabButton>
-            <TabButton active={tab === "group"} onClick={() => setTab("group")}>
-              Group
-            </TabButton>
+        <div className="space-y-5">
+          <div className="flex justify-end">
+            <SortToggle sortMode={sortMode} onChange={setSortMode} />
+          </div>
+
+          <TagCloud
+            emptyMessage="No favourite medicines found."
+            tags={filteredFavourites}
+            onTagClick={onAddMedicineName}
+          />
+
+          <AlphabetFilter
+            filters={medicationAlphabetFilters}
+            value={alphabet}
+            onChange={setAlphabet}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            {medicationTypeFilters.map((item) => (
+              <button
+                key={item}
+                className={cn(
+                  "h-8 rounded-sm px-4 text-sm font-medium",
+                  medicineType === item
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-primary/90 text-primary-foreground hover:bg-primary"
+                )}
+                type="button"
+                onClick={() => setMedicineType(item)}
+              >
+                {item}
+              </button>
+            ))}
           </div>
         </div>
-
-        {tab === "favourite" ? (
-          <div className="space-y-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-              <Button type="button" onClick={() => onStatus("success", "Remove Favourite(s) option selected.")}>
-                Remove Favourite(s)
-              </Button>
-            </div>
-
-            <div className="flex justify-end">
-              <SortToggle sortMode={sortMode} onChange={setSortMode} />
-            </div>
-
-            <TagCloud
-              emptyMessage="No favourite medicines found."
-              tags={filteredFavourites}
-              onTagClick={onAddMedicineName}
-            />
-
-            <AlphabetFilter
-              filters={medicationAlphabetFilters}
-              value={alphabet}
-              onChange={setAlphabet}
-            />
-
-            <div className="flex flex-wrap gap-2">
-              {medicationTypeFilters.map((item) => (
-                <button
-                  key={item}
-                  className={cn(
-                    "h-8 rounded-sm px-4 text-sm font-medium",
-                    medicineType === item
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-primary/90 text-primary-foreground hover:bg-primary"
-                  )}
-                  type="button"
-                  onClick={() => setMedicineType(item)}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-            No groups found.
-          </div>
-        )}
 
         <div className="flex justify-end">
           <button
@@ -2630,14 +2319,10 @@ function MedicationSidebar({
         ) : null}
 
         <NoteTemplateArea
-          clearLabel="Clear All"
           placeholder="Type here..."
-          saveLabel="Save Template"
           value={value}
           onChange={onChange}
-          onChooseTemplate={() => onStatus("success", "Medication template option selected.")}
           onClear={onClear}
-          onSaveTemplate={() => onStatus("success", "Medication template save option selected.")}
         />
       </div>
     </RightDrawer>
@@ -2655,7 +2340,6 @@ type TagNoteSidebarProps = {
   onChange: (value: string) => void;
   onClear: () => void;
   onClose: () => void;
-  onSaveTemplate: () => void;
   onStatus: (tone: "success" | "warning", text: string) => void;
 };
 
@@ -2670,11 +2354,9 @@ function TagNoteSidebar({
   onChange,
   onClear,
   onClose,
-  onSaveTemplate,
   onStatus
 }: TagNoteSidebarProps) {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"favourite" | "group">("favourite");
   const [sortMode, setSortMode] = useState<"alpha" | "frequent">("alpha");
   const [alphabet, setAlphabet] = useState(alphabetFilters[0] ?? "ALL");
 
@@ -2713,43 +2395,19 @@ function TagNoteSidebar({
           }}
         />
 
-        <div className="border-b">
-          <div className="flex gap-1">
-            <TabButton active={tab === "favourite"} onClick={() => setTab("favourite")}>
-              Favourite
-            </TabButton>
-            <TabButton active={tab === "group"} onClick={() => setTab("group")}>
-              Group
-            </TabButton>
-          </div>
+        <div className="space-y-5">
+          {favourites.length ? (
+            <div className="flex justify-end">
+              <SortToggle sortMode={sortMode} onChange={setSortMode} />
+            </div>
+          ) : null}
+
+          <TagCloud emptyMessage={emptyMessage} tags={filteredTags} onTagClick={onAddTag} />
+
+          {alphabetFilters.length > 1 ? (
+            <AlphabetFilter filters={alphabetFilters} value={alphabet} onChange={setAlphabet} />
+          ) : null}
         </div>
-
-        {tab === "favourite" ? (
-          <div className="space-y-5">
-            {favourites.length ? (
-              <>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                  <Button type="button" onClick={() => onStatus("success", "Remove Favourite(s) option selected.")}>
-                    Remove Favourite(s)
-                  </Button>
-                </div>
-                <div className="flex justify-end">
-                  <SortToggle sortMode={sortMode} onChange={setSortMode} />
-                </div>
-              </>
-            ) : null}
-
-            <TagCloud emptyMessage={emptyMessage} tags={filteredTags} onTagClick={onAddTag} />
-
-            {alphabetFilters.length > 1 ? (
-              <AlphabetFilter filters={alphabetFilters} value={alphabet} onChange={setAlphabet} />
-            ) : null}
-          </div>
-        ) : (
-          <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-            No groups found.
-          </div>
-        )}
 
         {addCustomLabel ? (
           <div className="flex justify-end">
@@ -2765,14 +2423,10 @@ function TagNoteSidebar({
         ) : null}
 
         <NoteTemplateArea
-          clearLabel="Clear All"
           placeholder="Type here..."
-          saveLabel={title === "Advice" ? "Save As Template" : "Save Template"}
           value={value}
           onChange={onChange}
-          onChooseTemplate={() => onStatus("success", `${title} template option selected.`)}
           onClear={onClear}
-          onSaveTemplate={onSaveTemplate}
         />
       </div>
     </RightDrawer>
@@ -3428,23 +3082,15 @@ function AlphabetFilter({
 }
 
 function NoteTemplateArea({
-  clearLabel,
   placeholder,
-  saveLabel,
   value,
   onChange,
-  onChooseTemplate,
-  onClear,
-  onSaveTemplate
+  onClear
 }: {
-  clearLabel: string;
   placeholder: string;
-  saveLabel: string;
   value: string;
   onChange: (value: string) => void;
-  onChooseTemplate: () => void;
   onClear: () => void;
-  onSaveTemplate: () => void;
 }) {
   return (
     <div className="space-y-2">
@@ -3463,27 +3109,6 @@ function NoteTemplateArea({
           <RotateCcw className="h-4 w-4" />
           Clear
         </button>
-        <button
-          className="text-primary hover:underline"
-          type="button"
-          onClick={onChooseTemplate}
-        >
-          Choose Template
-        </button>
-        <button
-          className="ml-auto inline-flex items-center gap-1 text-primary hover:underline"
-          type="button"
-          onClick={onSaveTemplate}
-        >
-          <Save className="h-4 w-4" />
-          {saveLabel}
-        </button>
-      </div>
-      <div className="flex justify-end">
-        <Button size="sm" variant="outline" onClick={onClear}>
-          <RotateCcw className="h-4 w-4" />
-          {clearLabel}
-        </Button>
       </div>
     </div>
   );
@@ -3491,7 +3116,6 @@ function NoteTemplateArea({
 
 type PrescriptionOptionTileProps = {
   title: string;
-  hasGroups?: boolean;
   hasContent: boolean;
   onClear: () => void;
   onOpen: () => void;
@@ -3499,7 +3123,6 @@ type PrescriptionOptionTileProps = {
 
 function PrescriptionOptionTile({
   title,
-  hasGroups = false,
   hasContent,
   onClear,
   onOpen
@@ -3526,16 +3149,8 @@ function PrescriptionOptionTile({
           </h2>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {hasGroups ? (
-            <PanelIconButton title="Groups" onClick={onOpen}>
-              <Layers className="h-4 w-4" />
-            </PanelIconButton>
-          ) : null}
           <PanelIconButton title="Clear All" onClick={onClear}>
             <RotateCcw className="h-4 w-4" />
-          </PanelIconButton>
-          <PanelIconButton title="Open Details" onClick={onOpen}>
-            <Copy className="h-4 w-4" />
           </PanelIconButton>
         </div>
       </div>
