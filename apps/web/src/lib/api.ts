@@ -1,4 +1,19 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+const LOCAL_API_URL = "http://localhost:4000/api/v1";
+const RENDER_API_URL = "https://prescripsys.onrender.com/api/v1";
+
+function getApiUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configuredUrl) return configuredUrl;
+
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+
+    if (!isLocalhost) return RENDER_API_URL;
+  }
+
+  return LOCAL_API_URL;
+}
 
 export type ApiError = {
   statusCode: number;
@@ -16,7 +31,7 @@ export async function apiFetch<T>(
   headers.set("Content-Type", "application/json");
   if (options.token) headers.set("Authorization", `Bearer ${options.token}`);
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${getApiUrl()}${path}`, {
     ...options,
     headers,
     credentials: "include"
