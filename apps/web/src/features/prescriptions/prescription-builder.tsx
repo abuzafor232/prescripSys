@@ -58,6 +58,7 @@ type RxMedicine = {
   dose: string;
   duration: string;
   instruction: string;
+  note?: string;
 };
 
 type PatientFormState = {
@@ -95,15 +96,20 @@ type NoteKey =
   | "followUp"
   | "referral";
 
-type VisionState = {
+type GlassPrescriptionState = {
   right: EyePower;
   left: EyePower;
   add: string;
   ipd: string;
-  glassType: string;
+  glassFeatures: string[];
+  lensType: string;
   iopRight: string;
   iopLeft: string;
   note: string;
+};
+
+type VisionState = GlassPrescriptionState & {
+  secondaryGlass?: GlassPrescriptionState;
 };
 
 type EyePower = {
@@ -134,14 +140,25 @@ type FindingsState = {
   fbs: string;
   twoHourAbf: string;
   spo2: string;
-  foodAllergy: TriStateValue;
-  foodAllergyDetails: string;
-  medicineAllergy: TriStateValue;
-  medicineAllergyDetails: string;
-  pollenAllergy: TriStateValue;
-  dustAllergy: TriStateValue;
-  mitesAllergy: TriStateValue;
-  otherAllergyDetails: string;
+  ophthalmicVisualAcuityRight: string;
+  ophthalmicVisualAcuityLeft: string;
+  ophthalmicOrbitAdnexaRight: string;
+  ophthalmicOrbitAdnexaLeft: string;
+  ophthalmicPupilRight: string;
+  ophthalmicPupilLeft: string;
+  ophthalmicCdRight: string;
+  ophthalmicCdLeft: string;
+  ophthalmicAntSegmentRight: string;
+  ophthalmicAntSegmentLeft: string;
+  ophthalmicPostSegmentRight: string;
+  ophthalmicPostSegmentLeft: string;
+  ophthalmicIopRight: string;
+  ophthalmicIopLeft: string;
+  ophthalmicSptRight: string;
+  ophthalmicSptLeft: string;
+  ophthalmicOthersRight: string;
+  ophthalmicOthersLeft: string;
+  ophthalmicRemark: string;
   gynaeMenarche: string;
   gynaeLmp: string;
   gynaeMpFirst: string;
@@ -175,8 +192,6 @@ type ReferralEntry = {
   direction: "to" | "from";
 };
 
-type ReferralFormState = Omit<ReferralEntry, "id" | "direction">;
-
 const initialPatientForm: PatientFormState = {
   name: "",
   mobile: "",
@@ -208,16 +223,25 @@ const emptyEyePower: EyePower = {
   va: ""
 };
 
-const initialVision: VisionState = {
-  right: emptyEyePower,
-  left: emptyEyePower,
-  add: "",
-  ipd: "",
-  glassType: "",
-  iopRight: "",
-  iopLeft: "",
-  note: ""
-};
+function createInitialGlassPrescription(): GlassPrescriptionState {
+  return {
+    right: { ...emptyEyePower },
+    left: { ...emptyEyePower },
+    add: "",
+    ipd: "",
+    glassFeatures: [],
+    lensType: "",
+    iopRight: "",
+    iopLeft: "",
+    note: ""
+  };
+}
+
+function createInitialVision(): VisionState {
+  return {
+    ...createInitialGlassPrescription()
+  };
+}
 
 const initialFindings: FindingsState = {
   bpSystolic: "",
@@ -238,14 +262,25 @@ const initialFindings: FindingsState = {
   fbs: "",
   twoHourAbf: "",
   spo2: "",
-  foodAllergy: "",
-  foodAllergyDetails: "",
-  medicineAllergy: "",
-  medicineAllergyDetails: "",
-  pollenAllergy: "",
-  dustAllergy: "",
-  mitesAllergy: "",
-  otherAllergyDetails: "",
+  ophthalmicVisualAcuityRight: "",
+  ophthalmicVisualAcuityLeft: "",
+  ophthalmicOrbitAdnexaRight: "",
+  ophthalmicOrbitAdnexaLeft: "",
+  ophthalmicPupilRight: "",
+  ophthalmicPupilLeft: "",
+  ophthalmicCdRight: "",
+  ophthalmicCdLeft: "",
+  ophthalmicAntSegmentRight: "",
+  ophthalmicAntSegmentLeft: "",
+  ophthalmicPostSegmentRight: "",
+  ophthalmicPostSegmentLeft: "",
+  ophthalmicIopRight: "",
+  ophthalmicIopLeft: "",
+  ophthalmicSptRight: "",
+  ophthalmicSptLeft: "",
+  ophthalmicOthersRight: "",
+  ophthalmicOthersLeft: "",
+  ophthalmicRemark: "",
   gynaeMenarche: "",
   gynaeLmp: "",
   gynaeMpFirst: "",
@@ -270,12 +305,47 @@ const initialFindings: FindingsState = {
   gynaeAbdominalNote: ""
 };
 
-const initialReferralForm: ReferralFormState = {
-  name: "",
-  phone: "",
-  specialty: "",
-  additionalInfo: ""
-};
+const ophthalmicFindingRows: Array<{
+  label: string;
+  rightKey: keyof FindingsState;
+  leftKey: keyof FindingsState;
+  inputType?: "select";
+  options?: string[];
+}> = [
+  {
+    label: "Visual Acuity",
+    rightKey: "ophthalmicVisualAcuityRight",
+    leftKey: "ophthalmicVisualAcuityLeft",
+    inputType: "select",
+    options: ["9", "6/12", "6/18", "6/24", "6/36", "6/60", "4/60", "3/60", "<6/60", "CF-2ft", "CF-1ft", "HM", "PL"]
+  },
+  {
+    label: "Orbit & Adnexa",
+    rightKey: "ophthalmicOrbitAdnexaRight",
+    leftKey: "ophthalmicOrbitAdnexaLeft"
+  },
+  { label: "Pupil", rightKey: "ophthalmicPupilRight", leftKey: "ophthalmicPupilLeft" },
+  { label: "CD", rightKey: "ophthalmicCdRight", leftKey: "ophthalmicCdLeft" },
+  {
+    label: "Ant. Segment",
+    rightKey: "ophthalmicAntSegmentRight",
+    leftKey: "ophthalmicAntSegmentLeft"
+  },
+  {
+    label: "Post. Segment",
+    rightKey: "ophthalmicPostSegmentRight",
+    leftKey: "ophthalmicPostSegmentLeft"
+  },
+  { label: "IOP", rightKey: "ophthalmicIopRight", leftKey: "ophthalmicIopLeft" },
+  {
+    label: "SPT",
+    rightKey: "ophthalmicSptRight",
+    leftKey: "ophthalmicSptLeft",
+    inputType: "select",
+    options: ["Patent", "Partially Patent", "Blocked"]
+  },
+  { label: "Others", rightKey: "ophthalmicOthersRight", leftKey: "ophthalmicOthersLeft" }
+];
 
 const panelTitles: Record<PanelKey, string> = {
   complaint: "Complaint",
@@ -284,7 +354,7 @@ const panelTitles: Record<PanelKey, string> = {
   investigation: "Investigation",
   diagnosis: "Diagnosis",
   medication: "Medication",
-  vision: "Vision, IOP, Glass",
+  vision: "Glass Prescription",
   advice: "Advice",
   followUp: "Follow-Up",
   referral: "Referral"
@@ -324,7 +394,8 @@ const occupations = [
   "Other"
 ];
 
-const glassTypes = ["Distance", "Near", "Bifocal", "Progressive", "Contact Lens"];
+const glassFeatureOptions = ["White", "Anti Reflecting", "PhotoSun", "Blue Cut"];
+const lensTypeOptions = ["Unifocal", "Bifocal", "Progressive/Verilux"];
 
 const historyTabs = [
   "Medical",
@@ -337,15 +408,98 @@ const historyTabs = [
 
 type HistoryTab = (typeof historyTabs)[number];
 
-const medicationFavourites = [
-  "AQUAFRESH LIQUIGEL PF EYE DROP 1%",
-  "LUBGEL EYE DROP 1%/10ml",
-  "OPTIMOX EYE DROP 0.5%/5ml",
-  "PATADIN DS EYE DROP 0.2%/5ml"
-];
+type CustomMedicineFormState = {
+  medicineType: string;
+  brandName: string;
+  doseAmount: string;
+  mealTiming: string;
+  frequency: string;
+  customText: string;
+  spoon: string;
+  unitType: string;
+  quantity: string;
+  dropsCount: string;
+  dailyFrequency: string;
+  continueMedicine: boolean;
+  durationValue: string;
+  durationUnit: string;
+  remarks: string;
+};
 
-const medicationAlphabetFilters = ["ALL", "A", "L", "O", "P"];
-const medicationTypeFilters = ["Reset", "DROP"];
+const customMedicineTypeOptions = [
+  "Tab.",
+  "Cap.",
+  "Syp.",
+  "Inj.",
+  "Eye Drop",
+  "Eye Gel",
+  "Cream",
+  "Ointment",
+  "Lotion",
+  "Nebulizer",
+  "Suppository"
+];
+const tabletCapsuleDoseOptions = ["None", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const mealTimingOptions = ["Before Meal", "After Meal"];
+const syrupSpoonOptions = ["1/2 Spoon", "1 Spoon", "2 Spoon", "3 Spoon", "4 Spoon"];
+const injectionUnitOptions = ["Vial", "ML", "CC"];
+const eyeDropCountOptions = ["1 Drop", "2 Drops", "3 Drops"];
+const customMedicineDurationUnitOptions = ["Day", "Month", "Year"];
+
+const initialCustomMedicineForm: CustomMedicineFormState = {
+  medicineType: "Tab.",
+  brandName: "",
+  doseAmount: "1",
+  mealTiming: "After Meal",
+  frequency: "1+0+1",
+  customText: "",
+  spoon: "1 Spoon",
+  unitType: "Vial",
+  quantity: "1",
+  dropsCount: "1 Drop",
+  dailyFrequency: "2",
+  continueMedicine: false,
+  durationValue: "7",
+  durationUnit: "Day",
+  remarks: ""
+};
+
+function customMedicineDefaultsForType(
+  medicineType: string,
+  brandName = ""
+): CustomMedicineFormState {
+  const base = { ...initialCustomMedicineForm, medicineType, brandName };
+
+  if (medicineType === "Syp.") {
+    return { ...base, frequency: "3", durationValue: "5" };
+  }
+
+  if (medicineType === "Inj.") {
+    return { ...base, frequency: "IM Stat", durationValue: "" };
+  }
+
+  if (medicineType === "Eye Drop") {
+    return { ...base, frequency: "4" };
+  }
+
+  if (medicineType === "Eye Gel") {
+    return { ...base, dailyFrequency: "2" };
+  }
+
+  if (["Cream", "Ointment", "Lotion"].includes(medicineType)) {
+    return { ...base, customText: "Apply", frequency: "2 Times Daily" };
+  }
+
+  if (medicineType === "Nebulizer") {
+    return { ...base, quantity: "1", frequency: "3 Times Daily" };
+  }
+
+  if (medicineType === "Suppository") {
+    return { ...base, quantity: "1", frequency: "Once Daily" };
+  }
+
+  return base;
+}
 
 const diagnosisFavourites = [
   "Allergic Conjunctivitis",
@@ -372,9 +526,8 @@ export function PrescriptionBuilder() {
   const [medicines, setMedicines] = useState<RxMedicine[]>([]);
   const [notes, setNotes] = useState<Record<NoteKey, string>>(initialNotes);
   const [findings, setFindings] = useState<FindingsState>(initialFindings);
-  const [vision, setVision] = useState<VisionState>(initialVision);
+  const [vision, setVision] = useState<VisionState>(() => createInitialVision());
   const [referrals, setReferrals] = useState<ReferralEntry[]>([]);
-  const [referralForm, setReferralForm] = useState<ReferralFormState>(initialReferralForm);
   const [followUpDate, setFollowUpDate] = useState("");
   const [activePanel, setActivePanel] = useState<PanelKey | null>(null);
   const [paperType, setPaperType] = useState<"default" | "alternate">("default");
@@ -575,65 +728,105 @@ export function PrescriptionBuilder() {
     );
   }
 
-  function addMedicineName(name: string) {
-    const brandName = name.trim();
+  function addCustomMedicine(medicine: RxMedicine) {
+    const brandName = medicine.brandName.trim();
     if (!brandName) return;
 
     setMedicines((current) => [
       ...current,
       {
+        ...medicine,
         brandName,
-        dose: "1+0+1",
-        duration: "5 Days",
-        instruction: "After Meal"
+        genericName: trimOrUndefined(medicine.genericName ?? ""),
+        instruction: medicine.instruction.trim(),
+        note: trimOrUndefined(medicine.note ?? "")
       }
     ]);
     setMedicineQuery("");
   }
 
-  function updateEye(side: "right" | "left", field: keyof EyePower, value: string) {
-    setVision((current) => ({
-      ...current,
-      [side]: { ...current[side], [field]: value }
-    }));
+  function updateGlassEye(
+    target: "primary" | "secondary",
+    side: "right" | "left",
+    field: keyof EyePower,
+    value: string
+  ) {
+    setVision((current) => {
+      if (target === "primary") {
+        return {
+          ...current,
+          [side]: { ...current[side], [field]: value }
+        };
+      }
+
+      const secondaryGlass = current.secondaryGlass ?? createInitialGlassPrescription();
+      return {
+        ...current,
+        secondaryGlass: {
+          ...secondaryGlass,
+          [side]: { ...secondaryGlass[side], [field]: value }
+        }
+      };
+    });
   }
 
-  function updateVision(field: keyof Omit<VisionState, "right" | "left">, value: string) {
-    setVision((current) => ({ ...current, [field]: value }));
+  function updateGlassPrescription(
+    target: "primary" | "secondary",
+    patch: Partial<Omit<GlassPrescriptionState, "right" | "left">>
+  ) {
+    setVision((current) => {
+      if (target === "primary") {
+        return { ...current, ...patch };
+      }
+
+      return {
+        ...current,
+        secondaryGlass: {
+          ...(current.secondaryGlass ?? createInitialGlassPrescription()),
+          ...patch
+        }
+      };
+    });
+  }
+
+  function addSecondaryGlassPrescription() {
+    setVision((current) =>
+      current.secondaryGlass
+        ? current
+        : { ...current, secondaryGlass: createInitialGlassPrescription() }
+    );
+  }
+
+  function removeSecondaryGlassPrescription() {
+    setVision((current) => {
+      const { secondaryGlass, ...primaryGlass } = current;
+      return primaryGlass;
+    });
   }
 
   function updateFindings(patch: Partial<FindingsState>) {
     setFindings((current) => ({ ...current, ...patch }));
   }
 
-  function updateReferralForm(patch: Partial<ReferralFormState>) {
-    setReferralForm((current) => ({ ...current, ...patch }));
-  }
-
-  function addReferral(direction: "to" | "from") {
-    const name = referralForm.name.trim();
-    const phone = referralForm.phone.trim();
-    const specialty = referralForm.specialty.trim();
-    const additionalInfo = referralForm.additionalInfo.trim();
-
-    if (!name && !phone && !specialty && !additionalInfo) {
-      showStatus("warning", "Enter referral details first.");
-      return;
-    }
-
+  function addReferralRow(direction: "to" | "from") {
     setReferrals((current) => [
       ...current,
       {
         id: `${Date.now()}-${current.length}`,
-        name,
-        phone,
-        specialty,
-        additionalInfo,
+        name: "",
+        phone: "",
+        specialty: "",
+        additionalInfo: "",
         direction
       }
     ]);
-    setReferralForm(initialReferralForm);
-    showStatus("success", "Referral added.");
+    showStatus("success", "Referral row added.");
+  }
+
+  function updateReferral(id: string, patch: Partial<Omit<ReferralEntry, "id">>) {
+    setReferrals((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    );
   }
 
   function clearPanel(panel: PanelKey) {
@@ -642,13 +835,12 @@ export function PrescriptionBuilder() {
       setMedicationNote("");
       setMedicineQuery("");
     } else if (panel === "vision") {
-      setVision(initialVision);
+      setVision(createInitialVision());
     } else if (panel === "findings") {
       setFindings(initialFindings);
       updateNote("findings", "");
     } else if (panel === "referral") {
       setReferrals([]);
-      setReferralForm(initialReferralForm);
       updateNote("referral", "");
     } else {
       updateNote(panel, "");
@@ -671,9 +863,8 @@ export function PrescriptionBuilder() {
     setMedicines([]);
     setMedicationNote("");
     setFindings(initialFindings);
-    setVision(initialVision);
+    setVision(createInitialVision());
     setReferrals([]);
-    setReferralForm(initialReferralForm);
     setFollowUpDate("");
     showStatus("success", "Prescription pad cleared");
   }
@@ -698,6 +889,7 @@ export function PrescriptionBuilder() {
         dose: item.dose,
         duration: item.duration,
         instruction: trimOrUndefined(item.instruction),
+        note: trimOrUndefined(item.note ?? ""),
         sortOrder: index
       })),
       advice: trimOrUndefined(notes.advice),
@@ -716,7 +908,7 @@ export function PrescriptionBuilder() {
         },
         findings,
         vision,
-        referrals
+        referrals: referrals.filter(referralHasContent)
       }
     };
   }
@@ -881,10 +1073,13 @@ export function PrescriptionBuilder() {
                     className="grid grid-cols-[1.2fr_108px_108px_132px_40px] items-center gap-2"
                   >
                     <div className="min-h-9 rounded-md border bg-background px-3 py-2 text-sm">
-                      <div className="font-medium">{item.brandName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {item.genericName} {item.strength}
-                      </div>
+                      <div className="font-medium">{formatMedicineTitle(item)}</div>
+                      {item.genericName ? (
+                        <div className="text-xs text-muted-foreground">{item.genericName}</div>
+                      ) : null}
+                      {item.note ? (
+                        <div className="mt-1 text-xs text-muted-foreground">{item.note}</div>
+                      ) : null}
                     </div>
                     <Input
                       value={item.dose}
@@ -928,93 +1123,34 @@ export function PrescriptionBuilder() {
 
     if (panel === "vision") {
       return (
-        <div className="space-y-3">
-          <div className="overflow-x-auto">
-            <div className="min-w-[620px] rounded-md border bg-background">
-              <div className="grid grid-cols-[120px_repeat(4,minmax(90px,1fr))] border-b text-center text-sm font-semibold">
-                <div className="border-r px-2 py-2">##</div>
-                <div className="border-r px-2 py-2">Sphere</div>
-                <div className="border-r px-2 py-2">CYL</div>
-                <div className="border-r px-2 py-2">Axis</div>
-                <div className="px-2 py-2">VA</div>
-              </div>
-              {(["right", "left"] as const).map((side) => (
-                <div
-                  key={side}
-                  className="grid grid-cols-[120px_repeat(4,minmax(90px,1fr))] border-b last:border-b-0"
-                >
-                  <div className="flex items-center justify-center border-r px-2 py-2 text-sm">
-                    {side === "right" ? "Right Eye" : "Left Eye"}
-                  </div>
-                  {(["sphere", "cyl", "axis", "va"] as const).map((field) => (
-                    <div key={field} className="border-r p-2 last:border-r-0">
-                      <Input
-                        value={vision[side][field]}
-                        onChange={(event) => updateEye(side, field, event.target.value)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid gap-2 md:grid-cols-3">
-            <LabeledField label="ADD">
-              <Input value={vision.add} onChange={(event) => updateVision("add", event.target.value)} />
-            </LabeledField>
-            <LabeledField label="IPD">
-              <Input value={vision.ipd} onChange={(event) => updateVision("ipd", event.target.value)} />
-            </LabeledField>
-            <LabeledField label="Glass">
-              <select
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                value={vision.glassType}
-                onChange={(event) => updateVision("glassType", event.target.value)}
-              >
-                <option value="">Select Eye Glass Type</option>
-                {glassTypes.map((glassType) => (
-                  <option key={glassType} value={glassType}>
-                    {glassType}
-                  </option>
-                ))}
-              </select>
-            </LabeledField>
-          </div>
-
-          <div className="grid gap-2 md:grid-cols-2">
-            <LabeledField label="IOP (Right Eye)">
-              <div className="flex">
-                <Input
-                  className="rounded-r-none"
-                  value={vision.iopRight}
-                  onChange={(event) => updateVision("iopRight", event.target.value)}
-                />
-                <span className="inline-flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm">
-                  mmHg
-                </span>
-              </div>
-            </LabeledField>
-            <LabeledField label="IOP (Left Eye)">
-              <div className="flex">
-                <Input
-                  className="rounded-r-none"
-                  value={vision.iopLeft}
-                  onChange={(event) => updateVision("iopLeft", event.target.value)}
-                />
-                <span className="inline-flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm">
-                  mmHg
-                </span>
-              </div>
-            </LabeledField>
-          </div>
-
-          <Textarea
-            className="min-h-16 bg-background"
-            placeholder="Type additional information..."
-            value={vision.note}
-            onChange={(event) => updateVision("note", event.target.value)}
+        <div className="space-y-4">
+          <GlassPrescriptionForm
+            prescription={vision}
+            title="Glass Prescription"
+            onChange={(patch) => updateGlassPrescription("primary", patch)}
+            onEyeChange={(side, field, value) =>
+              updateGlassEye("primary", side, field, value)
+            }
           />
+
+          {!vision.secondaryGlass ? (
+            <Button type="button" variant="outline" onClick={addSecondaryGlassPrescription}>
+              <Plus className="h-4 w-4" />
+              Add Secondary Glass
+            </Button>
+          ) : null}
+
+          {vision.secondaryGlass ? (
+            <GlassPrescriptionForm
+              prescription={vision.secondaryGlass}
+              title="Secondary Glass Prescription"
+              onChange={(patch) => updateGlassPrescription("secondary", patch)}
+              onEyeChange={(side, field, value) =>
+                updateGlassEye("secondary", side, field, value)
+              }
+              onRemove={removeSecondaryGlassPrescription}
+            />
+          ) : null}
         </div>
       );
     }
@@ -1061,13 +1197,8 @@ export function PrescriptionBuilder() {
 
     if (panel === "vision") {
       const values = [
-        vision.right.sphere,
-        vision.right.cyl,
-        vision.left.sphere,
-        vision.left.cyl,
-        vision.iopRight,
-        vision.iopLeft,
-        vision.note
+        getGlassPrescriptionPreview(vision),
+        vision.secondaryGlass ? getGlassPrescriptionPreview(vision.secondaryGlass) : ""
       ].filter(Boolean);
       return values.length ? (
         <div className="mt-4 line-clamp-2 text-sm text-slate-700">
@@ -1097,14 +1228,8 @@ export function PrescriptionBuilder() {
     }
 
     if (panel === "vision") {
-      return Object.values(vision.right).some(Boolean)
-        || Object.values(vision.left).some(Boolean)
-        || Boolean(vision.add)
-        || Boolean(vision.ipd)
-        || Boolean(vision.glassType)
-        || Boolean(vision.iopRight)
-        || Boolean(vision.iopLeft)
-        || Boolean(vision.note.trim());
+      return glassPrescriptionHasContent(vision)
+        || (vision.secondaryGlass ? glassPrescriptionHasContent(vision.secondaryGlass) : false);
     }
 
     if (panel === "followUp") {
@@ -1112,7 +1237,7 @@ export function PrescriptionBuilder() {
     }
 
     if (panel === "referral") {
-      return referrals.length > 0 || Boolean(notes.referral.trim());
+      return referrals.some(referralHasContent) || Boolean(notes.referral.trim());
     }
 
     return Boolean(notes[panel].trim());
@@ -1438,7 +1563,7 @@ export function PrescriptionBuilder() {
           value={medicationNote}
           waitingForDebounce={waitingForDebounce}
           onAddMedicine={addMedicine}
-          onAddMedicineName={addMedicineName}
+          onAddCustomMedicine={addCustomMedicine}
           onChange={setMedicationNote}
           onClear={() => clearPanel("medication")}
           onClose={() => setActivePanel(null)}
@@ -1496,14 +1621,13 @@ export function PrescriptionBuilder() {
         />
       ) : activePanel === "referral" ? (
         <ReferralSidebar
-          form={referralForm}
           referrals={referrals}
-          onAddReferral={addReferral}
+          onAddReferralRow={addReferralRow}
           onClose={() => setActivePanel(null)}
           onRemoveReferral={(id) =>
             setReferrals((current) => current.filter((item) => item.id !== id))
           }
-          onUpdateForm={updateReferralForm}
+          onUpdateReferral={updateReferral}
         />
       ) : activePanel ? (
         <PanelDialog
@@ -1896,57 +2020,8 @@ function FindingsSidebar({
               </div>
             </FindingsSection>
 
-            <FindingsSection title="Allergy">
-              <div className="space-y-4">
-                <AllergyDetailRow
-                  label="Food Item"
-                  details={findings.foodAllergyDetails}
-                  value={findings.foodAllergy}
-                  onDetailsChange={(value) => onChange({ foodAllergyDetails: value })}
-                  onValueChange={(value) => onChange({ foodAllergy: value })}
-                />
-                <AllergyDetailRow
-                  label="Medicine"
-                  details={findings.medicineAllergyDetails}
-                  value={findings.medicineAllergy}
-                  onDetailsChange={(value) => onChange({ medicineAllergyDetails: value })}
-                  onValueChange={(value) => onChange({ medicineAllergy: value })}
-                />
-                <div className="grid gap-4 md:grid-cols-3">
-                  <AllergyChoice
-                    label="Pollen"
-                    value={findings.pollenAllergy}
-                    onChange={(value) => onChange({ pollenAllergy: value })}
-                  />
-                  <AllergyChoice
-                    label="Dust"
-                    value={findings.dustAllergy}
-                    onChange={(value) => onChange({ dustAllergy: value })}
-                  />
-                  <AllergyChoice
-                    label="Mites"
-                    value={findings.mitesAllergy}
-                    onChange={(value) => onChange({ mitesAllergy: value })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <FieldLabel>
-                    Others <span className="italic">(If any)</span>
-                  </FieldLabel>
-                  <Textarea
-                    className="min-h-20 bg-background"
-                    placeholder="Type details..."
-                    value={findings.otherAllergyDetails}
-                    onChange={(event) => onChange({ otherAllergyDetails: event.target.value })}
-                  />
-                </div>
-              </div>
-            </FindingsSection>
-
-            <FindingsSection title="Medical Details">
-              <div className="text-sm text-muted-foreground">
-                Add medical details in the additional notes field below.
-              </div>
+            <FindingsSection title="Ophthalmic Findings">
+              <OphthalmicFindingsTable findings={findings} onChange={onChange} />
             </FindingsSection>
           </div>
         ) : tab === "Gynae & Obs" ? (
@@ -1977,6 +2052,304 @@ function FindingsSidebar({
         </div>
       </div>
     </RightDrawer>
+  );
+}
+
+function OphthalmicFindingsTable({
+  findings,
+  onChange
+}: {
+  findings: FindingsState;
+  onChange: (patch: Partial<FindingsState>) => void;
+}) {
+  function updateField(key: keyof FindingsState, value: string) {
+    onChange({ [key]: value } as Partial<FindingsState>);
+  }
+
+  function renderEyeField(
+    row: (typeof ophthalmicFindingRows)[number],
+    side: "right" | "left"
+  ) {
+    const key = side === "right" ? row.rightKey : row.leftKey;
+    const ariaLabel = `${row.label} ${side} eye`;
+
+    if (row.inputType === "select") {
+      return (
+        <select
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border/70 bg-card px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+          value={findings[key]}
+          onChange={(event) => updateField(key, event.target.value)}
+        >
+          <option value="">Select</option>
+          {row.options?.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    return (
+      <Input
+        className="h-9 border-border/70 bg-card"
+        aria-label={ariaLabel}
+        value={findings[key]}
+        onChange={(event) => updateField(key, event.target.value)}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="overflow-x-auto">
+        <div className="min-w-[520px] overflow-hidden rounded-md border bg-background">
+          <div className="grid grid-cols-[1.35fr_1fr_1fr] border-b bg-card text-base font-semibold text-primary">
+            <div className="border-r px-3 py-2">Ophthalmic Findings</div>
+            <div className="border-r px-3 py-2 text-center">Right Eye</div>
+            <div className="px-3 py-2 text-center">Left Eye</div>
+          </div>
+          {ophthalmicFindingRows.map((row) => (
+            <div
+              key={row.label}
+              className="grid grid-cols-[1.35fr_1fr_1fr] border-b last:border-b-0"
+            >
+              <div className="flex items-center border-r px-3 py-2 text-sm font-medium">
+                {row.label}
+              </div>
+              <div className="border-r p-2">{renderEyeField(row, "right")}</div>
+              <div className="p-2">{renderEyeField(row, "left")}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <FieldLabel>Remark</FieldLabel>
+        <Textarea
+          className="min-h-20 bg-background"
+          placeholder="Type ophthalmic remarks..."
+          value={findings.ophthalmicRemark}
+          onChange={(event) => updateField("ophthalmicRemark", event.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function GlassPrescriptionForm({
+  prescription,
+  title,
+  onChange,
+  onEyeChange,
+  onRemove
+}: {
+  prescription: GlassPrescriptionState;
+  title: string;
+  onChange: (patch: Partial<Omit<GlassPrescriptionState, "right" | "left">>) => void;
+  onEyeChange: (side: "right" | "left", field: keyof EyePower, value: string) => void;
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-md border bg-background p-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold">{title}</h3>
+        {onRemove ? (
+          <Button type="button" variant="ghost" onClick={onRemove}>
+            <X className="h-4 w-4" />
+            Remove
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="min-w-[620px] rounded-md border bg-background">
+          <div className="grid grid-cols-[120px_repeat(4,minmax(90px,1fr))] border-b text-center text-sm font-semibold">
+            <div className="border-r px-2 py-2">##</div>
+            <div className="border-r px-2 py-2">Sphere</div>
+            <div className="border-r px-2 py-2">CYL</div>
+            <div className="border-r px-2 py-2">Axis</div>
+            <div className="px-2 py-2">VA</div>
+          </div>
+          {(["right", "left"] as const).map((side) => (
+            <div
+              key={side}
+              className="grid grid-cols-[120px_repeat(4,minmax(90px,1fr))] border-b last:border-b-0"
+            >
+              <div className="flex items-center justify-center border-r px-2 py-2 text-sm">
+                {side === "right" ? "Right Eye" : "Left Eye"}
+              </div>
+              {(["sphere", "cyl", "axis", "va"] as const).map((field) => (
+                <div key={field} className="border-r p-2 last:border-r-0">
+                  <Input
+                    value={prescription[side][field]}
+                    onChange={(event) => onEyeChange(side, field, event.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <LabeledField label="ADD">
+          <Input
+            value={prescription.add}
+            onChange={(event) => onChange({ add: event.target.value })}
+          />
+        </LabeledField>
+        <LabeledField label="IPD">
+          <Input
+            value={prescription.ipd}
+            onChange={(event) => onChange({ ipd: event.target.value })}
+          />
+        </LabeledField>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <GlassFieldBlock label="Glass Features">
+          <GlassFeaturesMultiSelect
+            value={prescription.glassFeatures}
+            onChange={(value) => onChange({ glassFeatures: value })}
+          />
+        </GlassFieldBlock>
+        <GlassFieldBlock label="Lens Type">
+          <select
+            className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+            value={prescription.lensType}
+            onChange={(event) => onChange({ lensType: event.target.value })}
+          >
+            <option value="">Select Lens Type</option>
+            {lensTypeOptions.map((lensType) => (
+              <option key={lensType} value={lensType}>
+                {lensType}
+              </option>
+            ))}
+          </select>
+        </GlassFieldBlock>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <LabeledField label="IOP (Right Eye)">
+          <div className="flex">
+            <Input
+              className="rounded-r-none"
+              value={prescription.iopRight}
+              onChange={(event) => onChange({ iopRight: event.target.value })}
+            />
+            <span className="inline-flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm">
+              mmHg
+            </span>
+          </div>
+        </LabeledField>
+        <LabeledField label="IOP (Left Eye)">
+          <div className="flex">
+            <Input
+              className="rounded-r-none"
+              value={prescription.iopLeft}
+              onChange={(event) => onChange({ iopLeft: event.target.value })}
+            />
+            <span className="inline-flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm">
+              mmHg
+            </span>
+          </div>
+        </LabeledField>
+      </div>
+
+      <GlassFieldBlock label="Remarks">
+        <Textarea
+          className="min-h-16 bg-background"
+          placeholder="Type additional information..."
+          value={prescription.note}
+          onChange={(event) => onChange({ note: event.target.value })}
+        />
+      </GlassFieldBlock>
+    </div>
+  );
+}
+
+function GlassFieldBlock({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-2 rounded-md border bg-background p-2 text-sm md:grid-cols-[120px_minmax(0,1fr)] md:items-start">
+      <span className="font-medium text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function GlassFeaturesMultiSelect({
+  value,
+  onChange
+}: {
+  value: string[];
+  onChange: (value: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredOptions = glassFeatureOptions.filter((option) =>
+    normalizedQuery ? option.toLowerCase().includes(normalizedQuery) : true
+  );
+
+  function toggleOption(option: string) {
+    onChange(
+      value.includes(option)
+        ? value.filter((item) => item !== option)
+        : [...value, option]
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex min-h-9 flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1">
+        {value.map((item) => (
+          <span
+            key={item}
+            className="inline-flex items-center gap-1 rounded-sm bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
+          >
+            {item}
+            <button
+              aria-label={`Remove ${item}`}
+              className="rounded-sm hover:bg-primary-foreground/20"
+              type="button"
+              onClick={() => toggleOption(item)}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+        <input
+          className="h-7 min-w-[120px] flex-1 bg-transparent text-sm outline-none"
+          placeholder={value.length ? "Search..." : "Search glass features..."}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        {filteredOptions.map((option) => {
+          const selected = value.includes(option);
+
+          return (
+            <button
+              key={option}
+              className={cn(
+                "flex h-9 items-center justify-between rounded-md border px-3 text-left text-sm transition",
+                selected
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "bg-background hover:bg-muted"
+              )}
+              type="button"
+              onClick={() => toggleOption(option)}
+            >
+              {option}
+              {selected ? <Check className="h-4 w-4" /> : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -2152,7 +2525,7 @@ type MedicationSidebarProps = {
   value: string;
   waitingForDebounce: boolean;
   onAddMedicine: (item: MedicineSearchResult) => void;
-  onAddMedicineName: (name: string) => void;
+  onAddCustomMedicine: (medicine: RxMedicine) => void;
   onChange: (value: string) => void;
   onClear: () => void;
   onClose: () => void;
@@ -2169,25 +2542,20 @@ function MedicationSidebar({
   value,
   waitingForDebounce,
   onAddMedicine,
-  onAddMedicineName,
+  onAddCustomMedicine,
   onChange,
   onClear,
   onClose,
   onQueryChange,
   onStatus
 }: MedicationSidebarProps) {
-  const [sortMode, setSortMode] = useState<"alpha" | "frequent">("alpha");
-  const [alphabet, setAlphabet] = useState("ALL");
   const [searchType, setSearchType] = useState("Trade");
-  const [medicineType, setMedicineType] = useState("DROP");
+  const [customMedicine, setCustomMedicine] =
+    useState<CustomMedicineFormState>(initialCustomMedicineForm);
 
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredFavourites = medicationFavourites
-    .filter((item) => alphabet === "ALL" || item.toUpperCase().startsWith(alphabet))
-    .filter((item) => (normalizedQuery ? item.toLowerCase().includes(normalizedQuery) : true))
-    .sort((a, b) =>
-      sortMode === "alpha" ? a.localeCompare(b) : medicationFavourites.indexOf(a) - medicationFavourites.indexOf(b)
-    );
+  function updateCustomMedicine(patch: Partial<CustomMedicineFormState>) {
+    setCustomMedicine((current) => ({ ...current, ...patch }));
+  }
 
   function addCurrentQuery() {
     const text = query.trim();
@@ -2195,8 +2563,95 @@ function MedicationSidebar({
       onStatus("warning", "Type a medicine name first.");
       return;
     }
-    onAddMedicineName(text);
+    updateCustomMedicine({ brandName: text });
+    onQueryChange("");
+    onStatus("success", "Medicine name added to the custom form.");
   }
+
+  function resetCustomMedicine() {
+    setCustomMedicine(customMedicineDefaultsForType(customMedicine.medicineType));
+  }
+
+  function changeCustomMedicineType(medicineType: string) {
+    setCustomMedicine((current) =>
+      customMedicineDefaultsForType(medicineType, current.brandName)
+    );
+  }
+
+  function submitCustomMedicine(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const brandName = customMedicine.brandName.trim();
+    if (!brandName) {
+      onStatus("warning", "Type a medicine name first.");
+      return;
+    }
+
+    const medicineType = customMedicine.medicineType;
+    const duration = formatCustomMedicineDuration(customMedicine);
+    let dose = "";
+    let instruction = "";
+
+    if (medicineType === "Tab." || medicineType === "Cap.") {
+      dose = customMedicine.doseAmount === "None" ? "" : `Dose: ${customMedicine.doseAmount}`;
+      instruction = [
+        customMedicine.mealTiming,
+        customMedicine.frequency.trim(),
+        customMedicine.customText.trim()
+      ].filter(Boolean).join("\n");
+    } else if (medicineType === "Syp.") {
+      dose = customMedicine.spoon;
+      instruction = [
+        customMedicine.mealTiming,
+        customMedicine.frequency.trim() ? `${customMedicine.frequency.trim()} Times Daily` : ""
+      ].filter(Boolean).join("\n");
+    } else if (medicineType === "Inj.") {
+      dose = [customMedicine.quantity.trim(), customMedicine.unitType].filter(Boolean).join(" ");
+      instruction = customMedicine.frequency.trim();
+    } else if (medicineType === "Eye Drop") {
+      dose = customMedicine.dropsCount;
+      instruction = customMedicine.frequency.trim()
+        ? `${customMedicine.frequency.trim()} Times Daily`
+        : "";
+    } else if (medicineType === "Eye Gel") {
+      dose = "Apply Daily";
+      instruction = customMedicine.dailyFrequency.trim()
+        ? `${customMedicine.dailyFrequency.trim()} Times`
+        : "";
+    } else {
+      dose = [customMedicine.quantity.trim(), customMedicine.customText.trim()]
+        .filter(Boolean)
+        .join(" ");
+      instruction = customMedicine.frequency.trim();
+    }
+
+    onAddCustomMedicine({
+      brandName,
+      dosageForm: medicineType,
+      dose,
+      duration,
+      instruction,
+      note: customMedicine.remarks.trim()
+    });
+    resetCustomMedicine();
+    onStatus("success", "Custom medicine added.");
+  }
+
+  const selectedMedicineType = customMedicine.medicineType;
+  const isTabletCapsule =
+    selectedMedicineType === "Tab." || selectedMedicineType === "Cap.";
+  const isSyrup = selectedMedicineType === "Syp.";
+  const isInjection = selectedMedicineType === "Inj.";
+  const isEyeDrop = selectedMedicineType === "Eye Drop";
+  const isEyeGel = selectedMedicineType === "Eye Gel";
+  const isGenericMedicineType = ![
+    "Tab.",
+    "Cap.",
+    "Syp.",
+    "Inj.",
+    "Eye Drop",
+    "Eye Gel"
+  ].includes(selectedMedicineType);
 
   return (
     <RightDrawer title="Medication" onClose={onClose}>
@@ -2255,52 +2710,344 @@ function MedicationSidebar({
           </select>
         </div>
 
-        <div className="space-y-5">
-          <div className="flex justify-end">
-            <SortToggle sortMode={sortMode} onChange={setSortMode} />
-          </div>
-
-          <TagCloud
-            emptyMessage="No favourite medicines found."
-            tags={filteredFavourites}
-            onTagClick={onAddMedicineName}
-          />
-
-          <AlphabetFilter
-            filters={medicationAlphabetFilters}
-            value={alphabet}
-            onChange={setAlphabet}
-          />
-
-          <div className="flex flex-wrap gap-2">
-            {medicationTypeFilters.map((item) => (
-              <button
-                key={item}
-                className={cn(
-                  "h-8 rounded-sm px-4 text-sm font-medium",
-                  medicineType === item
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-primary/90 text-primary-foreground hover:bg-primary"
-                )}
-                type="button"
-                onClick={() => setMedicineType(item)}
+        <form className="rounded-md border bg-card" onSubmit={submitCustomMedicine}>
+          <div className="flex flex-wrap items-start gap-2 border-b p-3">
+            <button
+              aria-label="Medicine details"
+              className="mt-2 inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground"
+              type="button"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            <label className="space-y-1 text-xs font-medium">
+              <span>Medicine Type</span>
+              <select
+                className="h-12 w-36 rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                value={customMedicine.medicineType}
+                onChange={(event) => changeCustomMedicineType(event.target.value)}
               >
-                {item}
+                {customMedicineTypeOptions.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Input
+              className="mt-5 h-12 min-w-[220px] flex-1"
+              placeholder="Drug name"
+              value={customMedicine.brandName}
+              onChange={(event) => updateCustomMedicine({ brandName: event.target.value })}
+            />
+            {isTabletCapsule ? (
+              <button
+                className="mt-7 h-8 text-sm font-medium text-primary hover:underline"
+                type="button"
+                onClick={() => updateCustomMedicine({ customText: "Interval dose" })}
+              >
+                Add Interval Dose
               </button>
-            ))}
+            ) : null}
+            <Button
+              aria-label="Reset custom medicine"
+              className="mt-6"
+              size="icon"
+              type="button"
+              variant="secondary"
+              onClick={resetCustomMedicine}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
-        </div>
 
-        <div className="flex justify-end">
-          <button
-            className="inline-flex items-center gap-1 text-primary hover:underline"
-            type="button"
-            onClick={addCurrentQuery}
-          >
-            <Plus className="h-4 w-4" />
-            Add Custom Medicine
-          </button>
-        </div>
+          <div className="space-y-4 p-3">
+            {isTabletCapsule ? (
+              <div className="space-y-3">
+                <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+                  <label className="space-y-1 text-xs font-medium">
+                    <span>Dose</span>
+                    <select
+                      className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                      value={customMedicine.doseAmount}
+                      onChange={(event) =>
+                        updateCustomMedicine({ doseAmount: event.target.value })
+                      }
+                    >
+                      {tabletCapsuleDoseOptions.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1 text-xs font-medium">
+                    <span>Meal Timing</span>
+                    <select
+                      className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                      value={customMedicine.mealTiming}
+                      onChange={(event) =>
+                        updateCustomMedicine({ mealTiming: event.target.value })
+                      }
+                    >
+                      {mealTimingOptions.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1 text-xs font-medium">
+                    <span>Frequency</span>
+                    <Input
+                      className="h-9"
+                      placeholder="1+0+1"
+                      value={customMedicine.frequency}
+                      onChange={(event) =>
+                        updateCustomMedicine({ frequency: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-medium">
+                    <span>Custom Text</span>
+                    <Input
+                      className="h-9"
+                      placeholder="Custom instruction..."
+                      value={customMedicine.customText}
+                      onChange={(event) =>
+                        updateCustomMedicine({ customText: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
+            {isSyrup ? (
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Spoon</span>
+                  <select
+                    className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                    value={customMedicine.spoon}
+                    onChange={(event) => updateCustomMedicine({ spoon: event.target.value })}
+                  >
+                    {syrupSpoonOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Meal Timing</span>
+                  <select
+                    className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                    value={customMedicine.mealTiming}
+                    onChange={(event) =>
+                      updateCustomMedicine({ mealTiming: event.target.value })
+                    }
+                  >
+                    {mealTimingOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Times Daily</span>
+                  <Input
+                    className="h-9"
+                    placeholder="3"
+                    value={customMedicine.frequency}
+                    onChange={(event) => updateCustomMedicine({ frequency: event.target.value })}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {isInjection ? (
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Unit Type</span>
+                  <select
+                    className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                    value={customMedicine.unitType}
+                    onChange={(event) => updateCustomMedicine({ unitType: event.target.value })}
+                  >
+                    {injectionUnitOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Quantity</span>
+                  <Input
+                    className="h-9"
+                    min="0"
+                    type="number"
+                    value={customMedicine.quantity}
+                    onChange={(event) => updateCustomMedicine({ quantity: event.target.value })}
+                  />
+                </label>
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Frequency</span>
+                  <Input
+                    className="h-9"
+                    placeholder="IM Stat"
+                    value={customMedicine.frequency}
+                    onChange={(event) => updateCustomMedicine({ frequency: event.target.value })}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {isEyeDrop ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Drops Count</span>
+                  <select
+                    className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                    value={customMedicine.dropsCount}
+                    onChange={(event) =>
+                      updateCustomMedicine({ dropsCount: event.target.value })
+                    }
+                  >
+                    {eyeDropCountOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Times Daily</span>
+                  <Input
+                    className="h-9"
+                    placeholder="4"
+                    value={customMedicine.frequency}
+                    onChange={(event) => updateCustomMedicine({ frequency: event.target.value })}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {isEyeGel ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Daily Frequency</span>
+                  <Input
+                    className="h-9"
+                    placeholder="2"
+                    value={customMedicine.dailyFrequency}
+                    onChange={(event) =>
+                      updateCustomMedicine({ dailyFrequency: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {isGenericMedicineType ? (
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Quantity</span>
+                  <Input
+                    className="h-9"
+                    value={customMedicine.quantity}
+                    onChange={(event) => updateCustomMedicine({ quantity: event.target.value })}
+                  />
+                </label>
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Dose Text</span>
+                  <Input
+                    className="h-9"
+                    placeholder="Apply"
+                    value={customMedicine.customText}
+                    onChange={(event) =>
+                      updateCustomMedicine({ customText: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="space-y-1 text-xs font-medium">
+                  <span>Frequency</span>
+                  <Input
+                    className="h-9"
+                    placeholder="2 Times Daily"
+                    value={customMedicine.frequency}
+                    onChange={(event) => updateCustomMedicine({ frequency: event.target.value })}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto] md:items-end">
+              <label className="space-y-1 text-xs font-medium">
+                <span>Duration Value</span>
+                <Input
+                  className="h-9"
+                  min="0"
+                  type="number"
+                  value={customMedicine.durationValue}
+                  onChange={(event) =>
+                    updateCustomMedicine({ durationValue: event.target.value })
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium">
+                <span>Duration Type</span>
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                  value={customMedicine.durationUnit}
+                  onChange={(event) => updateCustomMedicine({ durationUnit: event.target.value })}
+                >
+                  {customMedicineDurationUnitOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {(isTabletCapsule || isEyeDrop || isGenericMedicineType) ? (
+                <label className="flex items-end gap-2 pb-2 text-sm font-medium">
+                  <input
+                    className="h-4 w-4 accent-primary"
+                    type="checkbox"
+                    checked={customMedicine.continueMedicine}
+                    onChange={(event) =>
+                      updateCustomMedicine({ continueMedicine: event.target.checked })
+                    }
+                  />
+                  Continue
+                </label>
+              ) : null}
+            </div>
+
+            <Textarea
+              className="min-h-20 bg-background"
+              placeholder="Remarks..."
+              value={customMedicine.remarks}
+              onChange={(event) => updateCustomMedicine({ remarks: event.target.value })}
+            />
+
+            <div className="flex justify-between gap-2">
+              <button
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                type="button"
+                onClick={addCurrentQuery}
+              >
+                <Plus className="h-4 w-4" />
+                Use search text
+              </button>
+              <Button type="submit">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Custom Medicine
+              </Button>
+            </div>
+          </div>
+        </form>
 
         {medicines.length ? (
           <div className="rounded-md border">
@@ -2308,9 +3055,9 @@ function MedicationSidebar({
             <div className="divide-y">
               {medicines.map((item, index) => (
                 <div key={`${item.brandName}-${index}`} className="px-3 py-2 text-sm">
-                  <div className="font-medium">{item.brandName}</div>
+                  <div className="font-medium">{formatMedicineTitle(item)}</div>
                   <div className="text-xs text-muted-foreground">
-                    {item.dose} - {item.duration} - {item.instruction}
+                    {formatMedicineSummary(item)}
                   </div>
                 </div>
               ))}
@@ -2581,27 +3328,26 @@ function FollowUpSidebar({
 }
 
 type ReferralSidebarProps = {
-  form: ReferralFormState;
   referrals: ReferralEntry[];
-  onAddReferral: (direction: "to" | "from") => void;
+  onAddReferralRow: (direction: "to" | "from") => void;
   onClose: () => void;
   onRemoveReferral: (id: string) => void;
-  onUpdateForm: (patch: Partial<ReferralFormState>) => void;
+  onUpdateReferral: (id: string, patch: Partial<Omit<ReferralEntry, "id">>) => void;
 };
 
 function ReferralSidebar({
-  form,
   referrals,
-  onAddReferral,
+  onAddReferralRow,
   onClose,
   onRemoveReferral,
-  onUpdateForm
+  onUpdateReferral
 }: ReferralSidebarProps) {
   const [tab, setTab] = useState<"to" | "from">("to");
+  const visibleReferrals = referrals.filter((item) => item.direction === tab);
 
   return (
     <RightDrawer title="Referral" onClose={onClose}>
-      <div className="space-y-10">
+      <div className="space-y-5">
         <div className="border-b">
           <div className="flex min-w-0 overflow-x-auto">
             <TabButton active={tab === "to"} onClick={() => setTab("to")}>
@@ -2613,71 +3359,111 @@ function ReferralSidebar({
           </div>
         </div>
 
-        <div className="rounded-md border">
-          <div className="border-b bg-muted px-3 py-2 text-center text-sm">Selected Referrals</div>
-          <div className="grid grid-cols-[1fr_1fr_1fr_1fr_72px] border-b text-center text-sm font-semibold">
-            <div className="border-r px-2 py-2">Name</div>
-            <div className="border-r px-2 py-2">Phone Number</div>
-            <div className="border-r px-2 py-2">Specialty</div>
-            <div className="border-r px-2 py-2">Additional Info</div>
-            <div className="px-2 py-2">Delete</div>
-          </div>
-          {referrals.length ? (
-            referrals.map((item) => (
-              <div
-                key={item.id}
-                className="grid grid-cols-[1fr_1fr_1fr_1fr_72px] border-b text-sm last:border-b-0"
-              >
-                <div className="border-r px-2 py-2">{item.name || "-"}</div>
-                <div className="border-r px-2 py-2">{item.phone || "-"}</div>
-                <div className="border-r px-2 py-2">{item.specialty || "-"}</div>
-                <div className="border-r px-2 py-2">{item.additionalInfo || "-"}</div>
-                <button
-                  aria-label="Delete referral"
-                  className="flex items-center justify-center px-2 py-2 text-destructive hover:bg-muted"
-                  type="button"
-                  onClick={() => onRemoveReferral(item.id)}
+        <div className="overflow-x-auto rounded-md border">
+          <div className="min-w-[820px]">
+            <div className="border-b bg-muted px-3 py-2 text-center text-sm font-medium">
+              {tab === "to" ? "Refer To" : "Referred From"} - Editable Table
+            </div>
+            <div className="grid grid-cols-[44px_1fr_150px_170px_1.2fr_112px_56px] border-b text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <div className="border-r px-2 py-2">#</div>
+              <div className="border-r px-2 py-2">Name</div>
+              <div className="border-r px-2 py-2">Phone Number</div>
+              <div className="border-r px-2 py-2">Specialty</div>
+              <div className="border-r px-2 py-2">Additional Info</div>
+              <div className="border-r px-2 py-2">Direction</div>
+              <div className="px-2 py-2">Delete</div>
+            </div>
+            {visibleReferrals.length ? (
+              visibleReferrals.map((item, index) => (
+                <div
+                  key={item.id}
+                  className="grid grid-cols-[44px_1fr_150px_170px_1.2fr_112px_56px] border-b text-sm last:border-b-0"
                 >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                  <div className="flex items-center justify-center border-r bg-muted/30 px-2 py-1 text-muted-foreground">
+                    {index + 1}
+                  </div>
+                  <ReferralTableInput
+                    ariaLabel="Referral name"
+                    value={item.name}
+                    onChange={(value) => onUpdateReferral(item.id, { name: value })}
+                  />
+                  <ReferralTableInput
+                    ariaLabel="Referral phone number"
+                    value={item.phone}
+                    onChange={(value) => onUpdateReferral(item.id, { phone: value })}
+                  />
+                  <ReferralTableInput
+                    ariaLabel="Referral specialty"
+                    value={item.specialty}
+                    onChange={(value) => onUpdateReferral(item.id, { specialty: value })}
+                  />
+                  <ReferralTableInput
+                    ariaLabel="Referral additional info"
+                    value={item.additionalInfo}
+                    onChange={(value) => onUpdateReferral(item.id, { additionalInfo: value })}
+                  />
+                  <div className="border-r p-1">
+                    <select
+                      aria-label="Referral direction"
+                      className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-primary"
+                      value={item.direction}
+                      onChange={(event) =>
+                        onUpdateReferral(item.id, {
+                          direction: event.target.value as ReferralEntry["direction"]
+                        })
+                      }
+                    >
+                      <option value="to">Refer To</option>
+                      <option value="from">From</option>
+                    </select>
+                  </div>
+                  <button
+                    aria-label="Delete referral"
+                    className="flex items-center justify-center px-2 py-2 text-destructive hover:bg-muted"
+                    type="button"
+                    onClick={() => onRemoveReferral(item.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="border-b px-3 py-6 text-center text-sm text-muted-foreground">
+                No rows. Add a row to start editing.
               </div>
-            ))
-          ) : (
-            <div className="border-b px-3 py-3 text-center text-sm text-muted-foreground">
-              No records found
-            </div>
-          )}
-
-          <div className="space-y-3 bg-muted/50 p-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <Input
-                placeholder="Name"
-                value={form.name}
-                onChange={(event) => onUpdateForm({ name: event.target.value })}
-              />
-              <Input
-                placeholder="Phone Number"
-                value={form.phone}
-                onChange={(event) => onUpdateForm({ phone: event.target.value })}
-              />
-              <Input
-                placeholder="Specialty"
-                value={form.specialty}
-                onChange={(event) => onUpdateForm({ specialty: event.target.value })}
-              />
-              <Input
-                placeholder="Additional Info"
-                value={form.additionalInfo}
-                onChange={(event) => onUpdateForm({ additionalInfo: event.target.value })}
-              />
-            </div>
-            <Button type="button" onClick={() => onAddReferral(tab)}>
-              Add Referral
-            </Button>
+            )}
           </div>
+        </div>
+
+        <div className="flex justify-end">
+          <Button type="button" onClick={() => onAddReferralRow(tab)}>
+            <Plus className="h-4 w-4" />
+            Add Row
+          </Button>
         </div>
       </div>
     </RightDrawer>
+  );
+}
+
+function ReferralTableInput({
+  ariaLabel,
+  value,
+  onChange
+}: {
+  ariaLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="border-r p-1">
+      <input
+        aria-label={ariaLabel}
+        className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-primary"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
   );
 }
 
@@ -2932,51 +3718,6 @@ function TriStateControl({
           {option.icon ?? option.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-function AllergyDetailRow({
-  label,
-  value,
-  details,
-  onValueChange,
-  onDetailsChange
-}: {
-  label: string;
-  value: TriStateValue;
-  details: string;
-  onValueChange: (value: TriStateValue) => void;
-  onDetailsChange: (value: string) => void;
-}) {
-  return (
-    <label className="space-y-1">
-      <FieldLabel>{label}</FieldLabel>
-      <div className="flex gap-2">
-        <TriStateControl value={value} onChange={onValueChange} />
-        <Input
-          placeholder="Type details..."
-          value={details}
-          onChange={(event) => onDetailsChange(event.target.value)}
-        />
-      </div>
-    </label>
-  );
-}
-
-function AllergyChoice({
-  label,
-  value,
-  onChange
-}: {
-  label: string;
-  value: TriStateValue;
-  onChange: (value: TriStateValue) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <FieldLabel>{label}</FieldLabel>
-      <TriStateControl value={value} onChange={onChange} />
     </div>
   );
 }
@@ -3508,6 +4249,137 @@ function splitTextLines(value: string) {
     .filter(Boolean);
 }
 
+function formatCustomMedicineDuration(medicine: CustomMedicineFormState) {
+  const value = medicine.durationValue.trim();
+  const duration = value
+    ? `${value} ${Number(value) === 1 ? medicine.durationUnit : `${medicine.durationUnit}s`}`
+    : "";
+
+  return [duration, medicine.continueMedicine ? "Continue" : ""].filter(Boolean).join("\n");
+}
+
+function formatMedicineTitle(item: RxMedicine) {
+  return [item.dosageForm, item.brandName, item.strength]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getMedicineDetailLines(item: RxMedicine) {
+  const dose = item.dose.trim();
+  const instruction = item.instruction.trim();
+  const duration = item.duration.trim();
+  const note = item.note?.trim();
+
+  if (item.dosageForm === "Eye Drop") {
+    const doseLine = [dose, instruction, duration].filter(Boolean).join(" x ");
+    return [doseLine, note ? `Remarks: ${note}` : ""].filter(Boolean);
+  }
+
+  if (item.dosageForm === "Eye Gel") {
+    const durationText = duration ? `for ${duration}` : "";
+    const doseLine = [dose, instruction, durationText].filter(Boolean).join(" ");
+    return [doseLine, note ? `Remarks: ${note}` : ""].filter(Boolean);
+  }
+
+  if (item.dosageForm === "Inj.") {
+    const doseLine = [dose, instruction, duration].filter(Boolean).join(" ");
+    return [doseLine, note ? `Remarks: ${note}` : ""].filter(Boolean);
+  }
+
+  return [
+    dose,
+    ...instruction.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    ...duration.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    note ? `Remarks: ${note}` : ""
+  ].filter(Boolean);
+}
+
+function formatMedicineSummary(item: RxMedicine) {
+  return getMedicineDetailLines(item).join(" - ");
+}
+
+function referralHasContent(referral: ReferralEntry) {
+  return Boolean(
+    referral.name.trim() ||
+      referral.phone.trim() ||
+      referral.specialty.trim() ||
+      referral.additionalInfo.trim()
+  );
+}
+
+function glassPrescriptionHasContent(prescription: GlassPrescriptionState) {
+  return Object.values(prescription.right).some(Boolean)
+    || Object.values(prescription.left).some(Boolean)
+    || Boolean(prescription.add)
+    || Boolean(prescription.ipd)
+    || prescription.glassFeatures.length > 0
+    || Boolean(prescription.lensType)
+    || Boolean(prescription.iopRight)
+    || Boolean(prescription.iopLeft)
+    || Boolean(prescription.note.trim());
+}
+
+function getGlassPrescriptionPreview(prescription: GlassPrescriptionState) {
+  return [
+    prescription.right.sphere,
+    prescription.right.cyl,
+    prescription.left.sphere,
+    prescription.left.cyl,
+    prescription.glassFeatures.join(" + "),
+    prescription.lensType,
+    prescription.iopRight,
+    prescription.iopLeft,
+    prescription.note
+  ]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function buildGlassPrescriptionText(vision: VisionState) {
+  const sections = [
+    formatGlassPrescriptionBlock("Primary Glass Prescription", vision),
+    vision.secondaryGlass
+      ? formatGlassPrescriptionBlock("Secondary Glass Prescription", vision.secondaryGlass)
+      : ""
+  ].filter(Boolean);
+
+  return sections.join("\n\n");
+}
+
+function formatGlassPrescriptionBlock(title: string, prescription: GlassPrescriptionState) {
+  if (!glassPrescriptionHasContent(prescription)) return "";
+
+  return [
+    title,
+    formatEyePowerLine("Right Eye", prescription.right),
+    formatEyePowerLine("Left Eye", prescription.left),
+    prescription.add ? `ADD: ${prescription.add}` : "",
+    prescription.ipd ? `IPD: ${prescription.ipd}` : "",
+    prescription.glassFeatures.length
+      ? `Glass Features: ${prescription.glassFeatures.join(" + ")}`
+      : "",
+    prescription.lensType ? `Lens Type: ${prescription.lensType}` : "",
+    prescription.iopRight ? `IOP Right Eye: ${prescription.iopRight} mmHg` : "",
+    prescription.iopLeft ? `IOP Left Eye: ${prescription.iopLeft} mmHg` : "",
+    prescription.note ? `Remarks: ${prescription.note}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatEyePowerLine(label: string, eye: EyePower) {
+  const values = [
+    eye.sphere ? `Sphere ${eye.sphere}` : "",
+    eye.cyl ? `CYL ${eye.cyl}` : "",
+    eye.axis ? `Axis ${eye.axis}` : "",
+    eye.va ? `VA ${eye.va}` : ""
+  ].filter(Boolean);
+
+  return values.length ? `${label}: ${values.join(", ")}` : "";
+}
+
 function parseOptionalInteger(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -3600,6 +4472,25 @@ function formatTriState(value: TriStateValue) {
   return "";
 }
 
+function buildOphthalmicFindingLines(findings: FindingsState) {
+  const lines = ophthalmicFindingRows
+    .map((row) => {
+      const rightValue = String(findings[row.rightKey] ?? "").trim();
+      const leftValue = String(findings[row.leftKey] ?? "").trim();
+
+      if (!rightValue && !leftValue) return "";
+
+      return `${row.label}: Right Eye ${rightValue || "-"} | Left Eye ${leftValue || "-"}`;
+    })
+    .filter(Boolean);
+
+  if (findings.ophthalmicRemark.trim()) {
+    lines.push(`Ophthalmic Remark: ${findings.ophthalmicRemark.trim()}`);
+  }
+
+  return lines;
+}
+
 function buildFindingsText(findings: FindingsState, note: string) {
   const lines = [
     findings.bpSystolic || findings.bpDiastolic
@@ -3623,22 +4514,7 @@ function buildFindingsText(findings: FindingsState, note: string) {
     formatTriState(findings.diabetes)
       ? `Diabetes: ${formatTriState(findings.diabetes)} ${findings.diabetesDetails}`.trim()
       : "",
-    formatTriState(findings.foodAllergy)
-      ? `Food Allergy: ${formatTriState(findings.foodAllergy)} ${findings.foodAllergyDetails}`.trim()
-      : "",
-    formatTriState(findings.medicineAllergy)
-      ? `Medicine Allergy: ${formatTriState(findings.medicineAllergy)} ${findings.medicineAllergyDetails}`.trim()
-      : "",
-    formatTriState(findings.pollenAllergy)
-      ? `Pollen Allergy: ${formatTriState(findings.pollenAllergy)}`
-      : "",
-    formatTriState(findings.dustAllergy)
-      ? `Dust Allergy: ${formatTriState(findings.dustAllergy)}`
-      : "",
-    formatTriState(findings.mitesAllergy)
-      ? `Mites Allergy: ${formatTriState(findings.mitesAllergy)}`
-      : "",
-    findings.otherAllergyDetails ? `Other Allergy: ${findings.otherAllergyDetails}` : "",
+    ...buildOphthalmicFindingLines(findings),
     findings.gynaeMenarche ? `Menarche: ${findings.gynaeMenarche} years` : "",
     findings.gynaeLmp ? `LMP: ${findings.gynaeLmp}` : "",
     findings.gynaeMpFirst || findings.gynaeMpSecond
@@ -3688,19 +4564,26 @@ function buildPrescriptionText(
   referrals: ReferralEntry[]
 ) {
   const medicineLines = medicines.map(
-    (item, index) =>
-      `${index + 1}. ${item.brandName} ${item.strength ?? ""} - ${item.dose} - ${item.duration} - ${item.instruction}`
+    (item, index) => {
+      const detailLines = getMedicineDetailLines(item);
+      return `${index + 1}. ${formatMedicineTitle(item)}${
+        detailLines.length ? `\n${detailLines.join("\n")}` : ""
+      }`;
+    }
   );
   const findingsText = buildFindingsText(findings, notes.findings);
-  const referralLines = referrals.map(
-    (item, index) =>
-      `${index + 1}. ${item.direction === "to" ? "Refer To" : "Referred From"}: ${[
-        item.name,
-        item.phone,
-        item.specialty,
-        item.additionalInfo
-      ].filter(Boolean).join(" - ")}`
-  );
+  const glassPrescriptionText = buildGlassPrescriptionText(vision);
+  const referralLines = referrals
+    .filter(referralHasContent)
+    .map(
+      (item, index) =>
+        `${index + 1}. ${item.direction === "to" ? "Refer To" : "Referred From"}: ${[
+          item.name,
+          item.phone,
+          item.specialty,
+          item.additionalInfo
+        ].filter(Boolean).join(" - ")}`
+    );
 
   return [
     `Patient: ${patient?.name ?? "No patient selected"}`,
@@ -3712,7 +4595,7 @@ function buildPrescriptionText(
     medicineLines.length || medicationNote
       ? `Medication:\n${[medicineLines.join("\n"), medicationNote].filter(Boolean).join("\n")}`
       : "",
-    vision.note ? `Vision/IOP/Glass:\n${vision.note}` : "",
+    glassPrescriptionText ? `Glass Prescription:\n${glassPrescriptionText}` : "",
     notes.advice ? `Advice:\n${notes.advice}` : "",
     followUpDate || notes.followUp
       ? `Follow-Up:\n${[followUpDate, notes.followUp].filter(Boolean).join("\n")}`
