@@ -317,7 +317,7 @@ const ophthalmicFindingRows: Array<{
     rightKey: "ophthalmicVisualAcuityRight",
     leftKey: "ophthalmicVisualAcuityLeft",
     inputType: "select",
-    options: ["9", "6/12", "6/18", "6/24", "6/36", "6/60", "4/60", "3/60", "<6/60", "CF-2ft", "CF-1ft", "HM", "PL"]
+    options: ["6/6", "6/9", "6/12", "6/18", "6/24", "6/36", "6/60", "4/60", "3/60", "<6/60", "CF-2ft", "CF-1ft", "HM", "PL"]
   },
   {
     label: "Orbit & Adnexa",
@@ -1385,7 +1385,7 @@ export function PrescriptionBuilder() {
               backgroundSize: "22px 22px"
             }}
           >
-            <div className="no-print absolute left-3 top-6 hidden w-11 flex-col overflow-hidden rounded-md border bg-card shadow-soft md:flex">
+            <div className="no-print absolute left-6 top-6 hidden w-11 flex-col overflow-hidden rounded-md border bg-card shadow-soft md:flex">
               <FloatingPadButton title="All Drafts" onClick={() => showStatus("success", "All drafts option selected.")}>
                 <FileText className="h-4 w-4" />
               </FloatingPadButton>
@@ -1400,7 +1400,7 @@ export function PrescriptionBuilder() {
               </FloatingPadButton>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:pl-12">
+            <div className="grid gap-4 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:pl-16">
               <div className="md:border-r md:pr-4">
                 {leftPanels.map((panel) => (
                   <PrescriptionOptionTile
@@ -1894,94 +1894,73 @@ function FindingsSidebar({
         {tab === "Basic" ? (
           <div className="overflow-hidden rounded-md border bg-card shadow-sm">
             <FindingsSection title="Preliminary">
+              <div className="grid gap-4 xl:grid-cols-[1.2fr_0.85fr_0.95fr_1.8fr_0.85fr]">
+                <div className="space-y-1">
+                  <FieldLabel>B. Pressure</FieldLabel>
+                  <div className="grid grid-cols-2 overflow-hidden rounded-md border">
+                    <Input
+                      className="rounded-none border-0 border-r"
+                      placeholder="Sys"
+                      value={findings.bpSystolic}
+                      onChange={(event) => onChange({ bpSystolic: event.target.value })}
+                    />
+                    <Input
+                      className="rounded-none border-0"
+                      placeholder="Dias"
+                      value={findings.bpDiastolic}
+                      onChange={(event) => onChange({ bpDiastolic: event.target.value })}
+                    />
+                  </div>
+                </div>
+                <FindingInput
+                  label="Temp."
+                  value={findings.temperature}
+                  onChange={(value) => onChange({ temperature: value })}
+                />
+                <FindingInput
+                  label="Weight (kg)"
+                  value={findings.weight}
+                  onChange={(value) => onChange({ weight: value })}
+                />
+                <div className="space-y-1">
+                  <FieldLabel>Height</FieldLabel>
+                  <div className="grid grid-cols-[1fr_1fr_auto_1fr] items-center gap-2">
+                    <Input
+                      placeholder="feet"
+                      value={findings.heightFeet}
+                      onChange={(event) => onChange({ heightFeet: event.target.value })}
+                    />
+                    <Input
+                      placeholder="inch"
+                      value={findings.heightInch}
+                      onChange={(event) => onChange({ heightInch: event.target.value })}
+                    />
+                    <span className="text-lg font-semibold">/</span>
+                    <Input
+                      placeholder="cm"
+                      value={findings.heightCm}
+                      onChange={(event) => onChange({ heightCm: event.target.value })}
+                    />
+                  </div>
+                </div>
+                <FindingInput
+                  label="RBS"
+                  value={findings.rbs}
+                  onChange={(value) => onChange({ rbs: value })}
+                />
+              </div>
+            </FindingsSection>
+
+            <FindingsSection title="Ophthalmic Findings">
+              <OphthalmicFindingsTable findings={findings} onChange={onChange} />
+            </FindingsSection>
+          </div>
+        ) : tab === "Gynae & Obs" ? (
+          <GynaeObsForm findings={findings} onChange={onChange} />
+        ) : (
+          <div className="overflow-hidden rounded-md border bg-card shadow-sm">
+            <FindingsSection title="Other">
               <div className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-4">
-                  <div className="space-y-1">
-                    <FieldLabel>B. Pressure</FieldLabel>
-                    <div className="grid grid-cols-2 overflow-hidden rounded-md border">
-                      <Input
-                        className="rounded-none border-0 border-r"
-                        placeholder="up"
-                        value={findings.bpSystolic}
-                        onChange={(event) => onChange({ bpSystolic: event.target.value })}
-                      />
-                      <Input
-                        className="rounded-none border-0"
-                        placeholder="down"
-                        value={findings.bpDiastolic}
-                        onChange={(event) => onChange({ bpDiastolic: event.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <FindingInput
-                    label="Temp."
-                    value={findings.temperature}
-                    onChange={(value) => onChange({ temperature: value })}
-                  />
-                  <FindingInput
-                    label="Pulse"
-                    value={findings.pulse}
-                    onChange={(value) => onChange({ pulse: value })}
-                  />
-                  <FindingInput
-                    label="SpO2"
-                    value={findings.spo2}
-                    onChange={(value) => onChange({ spo2: value })}
-                  />
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-3">
-                  <FindingInput
-                    label="Weight (kg)"
-                    value={findings.weight}
-                    onChange={(value) => onChange({ weight: value })}
-                  />
-                  <div className="space-y-1">
-                    <FieldLabel>Height</FieldLabel>
-                    <div className="grid grid-cols-[1fr_1fr_auto_1fr] items-center gap-2">
-                      <Input
-                        placeholder="feet"
-                        value={findings.heightFeet}
-                        onChange={(event) => onChange({ heightFeet: event.target.value })}
-                      />
-                      <Input
-                        placeholder="inch"
-                        value={findings.heightInch}
-                        onChange={(event) => onChange({ heightInch: event.target.value })}
-                      />
-                      <span className="text-lg font-semibold">/</span>
-                      <Input
-                        placeholder="cm"
-                        value={findings.heightCm}
-                        onChange={(event) => onChange({ heightCm: event.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <FindingInput
-                    label="Respiratory Rate"
-                    value={findings.respiratoryRate}
-                    onChange={(value) => onChange({ respiratoryRate: value })}
-                  />
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-3">
-                  <FindingInput
-                    label="RBS"
-                    value={findings.rbs}
-                    onChange={(value) => onChange({ rbs: value })}
-                  />
-                  <FindingInput
-                    label="FBS"
-                    value={findings.fbs}
-                    onChange={(value) => onChange({ fbs: value })}
-                  />
-                  <FindingInput
-                    label="2-Hrs-ABF"
-                    value={findings.twoHourAbf}
-                    onChange={(value) => onChange({ twoHourAbf: value })}
-                  />
-                </div>
-
                 <div className="grid gap-4 lg:grid-cols-3">
                   <div className="space-y-1">
                     <FieldLabel>OFC</FieldLabel>
@@ -1999,10 +1978,18 @@ function FindingsSidebar({
                     </div>
                   </div>
                   <FindingInput
+                    label="Pulse (bpm)"
+                    value={findings.pulse}
+                    onChange={(value) => onChange({ pulse: value })}
+                  />
+                  <FindingInput
                     label="PFR (L/min.)"
                     value={findings.pfr}
                     onChange={(value) => onChange({ pfr: value })}
                   />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-3">
                   <div className="space-y-1">
                     <FieldLabel>Diabetes</FieldLabel>
                     <div className="flex gap-2">
@@ -2016,24 +2003,32 @@ function FindingsSidebar({
                       />
                     </div>
                   </div>
+                  <FindingInput
+                    label="Respiratory Rate"
+                    value={findings.respiratoryRate}
+                    onChange={(value) => onChange({ respiratoryRate: value })}
+                  />
+                  <FindingInput
+                    label="FBS (mmol/l)"
+                    value={findings.fbs}
+                    onChange={(value) => onChange({ fbs: value })}
+                  />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <FindingInput
+                    label="2-Hrs-ABF (mmol/l)"
+                    value={findings.twoHourAbf}
+                    onChange={(value) => onChange({ twoHourAbf: value })}
+                  />
+                  <FindingInput
+                    label="SpO2 (%)"
+                    value={findings.spo2}
+                    onChange={(value) => onChange({ spo2: value })}
+                  />
                 </div>
               </div>
             </FindingsSection>
-
-            <FindingsSection title="Ophthalmic Findings">
-              <OphthalmicFindingsTable findings={findings} onChange={onChange} />
-            </FindingsSection>
-          </div>
-        ) : tab === "Gynae & Obs" ? (
-          <GynaeObsForm findings={findings} onChange={onChange} />
-        ) : (
-          <div className="rounded-md border border-dashed p-6">
-            <Textarea
-              className="min-h-48 bg-background"
-              placeholder={`Type ${tab.toLowerCase()} findings...`}
-              value={note}
-              onChange={(event) => onNoteChange(event.target.value)}
-            />
           </div>
         )}
 

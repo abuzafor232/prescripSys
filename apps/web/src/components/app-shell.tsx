@@ -10,7 +10,6 @@ import {
   Menu,
   Pill,
   Printer,
-  Search,
   Settings,
   UsersRound
 } from "lucide-react";
@@ -205,16 +204,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <button
-              className="hidden h-9 min-w-72 items-center gap-2 rounded-md border bg-card px-3 text-left text-sm text-muted-foreground md:flex"
-              onClick={() => window.dispatchEvent(new Event("open-command-palette"))}
-            >
-              <Search className="h-4 w-4" />
-              Search
-              <kbd className="ml-auto rounded border bg-muted px-1.5 py-0.5 text-[10px]">
-                Ctrl K
-              </kbd>
-            </button>
           </div>
           <div className="flex items-center gap-2">
             <Badge className="hidden md:inline-flex">{user?.fullName ?? "Signed in"}</Badge>
