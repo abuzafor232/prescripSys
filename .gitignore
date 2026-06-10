@@ -17,3 +17,7 @@ packages/shared/src/**/*.js.map
 packages/shared/src/**/*.d.ts
 context.md
 .codex-logs
+
+# Docker Desktop disk images
+*.vhdx
+DockerDesktopWSL/
