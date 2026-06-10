@@ -1,10 +1,8 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  ArrowDownAZ,
-  ArrowDown10,
   Ban,
   CalendarDays,
   Check,
@@ -14,7 +12,6 @@ import {
   Copy,
   Eraser,
   FileText,
-  Layers,
   Loader2,
   Plus,
   Printer,
@@ -119,6 +116,10 @@ type EyePower = {
   va: string;
 };
 
+type GlassPowerPickerTarget =
+  | { kind: "eye"; side: "right" | "left"; field: keyof EyePower }
+  | { kind: "add" };
+
 type TriStateValue = "no" | "na" | "yes" | "";
 
 type FindingsState = {
@@ -142,6 +143,8 @@ type FindingsState = {
   spo2: string;
   ophthalmicVisualAcuityRight: string;
   ophthalmicVisualAcuityLeft: string;
+  ophthalmicVisualAcuityRightNote: string;
+  ophthalmicVisualAcuityLeftNote: string;
   ophthalmicOrbitAdnexaRight: string;
   ophthalmicOrbitAdnexaLeft: string;
   ophthalmicPupilRight: string;
@@ -156,6 +159,8 @@ type FindingsState = {
   ophthalmicIopLeft: string;
   ophthalmicSptRight: string;
   ophthalmicSptLeft: string;
+  ophthalmicSptRightNote: string;
+  ophthalmicSptLeftNote: string;
   ophthalmicOthersRight: string;
   ophthalmicOthersLeft: string;
   ophthalmicRemark: string;
@@ -264,6 +269,8 @@ const initialFindings: FindingsState = {
   spo2: "",
   ophthalmicVisualAcuityRight: "",
   ophthalmicVisualAcuityLeft: "",
+  ophthalmicVisualAcuityRightNote: "",
+  ophthalmicVisualAcuityLeftNote: "",
   ophthalmicOrbitAdnexaRight: "",
   ophthalmicOrbitAdnexaLeft: "",
   ophthalmicPupilRight: "",
@@ -278,6 +285,8 @@ const initialFindings: FindingsState = {
   ophthalmicIopLeft: "",
   ophthalmicSptRight: "",
   ophthalmicSptLeft: "",
+  ophthalmicSptRightNote: "",
+  ophthalmicSptLeftNote: "",
   ophthalmicOthersRight: "",
   ophthalmicOthersLeft: "",
   ophthalmicRemark: "",
@@ -309,6 +318,8 @@ const ophthalmicFindingRows: Array<{
   label: string;
   rightKey: keyof FindingsState;
   leftKey: keyof FindingsState;
+  rightNoteKey?: keyof FindingsState;
+  leftNoteKey?: keyof FindingsState;
   inputType?: "select";
   options?: string[];
 }> = [
@@ -316,6 +327,8 @@ const ophthalmicFindingRows: Array<{
     label: "Visual Acuity",
     rightKey: "ophthalmicVisualAcuityRight",
     leftKey: "ophthalmicVisualAcuityLeft",
+    rightNoteKey: "ophthalmicVisualAcuityRightNote",
+    leftNoteKey: "ophthalmicVisualAcuityLeftNote",
     inputType: "select",
     options: ["6/6", "6/9", "6/12", "6/18", "6/24", "6/36", "6/60", "4/60", "3/60", "<6/60", "CF-2ft", "CF-1ft", "HM", "PL"]
   },
@@ -341,6 +354,8 @@ const ophthalmicFindingRows: Array<{
     label: "SPT",
     rightKey: "ophthalmicSptRight",
     leftKey: "ophthalmicSptLeft",
+    rightNoteKey: "ophthalmicSptRightNote",
+    leftNoteKey: "ophthalmicSptLeftNote",
     inputType: "select",
     options: ["Patent", "Partially Patent", "Blocked"]
   },
@@ -396,6 +411,47 @@ const occupations = [
 
 const glassFeatureOptions = ["White", "Anti Reflecting", "PhotoSun", "Blue Cut"];
 const lensTypeOptions = ["Unifocal", "Bifocal", "Progressive/Verilux"];
+const glassPowerStepOptions = Array.from(
+  { length: 40 },
+  (_, index) => ((index + 1) * 0.25).toFixed(2)
+);
+const positiveGlassPowerOptions = [
+  "Plano",
+  ...glassPowerStepOptions.map((value) => `+${value}`)
+];
+const negativeGlassPowerOptions = [
+  "Plano",
+  ...glassPowerStepOptions.map((value) => `-${value}`)
+];
+const glassAxisPickerOptions = ["005", "015", "030", "045", "090", "105", "115", "165", "180"];
+const glassVisualAcuityPickerOptions = [
+  "6/6",
+  "6/9",
+  "6/12",
+  "6/18",
+  "6/24",
+  "6/36",
+  "6/60",
+  "CF 1'",
+  "CF 2'",
+  "CF 3'",
+  "HM 1'",
+  "HM 2'",
+  "HM 3'",
+  "PL",
+  "NPL"
+];
+const glassAddPickerOptions = [
+  "+1.00",
+  "+1.25",
+  "+1.50",
+  "+1.75",
+  "+2.00",
+  "+2.25",
+  "+2.50",
+  "+2.75",
+  "+3.00"
+];
 
 const historyTabs = [
   "Medical",
@@ -411,21 +467,26 @@ type HistoryTab = (typeof historyTabs)[number];
 type CustomMedicineFormState = {
   medicineType: string;
   brandName: string;
+  schedule: string;
+  scheduleDoses: string[];
   doseAmount: string;
   mealTiming: string;
   frequency: string;
   customText: string;
   spoon: string;
   unitType: string;
+  unit: string;
   quantity: string;
   dropsCount: string;
   dailyFrequency: string;
   continueMedicine: boolean;
   durationValue: string;
   durationUnit: string;
+  instructionTags: string[];
   remarks: string;
 };
 
+const medicineSearchTypeOptions = ["Trade", "Generic", "Strength"];
 const customMedicineTypeOptions = [
   "Tab.",
   "Cap.",
@@ -439,6 +500,52 @@ const customMedicineTypeOptions = [
   "Nebulizer",
   "Suppository"
 ];
+const customMedicineScheduleOptions = ["None", "1", "2", "3", "4", "5", "6"];
+const medicationUnitOptions = [
+  "n/a",
+  "tablet",
+  "capsule",
+  "tsp",
+  "spoon",
+  "apply",
+  "take",
+  "use",
+  "drop",
+  "unit",
+  "spray",
+  "vapour",
+  "ml",
+  "injection",
+  "suspension",
+  "suppositor",
+  "ointment",
+  "lotion",
+  "cream",
+  "shampoo",
+  "gel",
+  "scrub",
+  "inhaler",
+  "sachet"
+];
+const medicationInstructionChips = [
+  "ঘুমানোর আগে",
+  "প্রয়োজনে",
+  "খাওয়ার পরে",
+  "জ্বর হলে",
+  "কাশি/শ্বাসকষ্ট হলে",
+  "চলবে",
+  "৫ দিন",
+  "১ মাস",
+  "১ ফোঁটা করে দিনে ৪ বার",
+  "১ ফোঁটা করে দিনে ৩ বার",
+  "১৫ দিন",
+  "১ সপ্তাহ",
+  "মাথা ব্যাথা হলে",
+  "২ চোখে",
+  "বাম চোখে",
+  "ডান চোখে",
+  "খাওয়ার ৩০ মিঃ আগে"
+];
 const tabletCapsuleDoseOptions = ["None", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const mealTimingOptions = ["Before Meal", "After Meal"];
 const syrupSpoonOptions = ["1/2 Spoon", "1 Spoon", "2 Spoon", "3 Spoon", "4 Spoon"];
@@ -449,18 +556,22 @@ const customMedicineDurationUnitOptions = ["Day", "Month", "Year"];
 const initialCustomMedicineForm: CustomMedicineFormState = {
   medicineType: "Tab.",
   brandName: "",
+  schedule: "3",
+  scheduleDoses: ["1", "1", "1"],
   doseAmount: "1",
   mealTiming: "After Meal",
   frequency: "1+0+1",
   customText: "",
   spoon: "1 Spoon",
   unitType: "Vial",
+  unit: "n/a",
   quantity: "1",
   dropsCount: "1 Drop",
   dailyFrequency: "2",
   continueMedicine: false,
-  durationValue: "7",
+  durationValue: "0",
   durationUnit: "Day",
+  instructionTags: [],
   remarks: ""
 };
 
@@ -471,46 +582,40 @@ function customMedicineDefaultsForType(
   const base = { ...initialCustomMedicineForm, medicineType, brandName };
 
   if (medicineType === "Syp.") {
-    return { ...base, frequency: "3", durationValue: "5" };
+    return { ...base, unit: "spoon", frequency: "3", durationValue: "5" };
   }
 
   if (medicineType === "Inj.") {
-    return { ...base, frequency: "IM Stat", durationValue: "" };
+    return { ...base, unit: "injection", frequency: "IM Stat", durationValue: "" };
   }
 
   if (medicineType === "Eye Drop") {
-    return { ...base, frequency: "4" };
+    return { ...base, unit: "drop", frequency: "4" };
   }
 
   if (medicineType === "Eye Gel") {
-    return { ...base, dailyFrequency: "2" };
+    return { ...base, unit: "gel", dailyFrequency: "2" };
   }
 
   if (["Cream", "Ointment", "Lotion"].includes(medicineType)) {
-    return { ...base, customText: "Apply", frequency: "2 Times Daily" };
+    return {
+      ...base,
+      unit: medicineType.toLowerCase(),
+      customText: "Apply",
+      frequency: "2 Times Daily"
+    };
   }
 
   if (medicineType === "Nebulizer") {
-    return { ...base, quantity: "1", frequency: "3 Times Daily" };
+    return { ...base, unit: "vapour", quantity: "1", frequency: "3 Times Daily" };
   }
 
   if (medicineType === "Suppository") {
-    return { ...base, quantity: "1", frequency: "Once Daily" };
+    return { ...base, unit: "suppositor", quantity: "1", frequency: "Once Daily" };
   }
 
   return base;
 }
-
-const diagnosisFavourites = [
-  "Allergic Conjunctivitis",
-  "ARC (r/e)",
-  "Diabetes",
-  "Dry eye"
-];
-
-const diagnosisAlphabetFilters = ["ALL", "A", "D"];
-
-const emptyAlphabetFilters = ["ALL"];
 
 export function PrescriptionBuilder() {
   const token = useSessionStore((state) => state.accessToken);
@@ -530,6 +635,7 @@ export function PrescriptionBuilder() {
   const [referrals, setReferrals] = useState<ReferralEntry[]>([]);
   const [followUpDate, setFollowUpDate] = useState("");
   const [activePanel, setActivePanel] = useState<PanelKey | null>(null);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [paperType, setPaperType] = useState<"default" | "alternate">("default");
   const [paperMenuOpen, setPaperMenuOpen] = useState(false);
   const [lastSavedPrescription, setLastSavedPrescription] = useState<Prescription | null>(null);
@@ -685,8 +791,8 @@ export function PrescriptionBuilder() {
       return;
     }
 
-    if (!dateOfBirth && ageYears === undefined && ageMonths === undefined && ageDays === undefined) {
-      setPatientFormError("Enter date of birth or age.");
+    if (ageYears === undefined && ageMonths === undefined && ageDays === undefined) {
+      setPatientFormError("Enter patient age.");
       return;
     }
 
@@ -941,17 +1047,7 @@ export function PrescriptionBuilder() {
     });
   }
 
-  function saveAction(action: "draft" | "template" | "save-only" | "save-print") {
-    if (action === "draft") {
-      persistPrescription(false);
-      return;
-    }
-
-    if (action === "template") {
-      showStatus("success", "Template option is ready for backend persistence.");
-      return;
-    }
-
+  function saveAction(action: "save-only" | "save-print") {
     if (action === "save-only") {
       persistPrescription(false);
       return;
@@ -1256,14 +1352,6 @@ export function PrescriptionBuilder() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => showStatus("success", "All drafts option selected.")}>
-              <FileText className="h-4 w-4" />
-              All Drafts
-            </Button>
-            <Button variant="outline" onClick={() => showStatus("success", "All templates option selected.")}>
-              <Layers className="h-4 w-4" />
-              All Template
-            </Button>
             <Button variant="outline" onClick={copyRx}>
               <Copy className="h-4 w-4" />
               Copy Rx
@@ -1273,24 +1361,7 @@ export function PrescriptionBuilder() {
 
         <section className="overflow-hidden rounded-md border bg-card shadow-soft">
           <div className="border-b p-3">
-            {selectedPatient ? (
-              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_140px_120px]">
-                <PatientSummaryItem label="Patient Name" value={selectedPatient.name} />
-                <PatientSummaryItem label="Mobile" value={selectedPatient.phone ?? "Not set"} />
-                <PatientSummaryItem label="Age" value={formatPatientAge(selectedPatient)} />
-                <PatientSummaryItem
-                  label="Blood Group"
-                  value={selectedPatient.bloodGroup ?? "Not set"}
-                />
-              </div>
-            ) : (
-              <div className="rounded-md border border-dashed border-primary/70 bg-primary/5 px-4 py-3 text-sm">
-                <span className="font-semibold">No patient selected.</span>{" "}
-                <span>To save this prescription, select a patient first.</span>
-              </div>
-            )}
-
-            <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-start">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
               <div className="relative flex-1">
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -1362,6 +1433,23 @@ export function PrescriptionBuilder() {
                 Register New Patient
               </Button>
             </div>
+
+            {selectedPatient ? (
+              <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_140px_120px]">
+                <PatientSummaryItem label="Patient Name" value={selectedPatient.name} />
+                <PatientSummaryItem label="Mobile" value={selectedPatient.phone ?? "Not set"} />
+                <PatientSummaryItem label="Age" value={formatPatientAge(selectedPatient)} />
+                <PatientSummaryItem
+                  label="Blood Group"
+                  value={selectedPatient.bloodGroup ?? "Not set"}
+                />
+              </div>
+            ) : (
+              <div className="mt-3 rounded-md border border-dashed border-primary/70 bg-primary/5 px-4 py-3 text-sm">
+                <span className="font-semibold">No patient selected.</span>{" "}
+                <span>To save this prescription, select a patient first.</span>
+              </div>
+            )}
           </div>
 
           {statusMessage ? (
@@ -1386,12 +1474,6 @@ export function PrescriptionBuilder() {
             }}
           >
             <div className="no-print absolute left-6 top-6 hidden w-11 flex-col overflow-hidden rounded-md border bg-card shadow-soft md:flex">
-              <FloatingPadButton title="All Drafts" onClick={() => showStatus("success", "All drafts option selected.")}>
-                <FileText className="h-4 w-4" />
-              </FloatingPadButton>
-              <FloatingPadButton title="All Template" onClick={() => showStatus("success", "All templates option selected.")}>
-                <Layers className="h-4 w-4" />
-              </FloatingPadButton>
               <FloatingPadButton title="Clear All" onClick={clearAll}>
                 <Eraser className="h-4 w-4" />
               </FloatingPadButton>
@@ -1400,17 +1482,51 @@ export function PrescriptionBuilder() {
               </FloatingPadButton>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:pl-16">
-              <div className="md:border-r md:pr-4">
-                {leftPanels.map((panel) => (
-                  <PrescriptionOptionTile
-                    key={panel}
-                    title={panelTitles[panel]}
-                    hasContent={panelHasContent(panel)}
-                    onClear={() => clearPanel(panel)}
-                    onOpen={() => setActivePanel(panel)}
-                  />
-                ))}
+            <div
+              className={cn(
+                "grid gap-4 md:pl-16",
+                leftPanelCollapsed
+                  ? "md:grid-cols-[64px_minmax(0,1fr)]"
+                  : "md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]"
+              )}
+            >
+              <div className={cn("md:border-r", leftPanelCollapsed ? "md:pr-2" : "md:pr-4")}>
+                <div className={cn("mb-2 flex", leftPanelCollapsed ? "justify-center" : "justify-end")}>
+                  <PanelIconButton
+                    title={leftPanelCollapsed ? "Expand left panel" : "Collapse left panel"}
+                    onClick={() => setLeftPanelCollapsed((current) => !current)}
+                  >
+                    {leftPanelCollapsed ? (
+                      <ChevronRight className="h-4 w-4" />
+                    ) : (
+                      <ChevronLeft className="h-4 w-4" />
+                    )}
+                  </PanelIconButton>
+                </div>
+
+                {leftPanelCollapsed ? (
+                  <div className="grid grid-cols-5 gap-1 md:grid-cols-1">
+                    {leftPanels.map((panel) => (
+                      <CollapsedPanelButton
+                        key={panel}
+                        panel={panel}
+                        title={panelTitles[panel]}
+                        hasContent={panelHasContent(panel)}
+                        onOpen={() => setActivePanel(panel)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  leftPanels.map((panel) => (
+                    <PrescriptionOptionTile
+                      key={panel}
+                      title={panelTitles[panel]}
+                      hasContent={panelHasContent(panel)}
+                      onClear={() => clearPanel(panel)}
+                      onOpen={() => setActivePanel(panel)}
+                    />
+                  ))
+                )}
               </div>
 
               <div>
@@ -1456,13 +1572,6 @@ export function PrescriptionBuilder() {
             <Button variant="outline" onClick={() => showStatus("success", "Settings option selected.")}>
               <Settings className="h-4 w-4" />
               Settings
-            </Button>
-            <Button disabled={isSavingPrescription} variant="outline" onClick={() => saveAction("draft")}>
-              {isSavingPrescription ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Save as <strong>Draft</strong>
-            </Button>
-            <Button variant="outline" onClick={() => saveAction("template")}>
-              Save as <strong>Template</strong>
             </Button>
             <div className="relative flex">
               <Button
@@ -1573,9 +1682,6 @@ export function PrescriptionBuilder() {
       ) : activePanel === "advice" ? (
         <TagNoteSidebar
           addCustomLabel="Add Custom Advice"
-          alphabetFilters={emptyAlphabetFilters}
-          emptyMessage="No favourites found."
-          favourites={[]}
           title="Advice"
           value={notes.advice}
           onAddTag={(tag) => appendNote("advice", tag)}
@@ -1587,9 +1693,6 @@ export function PrescriptionBuilder() {
       ) : activePanel === "investigation" ? (
         <TagNoteSidebar
           addCustomLabel="Add Custom Investigation"
-          alphabetFilters={emptyAlphabetFilters}
-          emptyMessage="No favourites found."
-          favourites={[]}
           title="Investigation"
           value={notes.investigation}
           onAddTag={(tag) => appendNote("investigation", tag)}
@@ -1600,9 +1703,6 @@ export function PrescriptionBuilder() {
         />
       ) : activePanel === "diagnosis" ? (
         <TagNoteSidebar
-          alphabetFilters={diagnosisAlphabetFilters}
-          emptyMessage="No favourite diagnoses found."
-          favourites={diagnosisFavourites}
           title="Diagnosis"
           value={notes.diagnosis}
           onAddTag={(tag) => appendNote("diagnosis", tag)}
@@ -1631,6 +1731,7 @@ export function PrescriptionBuilder() {
         />
       ) : activePanel ? (
         <PanelDialog
+          size={activePanel === "vision" ? "wide" : "default"}
           title={panelTitles[activePanel]}
           onClose={() => setActivePanel(null)}
         >
@@ -2066,31 +2167,43 @@ function OphthalmicFindingsTable({
     side: "right" | "left"
   ) {
     const key = side === "right" ? row.rightKey : row.leftKey;
+    const noteKey = side === "right" ? row.rightNoteKey : row.leftNoteKey;
     const ariaLabel = `${row.label} ${side} eye`;
 
     if (row.inputType === "select") {
       return (
-        <select
-          aria-label={ariaLabel}
-          className="h-9 w-full rounded-md border border-border/70 bg-card px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-          value={findings[key]}
-          onChange={(event) => updateField(key, event.target.value)}
-        >
-          <option value="">Select</option>
-          {row.options?.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+        <div className={cn("grid gap-2", noteKey ? "grid-cols-[minmax(0,1fr)_76px]" : "")}>
+          <select
+            aria-label={ariaLabel}
+            className="h-9 w-full rounded-md border border-border/70 bg-card px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+            value={String(findings[key] ?? "")}
+            onChange={(event) => updateField(key, event.target.value)}
+          >
+            <option value="">Select</option>
+            {row.options?.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          {noteKey ? (
+            <Input
+              aria-label={`${ariaLabel} note`}
+              className="h-9 border-border/70 bg-card px-2 text-sm"
+              placeholder="Note"
+              value={String(findings[noteKey] ?? "")}
+              onChange={(event) => updateField(noteKey, event.target.value)}
+            />
+          ) : null}
+        </div>
       );
     }
 
     return (
-      <Input
-        className="h-9 border-border/70 bg-card"
+      <Textarea
+        className="min-h-16 resize-y border-border/70 bg-card text-sm"
         aria-label={ariaLabel}
-        value={findings[key]}
+        value={String(findings[key] ?? "")}
         onChange={(event) => updateField(key, event.target.value)}
       />
     );
@@ -2099,8 +2212,8 @@ function OphthalmicFindingsTable({
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto">
-        <div className="min-w-[520px] overflow-hidden rounded-md border bg-background">
-          <div className="grid grid-cols-[1.35fr_1fr_1fr] border-b bg-card text-base font-semibold text-primary">
+        <div className="min-w-[680px] overflow-hidden rounded-md border bg-background">
+          <div className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)] border-b bg-card text-base font-semibold text-primary">
             <div className="border-r px-3 py-2">Ophthalmic Findings</div>
             <div className="border-r px-3 py-2 text-center">Right Eye</div>
             <div className="px-3 py-2 text-center">Left Eye</div>
@@ -2108,7 +2221,7 @@ function OphthalmicFindingsTable({
           {ophthalmicFindingRows.map((row) => (
             <div
               key={row.label}
-              className="grid grid-cols-[1.35fr_1fr_1fr] border-b last:border-b-0"
+              className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)] border-b last:border-b-0"
             >
               <div className="flex items-center border-r px-3 py-2 text-sm font-medium">
                 {row.label}
@@ -2146,8 +2259,58 @@ function GlassPrescriptionForm({
   onEyeChange: (side: "right" | "left", field: keyof EyePower, value: string) => void;
   onRemove?: () => void;
 }) {
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const [powerPickerTarget, setPowerPickerTarget] = useState<GlassPowerPickerTarget | null>(null);
+  const powerPickerLabel = powerPickerTarget
+    ? powerPickerTarget.kind === "add"
+      ? "ADD"
+      : `${powerPickerTarget.side === "right" ? "Right Eye" : "Left Eye"} ${
+          powerPickerTarget.field === "sphere"
+            ? "Sphere"
+            : powerPickerTarget.field === "cyl"
+              ? "CYL"
+              : powerPickerTarget.field === "axis"
+                ? "Axis"
+                : "VA"
+        }`
+    : "";
+
+  useEffect(() => {
+    if (!powerPickerTarget) return;
+
+    function closePickerOnOutsideClick(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (pickerRef.current?.contains(target)) return;
+      setPowerPickerTarget(null);
+    }
+
+    document.addEventListener("pointerdown", closePickerOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closePickerOnOutsideClick);
+  }, [powerPickerTarget]);
+
+  function selectPowerValue(value: string) {
+    if (!powerPickerTarget) return;
+
+    if (powerPickerTarget.kind === "add") {
+      onChange({ add: value });
+    } else {
+      onEyeChange(powerPickerTarget.side, powerPickerTarget.field, value);
+    }
+
+    setPowerPickerTarget(null);
+  }
+
+  function isActivePickerTarget(side: "right" | "left", field: keyof EyePower) {
+    return Boolean(
+      powerPickerTarget?.kind === "eye"
+        && powerPickerTarget.side === side
+        && powerPickerTarget.field === field
+    );
+  }
+
   return (
-    <div className="space-y-3 rounded-md border bg-background p-3">
+    <div className="relative space-y-3 rounded-md border bg-background p-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-semibold">{title}</h3>
         {onRemove ? (
@@ -2178,8 +2341,15 @@ function GlassPrescriptionForm({
               {(["sphere", "cyl", "axis", "va"] as const).map((field) => (
                 <div key={field} className="border-r p-2 last:border-r-0">
                   <Input
+                    aria-label={`${side === "right" ? "Right Eye" : "Left Eye"} ${field}`}
+                    className={cn(
+                      "bg-background",
+                      isActivePickerTarget(side, field) ? "ring-2 ring-primary" : ""
+                    )}
                     value={prescription[side][field]}
+                    onClick={() => setPowerPickerTarget({ kind: "eye", side, field })}
                     onChange={(event) => onEyeChange(side, field, event.target.value)}
+                    onFocus={() => setPowerPickerTarget({ kind: "eye", side, field })}
                   />
                 </div>
               ))}
@@ -2191,20 +2361,27 @@ function GlassPrescriptionForm({
       <div className="grid gap-2 md:grid-cols-2">
         <LabeledField label="ADD">
           <Input
+            className={cn(
+              "bg-background",
+              powerPickerTarget?.kind === "add" ? "ring-2 ring-primary" : ""
+            )}
             value={prescription.add}
+            onClick={() => setPowerPickerTarget({ kind: "add" })}
             onChange={(event) => onChange({ add: event.target.value })}
+            onFocus={() => setPowerPickerTarget({ kind: "add" })}
           />
         </LabeledField>
         <LabeledField label="IPD">
           <Input
             value={prescription.ipd}
             onChange={(event) => onChange({ ipd: event.target.value })}
+            onFocus={() => setPowerPickerTarget(null)}
           />
         </LabeledField>
       </div>
 
       <div className="grid gap-2 md:grid-cols-2">
-        <GlassFieldBlock label="Glass Features">
+        <GlassFieldBlock label="Glass Feature">
           <GlassFeaturesMultiSelect
             value={prescription.glassFeatures}
             onChange={(value) => onChange({ glassFeatures: value })}
@@ -2215,6 +2392,7 @@ function GlassPrescriptionForm({
             className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
             value={prescription.lensType}
             onChange={(event) => onChange({ lensType: event.target.value })}
+            onFocus={() => setPowerPickerTarget(null)}
           >
             <option value="">Select Lens Type</option>
             {lensTypeOptions.map((lensType) => (
@@ -2233,6 +2411,7 @@ function GlassPrescriptionForm({
               className="rounded-r-none"
               value={prescription.iopRight}
               onChange={(event) => onChange({ iopRight: event.target.value })}
+              onFocus={() => setPowerPickerTarget(null)}
             />
             <span className="inline-flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm">
               mmHg
@@ -2245,6 +2424,7 @@ function GlassPrescriptionForm({
               className="rounded-r-none"
               value={prescription.iopLeft}
               onChange={(event) => onChange({ iopLeft: event.target.value })}
+              onFocus={() => setPowerPickerTarget(null)}
             />
             <span className="inline-flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm">
               mmHg
@@ -2259,9 +2439,200 @@ function GlassPrescriptionForm({
           placeholder="Type additional information..."
           value={prescription.note}
           onChange={(event) => onChange({ note: event.target.value })}
+          onFocus={() => setPowerPickerTarget(null)}
         />
       </GlassFieldBlock>
+
+      {powerPickerTarget ? (
+        <div ref={pickerRef}>
+          <GlassPrescriptionPicker
+            target={powerPickerTarget}
+            targetLabel={powerPickerLabel}
+            onClose={() => setPowerPickerTarget(null)}
+            onSelect={selectPowerValue}
+          />
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function GlassPrescriptionPicker({
+  target,
+  targetLabel,
+  onClose,
+  onSelect
+}: {
+  target: GlassPowerPickerTarget;
+  targetLabel: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+}) {
+  if (target.kind === "add") {
+    return (
+      <GlassOptionsPicker
+        options={glassAddPickerOptions}
+        placementClassName="left-16 top-[226px] w-[716px] max-w-[calc(100vw-3rem)]"
+        targetLabel={targetLabel}
+        onClose={onClose}
+        onSelect={onSelect}
+      />
+    );
+  }
+
+  if (target.field === "axis") {
+    return (
+      <GlassOptionsPicker
+        options={glassAxisPickerOptions}
+        placementClassName={cn(
+          "right-[154px] w-[596px] max-w-[calc(100vw-3rem)]",
+          target.side === "right" ? "top-[106px]" : "top-[184px]"
+        )}
+        targetLabel={targetLabel}
+        onClose={onClose}
+        onSelect={onSelect}
+      />
+    );
+  }
+
+  if (target.field === "va") {
+    return (
+      <GlassOptionsPicker
+        options={glassVisualAcuityPickerOptions}
+        placementClassName={cn(
+          "right-6 w-[568px] max-w-[calc(100vw-3rem)]",
+          target.side === "right" ? "top-[106px]" : "top-[184px]"
+        )}
+        targetLabel={targetLabel}
+        onClose={onClose}
+        onSelect={onSelect}
+      />
+    );
+  }
+
+  return (
+    <GlassPowerPicker
+      placementClassName={cn(
+        "left-1/2 w-[656px] max-w-[calc(100vw-3rem)] -translate-x-1/2",
+        target.side === "right" ? "top-[106px]" : "top-[184px]"
+      )}
+      targetLabel={targetLabel}
+      onClose={onClose}
+      onSelect={onSelect}
+    />
+  );
+}
+
+function GlassOptionsPicker({
+  options,
+  placementClassName,
+  targetLabel,
+  onClose,
+  onSelect
+}: {
+  options: string[];
+  placementClassName: string;
+  targetLabel: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div
+      aria-label={`${targetLabel} picker`}
+      className={cn(
+        "absolute z-50 rounded-md border bg-card px-5 py-4 shadow-soft",
+        placementClassName
+      )}
+    >
+      <GlassPickerCloseButton onClose={onClose} />
+      <div className="flex flex-wrap justify-center gap-1.5">
+        {options.map((option) => (
+          <GlassPickerOptionButton key={option} option={option} onSelect={onSelect} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GlassPowerPicker({
+  placementClassName,
+  targetLabel,
+  onClose,
+  onSelect
+}: {
+  placementClassName: string;
+  targetLabel: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+}) {
+  const [mode, setMode] = useState<"positive" | "negative">("positive");
+  const options = mode === "positive" ? positiveGlassPowerOptions : negativeGlassPowerOptions;
+
+  return (
+    <div
+      aria-label={`${targetLabel} power picker`}
+      className={cn(
+        "absolute z-50 rounded-md border bg-card px-5 pb-5 pt-4 shadow-soft",
+        placementClassName
+      )}
+    >
+      <GlassPickerCloseButton onClose={onClose} />
+
+      <div className="mb-3 flex items-center justify-center gap-8 text-base font-medium text-primary">
+        {(["positive", "negative"] as const).map((item) => (
+          <button
+            key={item}
+            className={cn(
+              "border-b-2 pb-1 transition",
+              mode === item
+                ? "border-primary text-primary"
+                : "border-transparent text-primary/80 hover:text-primary"
+            )}
+            type="button"
+            onClick={() => setMode(item)}
+          >
+            {item === "positive" ? "Positive" : "Negative"}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
+        {options.map((option) => (
+          <GlassPickerOptionButton key={option} option={option} onSelect={onSelect} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GlassPickerCloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      aria-label="Close picker"
+      className="absolute -right-3 top-2 flex h-8 w-8 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-soft hover:text-destructive"
+      type="button"
+      onClick={onClose}
+    >
+      <X className="h-5 w-5" />
+    </button>
+  );
+}
+
+function GlassPickerOptionButton({
+  option,
+  onSelect
+}: {
+  option: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <button
+      className="h-10 min-w-16 rounded-sm bg-teal-600 px-3 text-sm font-medium text-white transition hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      type="button"
+      onClick={() => onSelect(option)}
+    >
+      {option}
+    </button>
   );
 }
 
@@ -2282,6 +2653,7 @@ function GlassFeaturesMultiSelect({
   onChange: (value: string[]) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = glassFeatureOptions.filter((option) =>
     normalizedQuery ? option.toLowerCase().includes(normalizedQuery) : true
@@ -2296,54 +2668,79 @@ function GlassFeaturesMultiSelect({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex min-h-9 flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1">
-        {value.map((item) => (
-          <span
-            key={item}
-            className="inline-flex items-center gap-1 rounded-sm bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
-          >
-            {item}
-            <button
-              aria-label={`Remove ${item}`}
-              className="rounded-sm hover:bg-primary-foreground/20"
-              type="button"
-              onClick={() => toggleOption(item)}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </span>
-        ))}
-        <input
-          className="h-7 min-w-[120px] flex-1 bg-transparent text-sm outline-none"
-          placeholder={value.length ? "Search..." : "Search glass features..."}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
+    <div className="relative">
+      <button
+        aria-expanded={open}
+        className="flex min-h-9 w-full items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-left text-sm outline-none transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="min-w-0 flex-1 truncate">
+          {value.length ? value.join(", ") : "Select Glass Feature"}
+        </span>
+        <ChevronDown
+          className={cn("h-4 w-4 shrink-0 transition", open ? "rotate-180" : "")}
         />
-      </div>
+      </button>
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        {filteredOptions.map((option) => {
-          const selected = value.includes(option);
+      {open ? (
+        <div className="absolute left-0 right-0 z-30 mt-2 rounded-md border bg-card p-2 shadow-soft">
+          <Input
+            className="h-9 border-border/70 bg-background"
+            placeholder="Search glass feature..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
 
-          return (
-            <button
-              key={option}
-              className={cn(
-                "flex h-9 items-center justify-between rounded-md border px-3 text-left text-sm transition",
-                selected
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "bg-background hover:bg-muted"
-              )}
-              type="button"
-              onClick={() => toggleOption(option)}
-            >
-              {option}
-              {selected ? <Check className="h-4 w-4" /> : null}
-            </button>
-          );
-        })}
-      </div>
+          {value.length ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {value.map((item) => (
+                <span
+                  key={item}
+                  className="inline-flex items-center gap-1 rounded-sm bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
+                >
+                  {item}
+                  <button
+                    aria-label={`Remove ${item}`}
+                    className="rounded-sm hover:bg-primary-foreground/20"
+                    type="button"
+                    onClick={() => toggleOption(item)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="mt-2 grid max-h-48 gap-1 overflow-y-auto">
+            {filteredOptions.length ? (
+              filteredOptions.map((option) => {
+                const selected = value.includes(option);
+
+                return (
+                  <button
+                    key={option}
+                    className={cn(
+                      "flex min-h-9 items-center justify-between rounded-md px-3 text-left text-sm transition",
+                      selected
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    )}
+                    type="button"
+                    onClick={() => toggleOption(option)}
+                  >
+                    {option}
+                    {selected ? <Check className="h-4 w-4" /> : null}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="px-3 py-2 text-sm text-muted-foreground">No glass feature found</div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2545,6 +2942,8 @@ function MedicationSidebar({
   onStatus
 }: MedicationSidebarProps) {
   const [searchType, setSearchType] = useState("Trade");
+  const [customFormOpen, setCustomFormOpen] = useState(true);
+  const [customMedicineExpanded, setCustomMedicineExpanded] = useState(true);
   const [customMedicine, setCustomMedicine] =
     useState<CustomMedicineFormState>(initialCustomMedicineForm);
 
@@ -2563,8 +2962,43 @@ function MedicationSidebar({
     onStatus("success", "Medicine name added to the custom form.");
   }
 
+  function updateCustomMedicineSchedule(schedule: string) {
+    const count = schedule === "None" ? 0 : Number.parseInt(schedule, 10);
+    setCustomMedicine((current) => ({
+      ...current,
+      schedule,
+      scheduleDoses: Array.from({ length: Number.isNaN(count) ? 0 : count }, (_, index) =>
+        current.scheduleDoses[index] ?? ""
+      )
+    }));
+  }
+
+  function updateScheduleDose(index: number, value: string) {
+    const nextValue = value.replace(/[^\d.]/g, "");
+    setCustomMedicine((current) => {
+      const nextDoses = [...current.scheduleDoses];
+      nextDoses[index] = nextValue;
+      return { ...current, scheduleDoses: nextDoses };
+    });
+  }
+
+  function toggleInstructionTag(tag: string) {
+    setCustomMedicine((current) => ({
+      ...current,
+      instructionTags: current.instructionTags.includes(tag)
+        ? current.instructionTags.filter((item) => item !== tag)
+        : [...current.instructionTags, tag]
+    }));
+  }
+
   function resetCustomMedicine() {
     setCustomMedicine(customMedicineDefaultsForType(customMedicine.medicineType));
+  }
+
+  function closeCustomMedicineForm() {
+    resetCustomMedicine();
+    setCustomMedicineExpanded(true);
+    setCustomFormOpen(false);
   }
 
   function changeCustomMedicineType(medicineType: string) {
@@ -2584,41 +3018,16 @@ function MedicationSidebar({
 
     const medicineType = customMedicine.medicineType;
     const duration = formatCustomMedicineDuration(customMedicine);
-    let dose = "";
-    let instruction = "";
-
-    if (medicineType === "Tab." || medicineType === "Cap.") {
-      dose = customMedicine.doseAmount === "None" ? "" : `Dose: ${customMedicine.doseAmount}`;
-      instruction = [
-        customMedicine.mealTiming,
-        customMedicine.frequency.trim(),
-        customMedicine.customText.trim()
-      ].filter(Boolean).join("\n");
-    } else if (medicineType === "Syp.") {
-      dose = customMedicine.spoon;
-      instruction = [
-        customMedicine.mealTiming,
-        customMedicine.frequency.trim() ? `${customMedicine.frequency.trim()} Times Daily` : ""
-      ].filter(Boolean).join("\n");
-    } else if (medicineType === "Inj.") {
-      dose = [customMedicine.quantity.trim(), customMedicine.unitType].filter(Boolean).join(" ");
-      instruction = customMedicine.frequency.trim();
-    } else if (medicineType === "Eye Drop") {
-      dose = customMedicine.dropsCount;
-      instruction = customMedicine.frequency.trim()
-        ? `${customMedicine.frequency.trim()} Times Daily`
-        : "";
-    } else if (medicineType === "Eye Gel") {
-      dose = "Apply Daily";
-      instruction = customMedicine.dailyFrequency.trim()
-        ? `${customMedicine.dailyFrequency.trim()} Times`
-        : "";
-    } else {
-      dose = [customMedicine.quantity.trim(), customMedicine.customText.trim()]
-        .filter(Boolean)
-        .join(" ");
-      instruction = customMedicine.frequency.trim();
-    }
+    const scheduleDose = customMedicine.schedule === "None"
+      ? ""
+      : customMedicine.scheduleDoses.map((dose) => dose.trim() || "0").join("+");
+    const unit = customMedicine.unit === "n/a" ? "" : customMedicine.unit;
+    const dose = scheduleDose;
+    const instruction = [
+      unit,
+      customMedicine.customText.trim(),
+      ...customMedicine.instructionTags
+    ].filter(Boolean).join("\n");
 
     onAddCustomMedicine({
       brandName,
@@ -2633,20 +3042,9 @@ function MedicationSidebar({
   }
 
   const selectedMedicineType = customMedicine.medicineType;
-  const isTabletCapsule =
-    selectedMedicineType === "Tab." || selectedMedicineType === "Cap.";
-  const isSyrup = selectedMedicineType === "Syp.";
-  const isInjection = selectedMedicineType === "Inj.";
-  const isEyeDrop = selectedMedicineType === "Eye Drop";
-  const isEyeGel = selectedMedicineType === "Eye Gel";
-  const isGenericMedicineType = ![
-    "Tab.",
-    "Cap.",
-    "Syp.",
-    "Inj.",
-    "Eye Drop",
-    "Eye Gel"
-  ].includes(selectedMedicineType);
+  const scheduleCount = customMedicine.schedule === "None"
+    ? 0
+    : Number.parseInt(customMedicine.schedule, 10);
 
   return (
     <RightDrawer title="Medication" onClose={onClose}>
@@ -2699,350 +3097,228 @@ function MedicationSidebar({
             value={searchType}
             onChange={(event) => setSearchType(event.target.value)}
           >
-            <option value="Trade">Trade</option>
-            <option value="Generic">Generic</option>
-            <option value="Strength">Strength</option>
+            {medicineSearchTypeOptions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
           </select>
         </div>
 
-        <form className="rounded-md border bg-card" onSubmit={submitCustomMedicine}>
-          <div className="flex flex-wrap items-start gap-2 border-b p-3">
-            <button
-              aria-label="Medicine details"
-              className="mt-2 inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground"
-              type="button"
-            >
-              <ChevronDown className="h-4 w-4" />
-            </button>
-            <label className="space-y-1 text-xs font-medium">
-              <span>Medicine Type</span>
-              <select
-                className="h-12 w-36 rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                value={customMedicine.medicineType}
-                onChange={(event) => changeCustomMedicineType(event.target.value)}
-              >
-                {customMedicineTypeOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Input
-              className="mt-5 h-12 min-w-[220px] flex-1"
-              placeholder="Drug name"
-              value={customMedicine.brandName}
-              onChange={(event) => updateCustomMedicine({ brandName: event.target.value })}
-            />
-            {isTabletCapsule ? (
-              <button
-                className="mt-7 h-8 text-sm font-medium text-primary hover:underline"
+        <div className="flex justify-end">
+          <button
+            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            form={customFormOpen ? "custom-medicine-form" : undefined}
+            type={customFormOpen ? "submit" : "button"}
+            onClick={() => {
+              if (!customFormOpen) setCustomFormOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Add Custom Medicine
+          </button>
+        </div>
+
+        {customFormOpen ? (
+          <form
+            className="overflow-hidden border bg-[#eeeeee]"
+            id="custom-medicine-form"
+            onSubmit={submitCustomMedicine}
+          >
+            <div className="relative p-2">
+              <div className="flex flex-wrap items-center gap-3 pr-10">
+                <button
+                  aria-label="Medicine details"
+                  className="inline-flex h-7 w-7 items-center justify-center text-teal-600"
+                  type="button"
+                  onClick={() => setCustomMedicineExpanded((current) => !current)}
+                >
+                  <ChevronDown
+                    className={cn("h-4 w-4 transition", customMedicineExpanded ? "" : "-rotate-90")}
+                  />
+                </button>
+                <Input
+                  className="h-11 w-[238px] max-w-full flex-none rounded-sm bg-background text-base"
+                  placeholder="Drug name"
+                  value={customMedicine.brandName}
+                  onChange={(event) => updateCustomMedicine({ brandName: event.target.value })}
+                />
+                <select
+                  aria-label="Medicine Type"
+                  className="sr-only"
+                  value={selectedMedicineType}
+                  onChange={(event) => changeCustomMedicineType(event.target.value)}
+                >
+                  {customMedicineTypeOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="ml-auto h-9 rounded-sm bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700"
+                  type="button"
+                  onClick={() => updateCustomMedicine({ customText: "Interval dose" })}
+                >
+                  Add Interval Dose
+                </button>
+              </div>
+              <Button
+                aria-label="Reset custom medicine"
+                className="absolute right-2 top-4 h-8 w-8 text-slate-700"
+                size="icon"
                 type="button"
-                onClick={() => updateCustomMedicine({ customText: "Interval dose" })}
+                variant="ghost"
+                onClick={closeCustomMedicineForm}
               >
-                Add Interval Dose
-              </button>
-            ) : null}
-            <Button
-              aria-label="Reset custom medicine"
-              className="mt-6"
-              size="icon"
-              type="button"
-              variant="secondary"
-              onClick={resetCustomMedicine}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
 
-          <div className="space-y-4 p-3">
-            {isTabletCapsule ? (
-              <div className="space-y-3">
-                <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
-                  <label className="space-y-1 text-xs font-medium">
-                    <span>Dose</span>
-                    <select
-                      className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                      value={customMedicine.doseAmount}
+            {customMedicineExpanded ? (
+              <div className="space-y-2 px-4 pb-0">
+                <div className="flex flex-wrap items-end gap-x-2 gap-y-2">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span>1.Schedule</span>
+                      <select
+                        className="h-9 w-16 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                        value={customMedicine.schedule}
+                        onChange={(event) => updateCustomMedicineSchedule(event.target.value)}
+                      >
+                        {customMedicineScheduleOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1">
+                      {Array.from({ length: Number.isNaN(scheduleCount) ? 0 : scheduleCount }, (_, index) => (
+                        <div key={index} className="flex items-center gap-1">
+                          <Input
+                            className="h-8 w-16 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
+                            inputMode="decimal"
+                            min="0"
+                            type="number"
+                            value={customMedicine.scheduleDoses[index] ?? ""}
+                            onChange={(event) => updateScheduleDose(index, event.target.value)}
+                          />
+                          {index < scheduleCount - 1 ? (
+                            <button
+                              aria-label={`Add interval after dose ${index + 1}`}
+                              className="h-8 px-1 text-primary hover:underline"
+                              type="button"
+                              onClick={() => updateCustomMedicine({ customText: "Interval dose" })}
+                            >
+                              +
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                      {customMedicine.schedule === "None" ? (
+                        <span className="text-sm text-muted-foreground">No scheduled dose</span>
+                      ) : null}
+                  </div>
+
+                  <div className="flex flex-col items-start">
+                    <span className="text-lg font-semibold leading-5">Continue</span>
+                    <input
+                      className="mt-1 h-4 w-4 accent-primary"
+                      type="checkbox"
+                      checked={customMedicine.continueMedicine}
                       onChange={(event) =>
-                        updateCustomMedicine({ doseAmount: event.target.value })
+                        updateCustomMedicine({ continueMedicine: event.target.checked })
                       }
+                    />
+                  </div>
+
+                  <label className="space-y-1 text-xs font-medium">
+                    <span className="sr-only">Unit</span>
+                      <select
+                        className="h-9 w-20 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                        value={customMedicine.unit}
+                        onChange={(event) => updateCustomMedicine({ unit: event.target.value })}
+                      >
+                        {medicationUnitOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                  </label>
+
+                  <div className="flex items-end gap-2">
+                    <span className="pb-2 text-sm">for</span>
+                    <Input
+                      className="h-8 w-16 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
+                      min="0"
+                      type="number"
+                      value={customMedicine.durationValue}
+                      onChange={(event) =>
+                        updateCustomMedicine({ durationValue: event.target.value })
+                      }
+                    />
+                    <select
+                      className="h-9 w-20 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                      value={customMedicine.durationUnit}
+                      onChange={(event) => updateCustomMedicine({ durationUnit: event.target.value })}
                     >
-                      {tabletCapsuleDoseOptions.map((item) => (
+                      {customMedicineDurationUnitOptions.map((item) => (
                         <option key={item} value={item}>
                           {item}
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <label className="space-y-1 text-xs font-medium">
-                    <span>Meal Timing</span>
-                    <select
-                      className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                      value={customMedicine.mealTiming}
-                      onChange={(event) =>
-                        updateCustomMedicine({ mealTiming: event.target.value })
-                      }
-                    >
-                      {mealTimingOptions.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1 text-xs font-medium">
-                    <span>Frequency</span>
-                    <Input
-                      className="h-9"
-                      placeholder="1+0+1"
-                      value={customMedicine.frequency}
-                      onChange={(event) =>
-                        updateCustomMedicine({ frequency: event.target.value })
-                      }
-                    />
-                  </label>
-                  <label className="space-y-1 text-xs font-medium">
-                    <span>Custom Text</span>
-                    <Input
-                      className="h-9"
-                      placeholder="Custom instruction..."
-                      value={customMedicine.customText}
-                      onChange={(event) =>
-                        updateCustomMedicine({ customText: event.target.value })
-                      }
-                    />
-                  </label>
+                  </div>
                 </div>
-              </div>
-            ) : null}
 
-            {isSyrup ? (
-              <div className="grid gap-2 md:grid-cols-3">
                 <label className="space-y-1 text-xs font-medium">
-                  <span>Spoon</span>
-                  <select
-                    className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                    value={customMedicine.spoon}
-                    onChange={(event) => updateCustomMedicine({ spoon: event.target.value })}
-                  >
-                    {syrupSpoonOptions.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Meal Timing</span>
-                  <select
-                    className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                    value={customMedicine.mealTiming}
-                    onChange={(event) =>
-                      updateCustomMedicine({ mealTiming: event.target.value })
-                    }
-                  >
-                    {mealTimingOptions.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Times Daily</span>
+                  <span className="sr-only">Custom Instruction</span>
                   <Input
-                    className="h-9"
-                    placeholder="3"
-                    value={customMedicine.frequency}
-                    onChange={(event) => updateCustomMedicine({ frequency: event.target.value })}
-                  />
-                </label>
-              </div>
-            ) : null}
-
-            {isInjection ? (
-              <div className="grid gap-2 md:grid-cols-3">
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Unit Type</span>
-                  <select
-                    className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                    value={customMedicine.unitType}
-                    onChange={(event) => updateCustomMedicine({ unitType: event.target.value })}
-                  >
-                    {injectionUnitOptions.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Quantity</span>
-                  <Input
-                    className="h-9"
-                    min="0"
-                    type="number"
-                    value={customMedicine.quantity}
-                    onChange={(event) => updateCustomMedicine({ quantity: event.target.value })}
-                  />
-                </label>
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Frequency</span>
-                  <Input
-                    className="h-9"
-                    placeholder="IM Stat"
-                    value={customMedicine.frequency}
-                    onChange={(event) => updateCustomMedicine({ frequency: event.target.value })}
-                  />
-                </label>
-              </div>
-            ) : null}
-
-            {isEyeDrop ? (
-              <div className="grid gap-2 md:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Drops Count</span>
-                  <select
-                    className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                    value={customMedicine.dropsCount}
-                    onChange={(event) =>
-                      updateCustomMedicine({ dropsCount: event.target.value })
-                    }
-                  >
-                    {eyeDropCountOptions.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Times Daily</span>
-                  <Input
-                    className="h-9"
-                    placeholder="4"
-                    value={customMedicine.frequency}
-                    onChange={(event) => updateCustomMedicine({ frequency: event.target.value })}
-                  />
-                </label>
-              </div>
-            ) : null}
-
-            {isEyeGel ? (
-              <div className="grid gap-2 md:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Daily Frequency</span>
-                  <Input
-                    className="h-9"
-                    placeholder="2"
-                    value={customMedicine.dailyFrequency}
-                    onChange={(event) =>
-                      updateCustomMedicine({ dailyFrequency: event.target.value })
-                    }
-                  />
-                </label>
-              </div>
-            ) : null}
-
-            {isGenericMedicineType ? (
-              <div className="grid gap-2 md:grid-cols-3">
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Quantity</span>
-                  <Input
-                    className="h-9"
-                    value={customMedicine.quantity}
-                    onChange={(event) => updateCustomMedicine({ quantity: event.target.value })}
-                  />
-                </label>
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Dose Text</span>
-                  <Input
-                    className="h-9"
-                    placeholder="Apply"
+                    className="sr-only"
+                    placeholder="Type additional dose instruction..."
                     value={customMedicine.customText}
                     onChange={(event) =>
                       updateCustomMedicine({ customText: event.target.value })
                     }
                   />
                 </label>
-                <label className="space-y-1 text-xs font-medium">
-                  <span>Frequency</span>
-                  <Input
-                    className="h-9"
-                    placeholder="2 Times Daily"
-                    value={customMedicine.frequency}
-                    onChange={(event) => updateCustomMedicine({ frequency: event.target.value })}
-                  />
-                </label>
+
+                <div className="flex flex-wrap gap-1">
+                  {medicationInstructionChips.map((tag) => {
+                    const selected = customMedicine.instructionTags.includes(tag);
+
+                    return (
+                      <button
+                        key={tag}
+                        className={cn(
+                          "rounded-sm px-3 py-1 text-sm transition",
+                          selected
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-zinc-300 text-foreground hover:bg-zinc-400"
+                        )}
+                        type="button"
+                        onClick={() => toggleInstructionTag(tag)}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <Textarea
+                  className="min-h-14 rounded-none border-x-0 border-b-0 bg-amber-50"
+                  placeholder="Remarks..."
+                  value={customMedicine.remarks}
+                  onChange={(event) => updateCustomMedicine({ remarks: event.target.value })}
+                />
               </div>
             ) : null}
-
-            <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto] md:items-end">
-              <label className="space-y-1 text-xs font-medium">
-                <span>Duration Value</span>
-                <Input
-                  className="h-9"
-                  min="0"
-                  type="number"
-                  value={customMedicine.durationValue}
-                  onChange={(event) =>
-                    updateCustomMedicine({ durationValue: event.target.value })
-                  }
-                />
-              </label>
-              <label className="space-y-1 text-xs font-medium">
-                <span>Duration Type</span>
-                <select
-                  className="h-9 w-full rounded-md border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                  value={customMedicine.durationUnit}
-                  onChange={(event) => updateCustomMedicine({ durationUnit: event.target.value })}
-                >
-                  {customMedicineDurationUnitOptions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {(isTabletCapsule || isEyeDrop || isGenericMedicineType) ? (
-                <label className="flex items-end gap-2 pb-2 text-sm font-medium">
-                  <input
-                    className="h-4 w-4 accent-primary"
-                    type="checkbox"
-                    checked={customMedicine.continueMedicine}
-                    onChange={(event) =>
-                      updateCustomMedicine({ continueMedicine: event.target.checked })
-                    }
-                  />
-                  Continue
-                </label>
-              ) : null}
-            </div>
-
-            <Textarea
-              className="min-h-20 bg-background"
-              placeholder="Remarks..."
-              value={customMedicine.remarks}
-              onChange={(event) => updateCustomMedicine({ remarks: event.target.value })}
-            />
-
-            <div className="flex justify-between gap-2">
-              <button
-                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                type="button"
-                onClick={addCurrentQuery}
-              >
-                <Plus className="h-4 w-4" />
-                Use search text
-              </button>
-              <Button type="submit">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Custom Medicine
-              </Button>
-            </div>
-          </div>
-        </form>
+          </form>
+        ) : null}
 
         {medicines.length ? (
           <div className="rounded-md border">
@@ -3060,22 +3336,55 @@ function MedicationSidebar({
           </div>
         ) : null}
 
-        <NoteTemplateArea
-          placeholder="Type here..."
+        <MedicationNoteArea
           value={value}
           onChange={onChange}
-          onClear={onClear}
+          onClearAll={onClear}
         />
       </div>
     </RightDrawer>
   );
 }
 
+function MedicationNoteArea({
+  value,
+  onChange,
+  onClearAll
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onClearAll: () => void;
+}) {
+  return (
+    <div className="space-y-3 border-t pt-4">
+      <Textarea
+        className="min-h-28 resize-y bg-background"
+        placeholder="Type here..."
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <button
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+          type="button"
+          onClick={() => onChange("")}
+        >
+          <RotateCcw className="h-4 w-4" />
+          Clear
+        </button>
+      </div>
+      <div className="flex justify-end border-t pt-3">
+        <Button size="sm" variant="outline" type="button" onClick={onClearAll}>
+          <RotateCcw className="h-4 w-4" />
+          Clear All
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 type TagNoteSidebarProps = {
   addCustomLabel?: string;
-  alphabetFilters: string[];
-  emptyMessage: string;
-  favourites: string[];
   title: string;
   value: string;
   onAddTag: (tag: string) => void;
@@ -3087,9 +3396,6 @@ type TagNoteSidebarProps = {
 
 function TagNoteSidebar({
   addCustomLabel,
-  alphabetFilters,
-  emptyMessage,
-  favourites,
   title,
   value,
   onAddTag,
@@ -3099,16 +3405,6 @@ function TagNoteSidebar({
   onStatus
 }: TagNoteSidebarProps) {
   const [query, setQuery] = useState("");
-  const [sortMode, setSortMode] = useState<"alpha" | "frequent">("alpha");
-  const [alphabet, setAlphabet] = useState(alphabetFilters[0] ?? "ALL");
-
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredTags = favourites
-    .filter((tag) => alphabet === "ALL" || tag.toUpperCase().startsWith(alphabet.toUpperCase()))
-    .filter((tag) => (normalizedQuery ? tag.toLowerCase().includes(normalizedQuery) : true))
-    .sort((a, b) =>
-      sortMode === "alpha" ? a.localeCompare(b) : favourites.indexOf(a) - favourites.indexOf(b)
-    );
 
   function addCustom() {
     const text = query.trim();
@@ -3137,20 +3433,6 @@ function TagNoteSidebar({
           }}
         />
 
-        <div className="space-y-5">
-          {favourites.length ? (
-            <div className="flex justify-end">
-              <SortToggle sortMode={sortMode} onChange={setSortMode} />
-            </div>
-          ) : null}
-
-          <TagCloud emptyMessage={emptyMessage} tags={filteredTags} onTagClick={onAddTag} />
-
-          {alphabetFilters.length > 1 ? (
-            <AlphabetFilter filters={alphabetFilters} value={alphabet} onChange={setAlphabet} />
-          ) : null}
-        </div>
-
         {addCustomLabel ? (
           <div className="flex justify-end">
             <button
@@ -3164,7 +3446,7 @@ function TagNoteSidebar({
           </div>
         ) : null}
 
-        <NoteTemplateArea
+        <NoteTextArea
           placeholder="Type here..."
           value={value}
           onChange={onChange}
@@ -3717,107 +3999,7 @@ function TriStateControl({
   );
 }
 
-function SortToggle({
-  sortMode,
-  onChange
-}: {
-  sortMode: "alpha" | "frequent";
-  onChange: (value: "alpha" | "frequent") => void;
-}) {
-  return (
-    <div className="inline-flex overflow-hidden rounded-md border">
-      <button
-        aria-label="Alphabetical"
-        className={cn(
-          "flex h-12 w-10 items-center justify-center border-r",
-          sortMode === "alpha"
-            ? "bg-primary text-primary-foreground"
-            : "bg-background text-muted-foreground hover:bg-muted"
-        )}
-        title="Alphabetical"
-        type="button"
-        onClick={() => onChange("alpha")}
-      >
-        <ArrowDownAZ className="h-5 w-5" />
-      </button>
-      <button
-        aria-label="Most Frequent"
-        className={cn(
-          "flex h-12 w-10 items-center justify-center",
-          sortMode === "frequent"
-            ? "bg-primary text-primary-foreground"
-            : "bg-background text-muted-foreground hover:bg-muted"
-        )}
-        title="Most Frequent"
-        type="button"
-        onClick={() => onChange("frequent")}
-      >
-        <ArrowDown10 className="h-5 w-5" />
-      </button>
-    </div>
-  );
-}
-
-function TagCloud({
-  emptyMessage,
-  tags,
-  onTagClick
-}: {
-  emptyMessage: string;
-  tags: string[];
-  onTagClick: (tag: string) => void;
-}) {
-  if (!tags.length) {
-    return <div className="text-base text-muted-foreground">{emptyMessage}</div>;
-  }
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {tags.map((tag) => (
-        <button
-          key={tag}
-          className="rounded bg-muted px-5 py-1.5 text-sm text-foreground hover:bg-primary hover:text-primary-foreground"
-          type="button"
-          onClick={() => onTagClick(tag)}
-        >
-          {tag}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function AlphabetFilter({
-  filters,
-  value,
-  onChange
-}: {
-  filters: string[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1">
-      {filters.map((item) => (
-        <button
-          key={item}
-          className={cn(
-            "h-8 min-w-9 rounded-sm px-3 text-sm font-medium",
-            value === item
-              ? "bg-accent text-accent-foreground"
-              : "bg-primary text-primary-foreground hover:bg-primary/90"
-          )}
-          type="button"
-          onClick={() => onChange(item)}
-        >
-          {item}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function NoteTemplateArea({
+function NoteTextArea({
   placeholder,
   value,
   onChange,
@@ -3857,6 +4039,47 @@ type PrescriptionOptionTileProps = {
   onOpen: () => void;
 };
 
+function CollapsedPanelButton({
+  panel,
+  title,
+  hasContent,
+  onOpen
+}: {
+  panel: PanelKey;
+  title: string;
+  hasContent: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      aria-label={`Open ${title}`}
+      className="relative flex h-12 items-center justify-center rounded-md border bg-card text-muted-foreground hover:bg-muted hover:text-primary"
+      title={title}
+      type="button"
+      onClick={onOpen}
+    >
+      <PanelGlyph panel={panel} />
+      {hasContent ? (
+        <span
+          aria-label="Has details"
+          className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary"
+          title="Has details"
+        />
+      ) : null}
+    </button>
+  );
+}
+
+function PanelGlyph({ panel }: { panel: PanelKey }) {
+  if (panel === "history" || panel === "followUp") return <CalendarDays className="h-4 w-4" />;
+  if (panel === "findings" || panel === "investigation") return <Search className="h-4 w-4" />;
+  if (panel === "diagnosis") return <Check className="h-4 w-4" />;
+  if (panel === "medication") return <Plus className="h-4 w-4" />;
+  if (panel === "vision") return <Settings className="h-4 w-4" />;
+  if (panel === "referral") return <UserPlus className="h-4 w-4" />;
+  return <FileText className="h-4 w-4" />;
+}
+
 function PrescriptionOptionTile({
   title,
   hasContent,
@@ -3864,14 +4087,20 @@ function PrescriptionOptionTile({
   onOpen
 }: PrescriptionOptionTileProps) {
   return (
-    <section className="relative min-h-[118px] border-b border-border/70 px-5 py-6 last:border-b-0 hover:bg-background/45">
-      <button
-        aria-label={`Open ${title}`}
-        className="absolute inset-0 z-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        type="button"
-        onClick={onOpen}
-      />
-      <div className="relative z-10 flex items-start justify-between gap-4">
+    <section
+      aria-label={`Open ${title}`}
+      className="min-h-[118px] cursor-pointer border-b border-border/70 px-5 py-6 outline-none last:border-b-0 hover:bg-background/45 focus-visible:ring-2 focus-visible:ring-primary"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="truncate text-lg font-semibold uppercase text-muted-foreground">
             {title}
@@ -3884,7 +4113,11 @@ function PrescriptionOptionTile({
             ) : null}
           </h2>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div
+          className="flex shrink-0 items-center gap-1"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
           <PanelIconButton title="Clear All" onClick={onClear}>
             <RotateCcw className="h-4 w-4" />
           </PanelIconButton>
@@ -3944,16 +4177,21 @@ function FloatingPadButton({
 function PanelDialog({
   title,
   children,
+  size = "default",
   onClose
 }: {
   title: string;
   children: ReactNode;
+  size?: "default" | "wide";
   onClose: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
       <aside
-        className="ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft md:w-[60%]"
+        className={cn(
+          "ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft",
+          size === "wide" ? "md:w-[calc(100%-2rem)] xl:w-[1120px]" : "md:w-[60%]"
+        )}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-card px-4">
@@ -4132,7 +4370,9 @@ function PatientRegistrationDialog({
             </div>
 
             <div className="space-y-2">
-              <RequiredLabel htmlFor="patient-dob">Date of Birth</RequiredLabel>
+              <label className="text-sm font-medium" htmlFor="patient-dob">
+                Date of Birth
+              </label>
               <Input
                 id="patient-dob"
                 inputMode="numeric"
@@ -4147,6 +4387,7 @@ function PatientRegistrationDialog({
               <AgeInput
                 label="Age"
                 placeholder="Y"
+                required
                 value={form.ageYears}
                 onChange={(value) => onUpdate({ ageYears: value })}
               />
@@ -4211,17 +4452,22 @@ function RequiredLabel({
 function AgeInput({
   label,
   placeholder,
+  required = false,
   value,
   onChange
 }: {
   label: string;
   placeholder: string;
+  required?: boolean;
   value: string;
   onChange: (value: string) => void;
 }) {
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium">{label}</label>
+      <label className="text-sm font-medium">
+        {required ? <span className="text-destructive">*</span> : null}
+        {label}
+      </label>
       <Input
         inputMode="numeric"
         placeholder={placeholder}
@@ -4353,7 +4599,7 @@ function formatGlassPrescriptionBlock(title: string, prescription: GlassPrescrip
     prescription.add ? `ADD: ${prescription.add}` : "",
     prescription.ipd ? `IPD: ${prescription.ipd}` : "",
     prescription.glassFeatures.length
-      ? `Glass Features: ${prescription.glassFeatures.join(" + ")}`
+      ? `Glass Feature: ${prescription.glassFeatures.join(" + ")}`
       : "",
     prescription.lensType ? `Lens Type: ${prescription.lensType}` : "",
     prescription.iopRight ? `IOP Right Eye: ${prescription.iopRight} mmHg` : "",
@@ -4472,10 +4718,14 @@ function buildOphthalmicFindingLines(findings: FindingsState) {
     .map((row) => {
       const rightValue = String(findings[row.rightKey] ?? "").trim();
       const leftValue = String(findings[row.leftKey] ?? "").trim();
+      const rightNote = row.rightNoteKey ? String(findings[row.rightNoteKey] ?? "").trim() : "";
+      const leftNote = row.leftNoteKey ? String(findings[row.leftNoteKey] ?? "").trim() : "";
+      const rightText = [rightValue, rightNote].filter(Boolean).join(" ");
+      const leftText = [leftValue, leftNote].filter(Boolean).join(" ");
 
-      if (!rightValue && !leftValue) return "";
+      if (!rightText && !leftText) return "";
 
-      return `${row.label}: Right Eye ${rightValue || "-"} | Left Eye ${leftValue || "-"}`;
+      return `${row.label}: Right Eye ${rightText || "-"} | Left Eye ${leftText || "-"}`;
     })
     .filter(Boolean);
 

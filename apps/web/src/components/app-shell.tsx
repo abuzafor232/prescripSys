@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pill,
   Printer,
   Settings,
@@ -35,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<"checking" | "ready">("checking");
   const hydrated = useSessionHydrated();
   const accessToken = useSessionStore((state) => state.accessToken);
@@ -142,22 +145,54 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <CommandPalette />
       <aside
         className={cn(
-          "no-print fixed inset-y-0 left-0 z-40 w-64 border-r bg-card transition-transform lg:translate-x-0",
+          "no-print fixed inset-y-0 left-0 z-40 w-64 border-r bg-card transition-all duration-200 lg:translate-x-0",
+          sidebarCollapsed ? "lg:w-20" : "lg:w-64",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-          <div className="flex h-16 items-center gap-3 border-b px-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Printer className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-sm font-semibold">PrescriptionOS BD</div>
-              <div className="text-xs text-muted-foreground">
-                {user?.roles[0] ?? "Doctor"} workspace
-              </div>
+        <div
+          className={cn(
+            "flex h-16 items-center gap-3 border-b px-4",
+            sidebarCollapsed ? "lg:justify-center lg:px-3" : ""
+          )}
+        >
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Printer className="h-5 w-5" />
+          </div>
+          <div className={cn("min-w-0", sidebarCollapsed ? "lg:hidden" : "")}>
+            <div className="truncate text-sm font-semibold">PrescriptionOS BD</div>
+            <div className="truncate text-xs text-muted-foreground">
+              {user?.roles[0] ?? "Doctor"} workspace
             </div>
           </div>
-        <nav className="space-y-1 p-3">
+          <Button
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={cn("ml-auto hidden h-8 w-8 lg:inline-flex", sidebarCollapsed ? "lg:hidden" : "")}
+            size="icon"
+            type="button"
+            variant="ghost"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </Button>
+        </div>
+        {sidebarCollapsed ? (
+          <div className="hidden border-b p-3 lg:block">
+            <Button
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+              className="h-10 w-10"
+              size="icon"
+              type="button"
+              variant="ghost"
+              onClick={() => setSidebarCollapsed(false)}
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : null}
+        <nav className={cn("space-y-1 p-3", sidebarCollapsed ? "lg:px-2" : "")}>
           {nav.map((item) => {
             const Icon = item.icon;
             const active =
@@ -168,19 +203,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 className={cn(
                   "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium",
+                  sidebarCollapsed ? "lg:justify-center lg:px-0" : "",
                   active
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
                 onClick={() => setMobileOpen(false)}
+                title={item.label}
               >
-                <Icon className="h-4 w-4" />
-                {item.label}
+                <Icon className={cn("h-4 w-4 shrink-0", sidebarCollapsed ? "lg:h-5 lg:w-5" : "")} />
+                <span className={cn("truncate", sidebarCollapsed ? "lg:hidden" : "")}>
+                  {item.label}
+                </span>
               </Link>
             );
           })}
         </nav>
-        <div className="absolute bottom-0 left-0 right-0 border-t p-3">
+        <div className={cn("absolute bottom-0 left-0 right-0 border-t p-3", sidebarCollapsed ? "lg:hidden" : "")}>
           <div className="rounded-lg bg-muted p-3">
             <div className="text-xs font-medium">Active shift</div>
             <div className="mt-2 flex items-center justify-between">
@@ -191,7 +230,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="lg:pl-64">
+      <div className={cn("transition-[padding] duration-200", sidebarCollapsed ? "lg:pl-20" : "lg:pl-64")}>
         <header className="no-print sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background/90 px-4 backdrop-blur lg:px-6">
           <div className="flex items-center gap-2">
             <Button
