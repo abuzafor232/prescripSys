@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Ban,
@@ -12,11 +13,19 @@ import {
   Copy,
   Eraser,
   FileText,
+  Eye,
+  History,
   Loader2,
+  Pencil,
+  PenLine,
   Plus,
   Printer,
+  UserCheck,
+  UserCog,
   RotateCcw,
   Search,
+  LayoutGrid,
+  LogOut,
   Settings,
   Trash2,
   UserPlus,
@@ -30,8 +39,11 @@ import {
   apiFetch,
   createPrescription,
   createPatient,
+  updatePatient,
   fetchChambers,
   fetchDoctors,
+  fetchPrescriptionById,
+  fetchPatientPrescriptions,
   getApiErrorMessage,
   searchPatients,
   type CreatePrescriptionInput,
@@ -42,8 +54,9 @@ import {
   type PatientGender
 } from "@/lib/api";
 import { DOSE_PATTERNS, MEAL_INSTRUCTIONS } from "@/lib/prescription-constants";
-import { cn } from "@/lib/utils";
+import { cn, toTitleCase } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useSearchParams } from "next/navigation";
 import { useSessionStore } from "@/stores/session-store";
 
 type RxMedicine = {
@@ -145,24 +158,48 @@ type FindingsState = {
   ophthalmicVisualAcuityLeft: string;
   ophthalmicVisualAcuityRightNote: string;
   ophthalmicVisualAcuityLeftNote: string;
+  ophthalmicVisualAcuityWithPhRight: string;
+  ophthalmicVisualAcuityWithPhLeft: string;
+  ophthalmicVisualAcuityWithPgpRight: string;
+  ophthalmicVisualAcuityWithPgpLeft: string;
   ophthalmicOrbitAdnexaRight: string;
   ophthalmicOrbitAdnexaLeft: string;
+  ophthalmicOrbitAdnexaRightNote: string;
+  ophthalmicOrbitAdnexaLeftNote: string;
   ophthalmicPupilRight: string;
   ophthalmicPupilLeft: string;
   ophthalmicCdRight: string;
   ophthalmicCdLeft: string;
+  ophthalmicCdRightNote: string;
+  ophthalmicCdLeftNote: string;
   ophthalmicAntSegmentRight: string;
   ophthalmicAntSegmentLeft: string;
+  ophthalmicAntSegmentRightNote: string;
+  ophthalmicAntSegmentLeftNote: string;
   ophthalmicPostSegmentRight: string;
   ophthalmicPostSegmentLeft: string;
+  ophthalmicPostSegmentRightNote: string;
+  ophthalmicPostSegmentLeftNote: string;
   ophthalmicIopRight: string;
   ophthalmicIopLeft: string;
+  ophthalmicIopRightNote: string;
+  ophthalmicIopLeftNote: string;
   ophthalmicSptRight: string;
   ophthalmicSptLeft: string;
   ophthalmicSptRightNote: string;
   ophthalmicSptLeftNote: string;
   ophthalmicOthersRight: string;
   ophthalmicOthersLeft: string;
+  ophthalmicVaRecordRightSphere: string;
+  ophthalmicVaRecordRightCyl: string;
+  ophthalmicVaRecordRightAxis: string;
+  ophthalmicVaRecordRightVa: string;
+  ophthalmicVaRecordLeftSphere: string;
+  ophthalmicVaRecordLeftCyl: string;
+  ophthalmicVaRecordLeftAxis: string;
+  ophthalmicVaRecordLeftVa: string;
+  ophthalmicPseudophakiaRight: string;
+  ophthalmicPseudophakiaLeft: string;
   ophthalmicRemark: string;
   gynaeMenarche: string;
   gynaeLmp: string;
@@ -196,6 +233,166 @@ type ReferralEntry = {
   additionalInfo: string;
   direction: "to" | "from";
 };
+
+type QueueAppointment = {
+  id: string;
+  date?: string;
+  patientName: string;
+  phone: string;
+  time: string;
+  appointmentType: string;
+  status: string;
+  ageYears?: string;
+  ageMonths?: string;
+  ageDays?: string;
+  gender?: string;
+  dateOfBirth?: string;
+  bloodGroup?: string;
+};
+
+type ComplaintEntry = {
+  id: string;
+  name: string;
+  value: string;
+  forType: "For" | "Since" | "On";
+  forAmount: string;
+  forUnit: "Day" | "Month" | "Week" | "Year" | "Hour";
+  forDate: string;
+  note: string;
+};
+
+type HistoryDuration = {
+  type: "For" | "Since" | "On" | "Range";
+  amount: string;
+  unit: "Day" | "Week" | "Month" | "Year";
+  text: string;
+  rangeTo: string;
+};
+
+type HistoryEntry = {
+  id: string;
+  tab: HistoryTab;
+  name: string;
+  value: string;
+  duration?: HistoryDuration;
+  note: string;
+};
+
+type InvestigationEntry = { id: string; name: string; value: string; };
+type DiagnosisEntry = { id: string; name: string; value: string; };
+
+type RxDraft = {
+  id: string;
+  name: string;
+  note?: string;
+  tags?: string[];
+  appointmentId?: string;
+  serialNo?: number;
+  savedAt: string;
+  patient: Patient | null;
+  notes: Record<NoteKey, string>;
+  medicines: RxMedicine[];
+  medicationNote: string;
+  findings: FindingsState;
+  vision: VisionState;
+  referrals: ReferralEntry[];
+  followUpDate: string;
+  fees?: string;
+  rxInvestigations: InvestigationEntry[];
+  rxDiagnoses: DiagnosisEntry[];
+};
+
+type RxTemplate = {
+  id: string;
+  name: string;
+  savedAt: string;
+  notes: Record<NoteKey, string>;
+  medicines: RxMedicine[];
+  medicationNote: string;
+  rxInvestigations: InvestigationEntry[];
+  rxDiagnoses: DiagnosisEntry[];
+};
+
+const DRAFTS_STORAGE_KEY = "rx-drafts";
+const TEMPLATES_STORAGE_KEY = "rx-templates";
+const APPOINTMENTS_STORAGE_KEY = "rx-appointments";
+const PATIENT_NOTES_STORAGE_KEY = "rx-patient-notes";
+const LAST_VISIT_KEY = "rx-last-visit";
+const ADVICE_LIBRARY_KEY = "rx-advice-library";
+const SUGG_COMPLAINT = "rx-sugg-complaint";
+const SUGG_HISTORY = "rx-sugg-history";
+const SUGG_INVESTIGATION = "rx-sugg-investigation";
+const SUGG_DIAGNOSIS = "rx-sugg-diagnosis";
+
+function loadSuggestions(key: string): string[] {
+  try { return JSON.parse(localStorage.getItem(key) ?? "[]"); } catch { return []; }
+}
+function persistSuggestion(key: string, name: string) {
+  if (!name.trim()) return;
+  const list = loadSuggestions(key);
+  if (list.some((s: string) => s.toLowerCase() === name.trim().toLowerCase())) return;
+  localStorage.setItem(key, JSON.stringify([name.trim(), ...list].slice(0, 200)));
+}
+function deleteSuggestion(key: string, name: string) {
+  const list = loadSuggestions(key);
+  localStorage.setItem(key, JSON.stringify(list.filter((s: string) => s !== name)));
+}
+
+function formatTimeAgo(dateStr: string): string {
+  const then = new Date(dateStr);
+  if (isNaN(then.getTime())) return "";
+  const now = new Date();
+  let y = now.getFullYear() - then.getFullYear();
+  let mo = now.getMonth() - then.getMonth();
+  let d = now.getDate() - then.getDate();
+  if (d < 0) { mo--; d += new Date(now.getFullYear(), now.getMonth(), 0).getDate(); }
+  if (mo < 0) { y--; mo += 12; }
+  if (y === 0 && mo === 0 && d === 0) return "Today";
+  const parts: string[] = [];
+  if (y > 0) parts.push(`${y} Year${y !== 1 ? "s" : ""}`);
+  if (mo > 0) parts.push(`${mo} Month${mo !== 1 ? "s" : ""}`);
+  if (d > 0) parts.push(`${d} Day${d !== 1 ? "s" : ""}`);
+  return parts.join(" ") + " Ago";
+}
+
+function storeLastVisit(patientId: string, phone?: string | null) {
+  try {
+    const store = JSON.parse(localStorage.getItem(LAST_VISIT_KEY) ?? "{}") as Record<string, string>;
+    const now = new Date().toISOString();
+    store[patientId] = now;
+    if (phone) store[`p:${phone}`] = now;
+    localStorage.setItem(LAST_VISIT_KEY, JSON.stringify(store));
+  } catch {}
+}
+
+function getLastVisit(patientId?: string | null, phone?: string | null): string | null {
+  try {
+    const store = JSON.parse(localStorage.getItem(LAST_VISIT_KEY) ?? "{}") as Record<string, string>;
+    if (patientId && store[patientId]) return store[patientId];
+    if (phone && store[`p:${phone}`]) return store[`p:${phone}`];
+    return null;
+  } catch { return null; }
+}
+
+function formatHistoryDuration(d: HistoryDuration): string {
+  if (d.type === "For") return d.amount ? `For ${d.amount} ${d.unit}${Number(d.amount) !== 1 ? "s" : ""}` : "";
+  if (d.type === "Since") return d.text ? `Since ${d.text}` : "";
+  if (d.type === "On") return d.text ? `On ${d.text}` : "";
+  if (d.type === "Range") return d.text || d.rangeTo ? `From ${d.text} to ${d.rangeTo}` : "";
+  return "";
+}
+
+function loadFromStorage<T>(key: string): T[] {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? "[]") as T[];
+  } catch {
+    return [];
+  }
+}
+
+function saveToStorage<T>(key: string, items: T[]) {
+  localStorage.setItem(key, JSON.stringify(items));
+}
 
 const initialPatientForm: PatientFormState = {
   name: "",
@@ -271,24 +468,48 @@ const initialFindings: FindingsState = {
   ophthalmicVisualAcuityLeft: "",
   ophthalmicVisualAcuityRightNote: "",
   ophthalmicVisualAcuityLeftNote: "",
+  ophthalmicVisualAcuityWithPhRight: "",
+  ophthalmicVisualAcuityWithPhLeft: "",
+  ophthalmicVisualAcuityWithPgpRight: "",
+  ophthalmicVisualAcuityWithPgpLeft: "",
   ophthalmicOrbitAdnexaRight: "",
   ophthalmicOrbitAdnexaLeft: "",
+  ophthalmicOrbitAdnexaRightNote: "",
+  ophthalmicOrbitAdnexaLeftNote: "",
   ophthalmicPupilRight: "",
   ophthalmicPupilLeft: "",
   ophthalmicCdRight: "",
   ophthalmicCdLeft: "",
+  ophthalmicCdRightNote: "",
+  ophthalmicCdLeftNote: "",
   ophthalmicAntSegmentRight: "",
   ophthalmicAntSegmentLeft: "",
+  ophthalmicAntSegmentRightNote: "",
+  ophthalmicAntSegmentLeftNote: "",
   ophthalmicPostSegmentRight: "",
   ophthalmicPostSegmentLeft: "",
+  ophthalmicPostSegmentRightNote: "",
+  ophthalmicPostSegmentLeftNote: "",
   ophthalmicIopRight: "",
   ophthalmicIopLeft: "",
+  ophthalmicIopRightNote: "",
+  ophthalmicIopLeftNote: "",
   ophthalmicSptRight: "",
   ophthalmicSptLeft: "",
   ophthalmicSptRightNote: "",
   ophthalmicSptLeftNote: "",
   ophthalmicOthersRight: "",
   ophthalmicOthersLeft: "",
+  ophthalmicVaRecordRightSphere: "",
+  ophthalmicVaRecordRightCyl: "",
+  ophthalmicVaRecordRightAxis: "",
+  ophthalmicVaRecordRightVa: "",
+  ophthalmicVaRecordLeftSphere: "",
+  ophthalmicVaRecordLeftCyl: "",
+  ophthalmicVaRecordLeftAxis: "",
+  ophthalmicVaRecordLeftVa: "",
+  ophthalmicPseudophakiaRight: "",
+  ophthalmicPseudophakiaLeft: "",
   ophthalmicRemark: "",
   gynaeMenarche: "",
   gynaeLmp: "",
@@ -320,7 +541,13 @@ const ophthalmicFindingRows: Array<{
   leftKey: keyof FindingsState;
   rightNoteKey?: keyof FindingsState;
   leftNoteKey?: keyof FindingsState;
-  inputType?: "select";
+  rightWithPhKey?: keyof FindingsState;
+  leftWithPhKey?: keyof FindingsState;
+  rightWithPgpKey?: keyof FindingsState;
+  leftWithPgpKey?: keyof FindingsState;
+  inputType?: "select" | "freetext" | "checkbox" | "varecord";
+  multiSelect?: boolean;
+  unit?: string;
   options?: string[];
 }> = [
   {
@@ -329,27 +556,26 @@ const ophthalmicFindingRows: Array<{
     leftKey: "ophthalmicVisualAcuityLeft",
     rightNoteKey: "ophthalmicVisualAcuityRightNote",
     leftNoteKey: "ophthalmicVisualAcuityLeftNote",
+    rightWithPhKey: "ophthalmicVisualAcuityWithPhRight",
+    leftWithPhKey: "ophthalmicVisualAcuityWithPhLeft",
+    rightWithPgpKey: "ophthalmicVisualAcuityWithPgpRight",
+    leftWithPgpKey: "ophthalmicVisualAcuityWithPgpLeft",
     inputType: "select",
     options: ["6/6", "6/9", "6/12", "6/18", "6/24", "6/36", "6/60", "4/60", "3/60", "<6/60", "CF-2ft", "CF-1ft", "HM", "PL"]
   },
-  {
-    label: "Orbit & Adnexa",
-    rightKey: "ophthalmicOrbitAdnexaRight",
-    leftKey: "ophthalmicOrbitAdnexaLeft"
-  },
+  { label: "VA Record", rightKey: "ophthalmicOthersRight", leftKey: "ophthalmicOthersLeft", inputType: "varecord" },
+  { label: "Orbit & Adnexa", rightKey: "ophthalmicOrbitAdnexaRight", leftKey: "ophthalmicOrbitAdnexaLeft", rightNoteKey: "ophthalmicOrbitAdnexaRightNote", leftNoteKey: "ophthalmicOrbitAdnexaLeftNote", inputType: "select", options: [] },
   { label: "Pupil", rightKey: "ophthalmicPupilRight", leftKey: "ophthalmicPupilLeft" },
-  { label: "CD", rightKey: "ophthalmicCdRight", leftKey: "ophthalmicCdLeft" },
   {
-    label: "Ant. Segment",
-    rightKey: "ophthalmicAntSegmentRight",
-    leftKey: "ophthalmicAntSegmentLeft"
+    label: "Pseudophakia",
+    rightKey: "ophthalmicPseudophakiaRight",
+    leftKey: "ophthalmicPseudophakiaLeft",
+    inputType: "checkbox"
   },
-  {
-    label: "Post. Segment",
-    rightKey: "ophthalmicPostSegmentRight",
-    leftKey: "ophthalmicPostSegmentLeft"
-  },
-  { label: "IOP", rightKey: "ophthalmicIopRight", leftKey: "ophthalmicIopLeft" },
+  { label: "Ant. Segment", rightKey: "ophthalmicAntSegmentRight", leftKey: "ophthalmicAntSegmentLeft", rightNoteKey: "ophthalmicAntSegmentRightNote", leftNoteKey: "ophthalmicAntSegmentLeftNote", inputType: "select", options: [] },
+  { label: "CD", rightKey: "ophthalmicCdRight", leftKey: "ophthalmicCdLeft", rightNoteKey: "ophthalmicCdRightNote", leftNoteKey: "ophthalmicCdLeftNote", inputType: "select", options: [] },
+  { label: "Post. Segment", rightKey: "ophthalmicPostSegmentRight", leftKey: "ophthalmicPostSegmentLeft", rightNoteKey: "ophthalmicPostSegmentRightNote", leftNoteKey: "ophthalmicPostSegmentLeftNote", inputType: "select", options: [] },
+  { label: "IOP", rightKey: "ophthalmicIopRight", leftKey: "ophthalmicIopLeft", rightNoteKey: "ophthalmicIopRightNote", leftNoteKey: "ophthalmicIopLeftNote", inputType: "select", unit: "mmHg", options: [] },
   {
     label: "SPT",
     rightKey: "ophthalmicSptRight",
@@ -357,9 +583,9 @@ const ophthalmicFindingRows: Array<{
     rightNoteKey: "ophthalmicSptRightNote",
     leftNoteKey: "ophthalmicSptLeftNote",
     inputType: "select",
-    options: ["Patent", "Partially Patent", "Blocked"]
-  },
-  { label: "Others", rightKey: "ophthalmicOthersRight", leftKey: "ophthalmicOthersLeft" }
+    multiSelect: true,
+    options: ["Patent", "Partially Patent", "Blocked", "Canalicular Obstruction"]
+  }
 ];
 
 const panelTitles: Record<PanelKey, string> = {
@@ -409,7 +635,7 @@ const occupations = [
   "Other"
 ];
 
-const glassFeatureOptions = ["White", "Anti Reflecting", "PhotoSun", "Blue Cut"];
+const glassFeatureOptions = ["White", "Anti Reflective", "PhotoSun", "Blue Cut"];
 const lensTypeOptions = ["Unifocal", "Bifocal", "Progressive/Verilux"];
 const glassPowerStepOptions = Array.from(
   { length: 40 },
@@ -442,6 +668,7 @@ const glassVisualAcuityPickerOptions = [
   "NPL"
 ];
 const glassAddPickerOptions = [
+  "+0.75",
   "+1.00",
   "+1.25",
   "+1.50",
@@ -618,33 +845,74 @@ function customMedicineDefaultsForType(
 }
 
 export function PrescriptionBuilder() {
+  const searchParams = useSearchParams();
   const token = useSessionStore((state) => state.accessToken);
   const sessionUser = useSessionStore((state) => state.user);
+  const attendAptIdRef = useRef<string | null>(null);
+  const queueSerialRef = useRef<number | null>(null);
+  const pendingLoadRef = useRef<{ type: "draft"; item: RxDraft } | { type: "template"; item: RxTemplate } | null>(null);
+  const forceSelectAfterRegisterRef = useRef(false);
+  const clearAfterSaveRef = useRef(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientQuery, setPatientQuery] = useState("");
   const [patientSearchOpen, setPatientSearchOpen] = useState(false);
+  const [patientEditOpen, setPatientEditOpen] = useState(false);
+  const [draftPopupOpen, setDraftPopupOpen] = useState(false);
+  const [draftPopupName, setDraftPopupName] = useState("");
+  const [draftPopupNote, setDraftPopupNote] = useState("");
+  const [draftPopupTags, setDraftPopupTags] = useState<string[]>([]);
+  const [draftPopupEditId, setDraftPopupEditId] = useState<string | null>(null);
+  const [templateNamePopupOpen, setTemplateNamePopupOpen] = useState(false);
+  const [templateNameInput, setTemplateNameInput] = useState("");
+  const [loadConflict, setLoadConflict] = useState<{ type: "draft"; item: RxDraft } | { type: "template"; item: RxTemplate } | null>(null);
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [patientForm, setPatientForm] = useState<PatientFormState>(initialPatientForm);
   const [patientFormError, setPatientFormError] = useState("");
   const [medicineQuery, setMedicineQuery] = useState("");
   const [medicationNote, setMedicationNote] = useState("");
   const [medicines, setMedicines] = useState<RxMedicine[]>([]);
+  const [complaints, setComplaints] = useState<ComplaintEntry[]>([]);
+  const [histories, setHistories] = useState<HistoryEntry[]>([]);
+  const [rxInvestigations, setRxInvestigations] = useState<InvestigationEntry[]>([]);
+  const [rxDiagnoses, setRxDiagnoses] = useState<DiagnosisEntry[]>([]);
   const [notes, setNotes] = useState<Record<NoteKey, string>>(initialNotes);
   const [findings, setFindings] = useState<FindingsState>(initialFindings);
   const [vision, setVision] = useState<VisionState>(() => createInitialVision());
   const [referrals, setReferrals] = useState<ReferralEntry[]>([]);
   const [followUpDate, setFollowUpDate] = useState("");
+  const [fees, setFees] = useState("");
   const [activePanel, setActivePanel] = useState<PanelKey | null>(null);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [paperType, setPaperType] = useState<"default" | "alternate">("default");
   const [paperMenuOpen, setPaperMenuOpen] = useState(false);
   const [lastSavedPrescription, setLastSavedPrescription] = useState<Prescription | null>(null);
+  const [draftDialogOpen, setDraftDialogOpen] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [drafts, setDrafts] = useState<RxDraft[]>(() => loadFromStorage<RxDraft>(DRAFTS_STORAGE_KEY));
+  const [templates, setTemplates] = useState<RxTemplate[]>(() => loadFromStorage<RxTemplate>(TEMPLATES_STORAGE_KEY));
+  const [queueAppointments, setQueueAppointments] = useState<QueueAppointment[]>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(APPOINTMENTS_STORAGE_KEY) : null;
+      const all: QueueAppointment[] = raw ? JSON.parse(raw) : [];
+      return all.filter((a) => a.status === "Confirmed");
+    } catch { return []; }
+  });
+  const [patientNote, setPatientNote] = useState("");
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [prevRxOpen, setPrevRxOpen] = useState(false);
+  const [prevRxPreviewId, setPrevRxPreviewId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{
     tone: "success" | "warning";
     text: string;
   } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const debouncedPatientQuery = useDebounce(patientQuery.trim());
+  const rawPatientQuery = patientQuery.trim();
+  // Short numeric queries are registration IDs — strip leading zeros so "0042" finds patient "00042".
+  // Longer numbers (phone numbers are 11 digits in BD) are sent as-is.
+  const normalizedPatientQuery = /^\d{1,6}$/.test(rawPatientQuery)
+    ? String(parseInt(rawPatientQuery, 10))
+    : rawPatientQuery;
+  const debouncedPatientQuery = useDebounce(normalizedPatientQuery);
   const debouncedQuery = useDebounce(medicineQuery);
   const debouncedMedicineQuery = debouncedQuery.trim();
   const currentMedicineQuery = medicineQuery.trim();
@@ -653,8 +921,15 @@ export function PrescriptionBuilder() {
 
   const patientSearch = useQuery({
     queryKey: ["patient-search", debouncedPatientQuery, token],
-    enabled: patientSearchOpen && debouncedPatientQuery.length > 1 && Boolean(token),
+    enabled: patientSearchOpen && rawPatientQuery.length > 1 && Boolean(token),
     queryFn: () => searchPatients(debouncedPatientQuery, token!)
+  });
+
+  const patientRxQuery = useQuery({
+    queryKey: ["patient-rx", selectedPatient?.id, token],
+    enabled: !!selectedPatient?.id && !!token,
+    queryFn: () => fetchPatientPrescriptions(selectedPatient!.id, token!),
+    staleTime: 60_000,
   });
 
   const medicineSearch = useQuery({
@@ -701,14 +976,30 @@ export function PrescriptionBuilder() {
       return createPatient(input, token);
     },
     onSuccess: (patient) => {
-      if (patientForm.createPrescription) {
+      if (patientForm.createPrescription || forceSelectAfterRegisterRef.current) {
         setSelectedPatient(patient);
       }
+      forceSelectAfterRegisterRef.current = false;
       setPatientQuery("");
       setPatientSearchOpen(false);
       setRegistrationOpen(false);
       setPatientForm(initialPatientForm);
       setPatientFormError("");
+    }
+  });
+
+  const updatePatientMutation = useMutation({
+    mutationFn: (input: Partial<CreatePatientInput>) => {
+      if (!token) throw new Error("Please sign in.");
+      if (!selectedPatient) throw new Error("No patient selected.");
+      return updatePatient(selectedPatient.id, input, token);
+    },
+    onSuccess: (patient) => {
+      setSelectedPatient(patient);
+      setPatientEditOpen(false);
+      setPatientForm(initialPatientForm);
+      setPatientFormError("");
+      showStatus("success", "Patient updated");
     }
   });
 
@@ -718,15 +1009,21 @@ export function PrescriptionBuilder() {
     }: {
       input: CreatePrescriptionInput;
       printAfterSave: boolean;
+      clearAfterSave: boolean;
     }) => {
       if (!token) throw new Error("Please sign in before saving a prescription.");
       return createPrescription(input, token);
     },
     onSuccess: (prescription, variables) => {
       setLastSavedPrescription(prescription);
+      storeLastVisit(prescription.patientId, selectedPatient?.phone);
+      completeAttendedAppointment(prescription.id);
       showStatus("success", `Prescription ${prescription.prescriptionNo} saved.`);
       if (variables.printAfterSave) {
         window.setTimeout(() => window.print(), 0);
+      }
+      if (variables.clearAfterSave) {
+        clearPrescriptionPad();
       }
     },
     onError: (error) => {
@@ -797,6 +1094,47 @@ export function PrescriptionBuilder() {
     }
 
     registerPatient.mutate({
+      name,
+      phone: mobile.startsWith("+88") ? mobile : `+88${mobile}`,
+      gender: patientForm.gender,
+      dateOfBirth,
+      ageYears,
+      ageMonths,
+      ageDays,
+      bloodGroup: patientForm.bloodGroup || undefined
+    });
+  }
+
+  function openPatientEdit() {
+    if (!selectedPatient) return;
+    setPatientForm({
+      name: selectedPatient.name,
+      mobile: selectedPatient.phone?.replace(/^\+88/, "") ?? "",
+      gender: selectedPatient.gender,
+      dateOfBirth: selectedPatient.dateOfBirth ?? "",
+      ageYears: selectedPatient.ageYears?.toString() ?? "",
+      ageMonths: selectedPatient.ageMonths?.toString() ?? "",
+      ageDays: selectedPatient.ageDays?.toString() ?? "",
+      bloodGroup: selectedPatient.bloodGroup ?? "",
+      occupation: "",
+      createPrescription: false
+    });
+    setPatientFormError("");
+    setPatientEditOpen(true);
+  }
+
+  function handlePatientEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = patientForm.name.trim();
+    const mobile = patientForm.mobile.trim();
+    const dateOfBirth = parsePatientDate(patientForm.dateOfBirth.trim());
+    const ageYears = parseOptionalInteger(patientForm.ageYears);
+    const ageMonths = parseOptionalInteger(patientForm.ageMonths);
+    const ageDays = parseOptionalInteger(patientForm.ageDays);
+    if (!name) { setPatientFormError("Patient name is required."); return; }
+    if (!mobile) { setPatientFormError("Patient mobile is required."); return; }
+    if (patientForm.dateOfBirth.trim() && !dateOfBirth) { setPatientFormError("Use DD/MM/YYYY for date of birth."); return; }
+    updatePatientMutation.mutate({
       name,
       phone: mobile.startsWith("+88") ? mobile : `+88${mobile}`,
       gender: patientForm.gender,
@@ -948,9 +1286,15 @@ export function PrescriptionBuilder() {
     } else if (panel === "referral") {
       setReferrals([]);
       updateNote("referral", "");
+    } else if (panel === "complaint") {
+      setComplaints([]);
+      updateNote("complaint", "");
+    } else if (panel === "history") {
+      setHistories([]);
+      updateNote("history", "");
     } else {
       updateNote(panel, "");
-      if (panel === "followUp") setFollowUpDate("");
+      if (panel === "followUp") { setFollowUpDate(""); setFees(""); }
     }
     showStatus("success", `${panelTitles[panel]} cleared`);
   }
@@ -967,12 +1311,290 @@ export function PrescriptionBuilder() {
       referral: ""
     });
     setMedicines([]);
+    setComplaints([]);
+    setHistories([]);
     setMedicationNote("");
     setFindings(initialFindings);
     setVision(createInitialVision());
     setReferrals([]);
     setFollowUpDate("");
+    setFees("");
+    setRxInvestigations([]);
+    setRxDiagnoses([]);
     showStatus("success", "Prescription pad cleared");
+  }
+
+  function completeAttendedAppointment(prescriptionId: string) {
+    const aptId = attendAptIdRef.current;
+    if (!aptId) return;
+    attendAptIdRef.current = null;
+    try {
+      const raw = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
+      if (!raw) return;
+      const all = JSON.parse(raw) as Array<{ id: string; status: string; prescriptionId?: string }>;
+      localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(
+        all.map((a) => a.id === aptId ? { ...a, status: "Completed", prescriptionId } : a)
+      ));
+    } catch {}
+  }
+
+  function attendFromQueue(appt: QueueAppointment) {
+    const genderMap: Record<string, PatientGender> = { Male: "MALE", Female: "FEMALE", Other: "OTHER" };
+    const mappedGender = genderMap[appt.gender ?? ""] ?? "UNKNOWN";
+    const toNum = (v?: string) => { if (!v) return undefined; const n = parseInt(v, 10); return isNaN(n) ? undefined : n; };
+    const serial = queueAppointments.findIndex((a) => a.id === appt.id) + 1;
+    queueSerialRef.current = serial > 0 ? serial : null;
+    forceSelectAfterRegisterRef.current = true;
+    attendAptIdRef.current = appt.id;
+    setSelectedPatient({
+      id: appt.id,
+      tenantId: sessionUser?.tenantId ?? "",
+      name: appt.patientName,
+      phone: appt.phone || null,
+      gender: mappedGender,
+      dateOfBirth: appt.dateOfBirth || null,
+      ageYears: toNum(appt.ageYears) ?? null,
+      ageMonths: toNum(appt.ageMonths) ?? null,
+      ageDays: toNum(appt.ageDays) ?? null,
+      bloodGroup: appt.bloodGroup || null,
+    });
+    registerPatient.mutate({
+      name: appt.patientName,
+      phone: appt.phone || undefined,
+      gender: mappedGender,
+      dateOfBirth: appt.dateOfBirth || undefined,
+      ageYears: toNum(appt.ageYears),
+      ageMonths: toNum(appt.ageMonths),
+      ageDays: toNum(appt.ageDays),
+      bloodGroup: appt.bloodGroup || undefined,
+    });
+  }
+
+  function clearPrescriptionPad() {
+    setSelectedPatient(null);
+    setPatientQuery("");
+    setNotes(initialNotes);
+    setMedicines([]);
+    setComplaints([]);
+    setHistories([]);
+    setRxInvestigations([]);
+    setRxDiagnoses([]);
+    setMedicationNote("");
+    setFindings(initialFindings);
+    setVision(createInitialVision());
+    setReferrals([]);
+    setFollowUpDate("");
+    setPatientNote("");
+    setNoteEditing(false);
+    setPrevRxOpen(false);
+    setActivePanel(null);
+    setDraftPopupOpen(false);
+    setDraftPopupName("");
+    setDraftPopupNote("");
+    setDraftPopupTags([]);
+    setDraftPopupEditId(null);
+    attendAptIdRef.current = null;
+    queueSerialRef.current = null;
+  }
+
+  function saveDraft(name: string, note?: string, tags?: string[]) {
+    const aptId = attendAptIdRef.current ?? undefined;
+    const draft: RxDraft = {
+      id: crypto.randomUUID(),
+      name: name.trim() || `Draft ${new Date().toLocaleString()}`,
+      note: note?.trim() || undefined,
+      tags: tags && tags.length > 0 ? tags : undefined,
+      appointmentId: aptId,
+      serialNo: queueSerialRef.current ?? undefined,
+      savedAt: new Date().toISOString(),
+      patient: selectedPatient,
+      notes,
+      medicines,
+      medicationNote,
+      findings,
+      vision,
+      referrals,
+      followUpDate,
+      fees,
+      rxInvestigations,
+      rxDiagnoses
+    };
+    const updated = [draft, ...drafts];
+    setDrafts(updated);
+    saveToStorage(DRAFTS_STORAGE_KEY, updated);
+    // Mark the appointment as "Draft" in localStorage so it doesn't reappear in the queue
+    if (aptId) {
+      try {
+        const raw = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
+        const all: QueueAppointment[] = raw ? JSON.parse(raw) : [];
+        localStorage.setItem(
+          APPOINTMENTS_STORAGE_KEY,
+          JSON.stringify(all.map((a) => a.id === aptId ? { ...a, status: "Draft" } : a))
+        );
+      } catch {}
+    }
+    showStatus("success", `Draft "${draft.name}" saved`);
+    clearPrescriptionPad();
+    // If user chose "Save to Draft & Load", execute the pending load now
+    const pending = pendingLoadRef.current;
+    pendingLoadRef.current = null;
+    if (pending) {
+      window.setTimeout(() => {
+        if (pending.type === "draft") loadDraft(pending.item);
+        else loadTemplate(pending.item);
+      }, 50);
+    }
+  }
+
+  function updateDraft(id: string, patch: Partial<Pick<RxDraft, "name" | "note" | "tags">>) {
+    const updated = drafts.map((d) => (d.id === id ? { ...d, ...patch } : d));
+    setDrafts(updated);
+    saveToStorage(DRAFTS_STORAGE_KEY, updated);
+  }
+
+  function openDraftPopup() {
+    setDraftPopupName(selectedPatient?.name ?? "");
+    setDraftPopupNote("");
+    setDraftPopupTags([]);
+    setDraftPopupEditId(null);
+    setDraftPopupOpen(true);
+  }
+
+  function editDraftFromSidebar(draft: RxDraft) {
+    setDraftPopupName(draft.name);
+    setDraftPopupNote(draft.note ?? "");
+    setDraftPopupTags(draft.tags ?? []);
+    setDraftPopupEditId(draft.id);
+    setDraftDialogOpen(false);
+    setDraftPopupOpen(true);
+  }
+
+  function handleDraftPopupSave() {
+    if (draftPopupEditId) {
+      updateDraft(draftPopupEditId, {
+        name: draftPopupName.trim() || undefined,
+        note: draftPopupNote.trim() || undefined,
+        tags: draftPopupTags.length > 0 ? draftPopupTags : undefined
+      });
+      showStatus("success", "Draft updated");
+      setDraftPopupOpen(false);
+      setDraftPopupEditId(null);
+      setDraftPopupName("");
+      setDraftPopupNote("");
+      setDraftPopupTags([]);
+    } else {
+      saveDraft(draftPopupName, draftPopupNote, draftPopupTags);
+    }
+  }
+
+  function hasPadContent() {
+    const notesChanged = Object.entries(notes).some(
+      ([key, v]) => v.trim() !== (initialNotes[key as NoteKey] ?? "").trim()
+    );
+    return Boolean(selectedPatient) || medicines.length > 0 || complaints.length > 0 || histories.length > 0 || rxInvestigations.length > 0 || rxDiagnoses.length > 0 || notesChanged;
+  }
+
+  function loadDraft(draft: RxDraft) {
+    if (hasPadContent()) {
+      setLoadConflict({ type: "draft", item: draft });
+      setDraftDialogOpen(false);
+      return;
+    }
+    if (draft.patient) setSelectedPatient(draft.patient);
+    setNotes(draft.notes);
+    setMedicines(draft.medicines);
+    setMedicationNote(draft.medicationNote);
+    setFindings(draft.findings);
+    setVision(draft.vision);
+    setReferrals(draft.referrals);
+    setFollowUpDate(draft.followUpDate);
+    setFees(draft.fees ?? "");
+    setRxInvestigations(draft.rxInvestigations ?? []);
+    setRxDiagnoses((draft.rxDiagnoses ?? []).map((d) => ({ ...d, value: d.value ?? "" })));
+    attendAptIdRef.current = draft.appointmentId ?? null;
+    setDraftDialogOpen(false);
+    showStatus("success", `Draft "${draft.name}" loaded`);
+  }
+
+  function deleteDraft(id: string) {
+    const updated = drafts.filter((d) => d.id !== id);
+    setDrafts(updated);
+    saveToStorage(DRAFTS_STORAGE_KEY, updated);
+  }
+
+  function saveTemplate(name: string) {
+    const template: RxTemplate = {
+      id: crypto.randomUUID(),
+      name: name.trim() || `Template ${new Date().toLocaleString()}`,
+      savedAt: new Date().toISOString(),
+      notes,
+      medicines,
+      medicationNote,
+      rxInvestigations,
+      rxDiagnoses
+    };
+    const updated = [template, ...templates];
+    setTemplates(updated);
+    saveToStorage(TEMPLATES_STORAGE_KEY, updated);
+    showStatus("success", `Template "${template.name}" saved`);
+  }
+
+  function loadTemplate(template: RxTemplate) {
+    if (hasPadContent()) {
+      setLoadConflict({ type: "template", item: template });
+      setTemplateDialogOpen(false);
+      return;
+    }
+    setNotes((prev) => ({ ...prev, ...template.notes }));
+    setMedicines(template.medicines);
+    setMedicationNote(template.medicationNote);
+    setRxInvestigations(template.rxInvestigations ?? []);
+    setRxDiagnoses((template.rxDiagnoses ?? []).map((d) => ({ ...d, value: d.value ?? "" })));
+    setTemplateDialogOpen(false);
+    showStatus("success", `Template "${template.name}" loaded`);
+  }
+
+  function deleteTemplate(id: string) {
+    const updated = templates.filter((t) => t.id !== id);
+    setTemplates(updated);
+    saveToStorage(TEMPLATES_STORAGE_KEY, updated);
+  }
+
+  function updateTemplate(id: string, name: string) {
+    const updated = templates.map((t) => (t.id === id ? { ...t, name: name.trim() || t.name } : t));
+    setTemplates(updated);
+    saveToStorage(TEMPLATES_STORAGE_KEY, updated);
+  }
+
+  function mergeTemplate(template: RxTemplate) {
+    setNotes((prev) => {
+      const merged = { ...prev };
+      for (const key of Object.keys(template.notes) as (keyof typeof template.notes)[]) {
+        if (template.notes[key]) {
+          merged[key] = prev[key] ? `${prev[key]}\n${template.notes[key]}` : template.notes[key];
+        }
+      }
+      return merged;
+    });
+    setMedicines((prev) => {
+      const existing = new Set(prev.map((m) => m.brandName.toLowerCase()));
+      const newMeds = template.medicines.filter((m) => !existing.has(m.brandName.toLowerCase()));
+      return [...prev, ...newMeds];
+    });
+    if (template.rxInvestigations?.length) {
+      setRxInvestigations((prev) => {
+        const existing = new Set(prev.map((i) => i.name.toLowerCase()));
+        return [...prev, ...template.rxInvestigations.filter((i) => !existing.has(i.name.toLowerCase()))];
+      });
+    }
+    if (template.rxDiagnoses?.length) {
+      setRxDiagnoses((prev) => {
+        const existing = new Set(prev.map((d) => d.name.toLowerCase()));
+        return [...prev, ...template.rxDiagnoses.filter((d) => !existing.has(d.name.toLowerCase())).map((d) => ({ ...d, value: d.value ?? "" }))];
+      });
+    }
+    setTemplateDialogOpen(false);
+    showStatus("success", `Template "${template.name}" merged`);
   }
 
   function buildPrescriptionPayload(chamberId: string, doctorId?: string): CreatePrescriptionInput {
@@ -982,10 +1604,24 @@ export function PrescriptionBuilder() {
       patientId: selectedPatient!.id,
       doctorId,
       chamberId,
-      chiefComplaints: trimOrUndefined(notes.complaint),
+      chiefComplaints: trimOrUndefined(
+        complaints.length
+          ? complaints
+              .map((c) => {
+                const parts = [c.name];
+                if (c.value) parts.push(c.value);
+                if (c.forType === "For" && c.forAmount) parts.push(`for ${c.forAmount} ${c.forUnit}`);
+                else if (c.forType === "Since" && c.forAmount) parts.push(`since ${c.forAmount} ${c.forUnit}`);
+                else if (c.forType === "On" && c.forDate) parts.push(`on ${c.forDate}`);
+                if (c.note) parts.push(`(${c.note})`);
+                return parts.join(" ");
+              })
+              .join("\n")
+          : notes.complaint
+      ),
       examination: trimOrUndefined(examination),
-      diagnoses: splitTextLines(notes.diagnosis),
-      investigations: splitTextLines(notes.investigation),
+      diagnoses: rxDiagnoses.length ? rxDiagnoses.map((d) => d.name) : splitTextLines(notes.diagnosis),
+      investigations: rxInvestigations.length ? rxInvestigations.map((i) => i.name) : splitTextLines(notes.investigation),
       medicines: medicines.map((item, index) => ({
         medicineId: item.medicineId,
         brandName: item.brandName,
@@ -1004,7 +1640,12 @@ export function PrescriptionBuilder() {
         source: "prescription-builder",
         paperType,
         rawSections: {
-          history: notes.history,
+          history: histories.length
+            ? histories.map((h) => {
+                const dur = h.duration ? formatHistoryDuration(h.duration) : "";
+                return `${h.name}${h.value ? `: ${h.value}` : ""}${dur ? `\n• ${dur}` : ""}${h.note ? `\n  ${h.note}` : ""}`;
+              }).join("\n")
+            : notes.history,
           findings: notes.findings,
           investigation: notes.investigation,
           diagnosis: notes.diagnosis,
@@ -1030,6 +1671,11 @@ export function PrescriptionBuilder() {
       return;
     }
 
+    if (registerPatient.isPending) {
+      showStatus("warning", "Registering patient, please wait a moment…");
+      return;
+    }
+
     if (!currentChamber) {
       showStatus("warning", "No chamber found for this account.");
       return;
@@ -1043,16 +1689,22 @@ export function PrescriptionBuilder() {
 
     createPrescriptionMutation.mutate({
       input: buildPrescriptionPayload(currentChamber.id, doctorId),
-      printAfterSave
+      printAfterSave,
+      clearAfterSave: clearAfterSaveRef.current
     });
+    clearAfterSaveRef.current = false;
   }
 
-  function saveAction(action: "save-only" | "save-print") {
+  function saveAction(action: "save-only" | "save-print" | "save-exit") {
+    if (action === "save-exit") {
+      clearAfterSaveRef.current = true;
+      persistPrescription(false);
+      return;
+    }
     if (action === "save-only") {
       persistPrescription(false);
       return;
     }
-
     persistPrescription(true);
   }
 
@@ -1065,7 +1717,9 @@ export function PrescriptionBuilder() {
       findings,
       followUpDate,
       vision,
-      referrals
+      referrals,
+      rxInvestigations,
+      rxDiagnoses
     );
     void navigator.clipboard?.writeText(text).catch(() => undefined);
     showStatus("success", "Prescription content copied.");
@@ -1073,6 +1727,7 @@ export function PrescriptionBuilder() {
 
   function showStatus(tone: "success" | "warning", text: string) {
     setStatusMessage({ tone, text });
+    window.setTimeout(() => setStatusMessage(null), 3000);
   }
 
   function renderPanelBody(panel: PanelKey, mode: "pad" | "dialog" = "pad") {
@@ -1245,6 +1900,7 @@ export function PrescriptionBuilder() {
                 updateGlassEye("secondary", side, field, value)
               }
               onRemove={removeSecondaryGlassPrescription}
+              sphereExtraOptions={["Frosted Glass"]}
             />
           ) : null}
         </div>
@@ -1285,32 +1941,271 @@ export function PrescriptionBuilder() {
   function renderPanelPreview(panel: PanelKey) {
     if (panel === "medication") {
       return medicines.length ? (
-        <div className="mt-4 max-h-16 overflow-hidden text-sm text-slate-700">
+        <div className="mt-0.5 max-h-12 overflow-hidden text-xs text-slate-700">
           {medicines.map((item) => item.brandName).join(", ")}
         </div>
       ) : null;
     }
 
     if (panel === "vision") {
-      const values = [
-        getGlassPrescriptionPreview(vision),
-        vision.secondaryGlass ? getGlassPrescriptionPreview(vision.secondaryGlass) : ""
-      ].filter(Boolean);
-      return values.length ? (
-        <div className="mt-4 line-clamp-2 text-sm text-slate-700">
-          {values.join(" / ")}
+      function renderGlassBlock(p: GlassPrescriptionState) {
+        if (!glassPrescriptionHasContent(p)) return null;
+        const hasEyeData = (["right", "left"] as const).some(
+          (side) => p[side].sphere || p[side].cyl || p[side].axis || p[side].va
+        );
+        return (
+          <div className="space-y-1">
+            {hasEyeData && (
+              <div className="overflow-hidden rounded border text-[10px]">
+                <div className="grid grid-cols-[28px_1fr_1fr_1fr_1fr] border-b bg-muted/60 text-center font-semibold text-muted-foreground">
+                  <div className="border-r py-0.5" />
+                  <div className="border-r py-0.5">Sph</div>
+                  <div className="border-r py-0.5">CYL</div>
+                  <div className="border-r py-0.5">Axis</div>
+                  <div className="py-0.5">VA</div>
+                </div>
+                {(["right", "left"] as const).map((side) => (
+                  <div key={side} className="grid grid-cols-[28px_1fr_1fr_1fr_1fr] border-b last:border-b-0 text-center">
+                    <div className="border-r py-0.5 font-semibold text-muted-foreground">
+                      {side === "right" ? "RE" : "LE"}
+                    </div>
+                    {(["sphere", "cyl", "axis", "va"] as const).map((f) => (
+                      <div key={f} className="border-r py-0.5 last:border-r-0 text-slate-700">
+                        {p[side][f] || <span className="text-muted-foreground/30">—</span>}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            {(p.add || p.ipd || p.glassFeatures.length > 0 || p.lensType || p.note) && (
+              <div className="space-y-px text-[10px]">
+                {(p.add || p.ipd) && (
+                  <div className="flex gap-3">
+                    {p.add && <div><span className="font-medium text-muted-foreground">Near Add </span><span className="text-slate-700">{p.add} DS</span></div>}
+                    {p.ipd && <div><span className="font-medium text-muted-foreground">IPD </span><span className="text-slate-700">{p.ipd} mm</span></div>}
+                  </div>
+                )}
+                {(p.glassFeatures.length > 0 || p.lensType) && (
+                  <div>
+                    <span className="font-medium text-muted-foreground">Glass </span>
+                    <span className="text-slate-700">
+                      {[p.glassFeatures.join(" + "), p.lensType].filter(Boolean).join(" / ")}
+                    </span>
+                  </div>
+                )}
+                {p.note && (
+                  <div>
+                    <span className="font-medium text-muted-foreground">Remarks </span>
+                    <span className="text-slate-700">{p.note}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      }
+      const primary = glassPrescriptionHasContent(vision) ? renderGlassBlock(vision) : null;
+      const secondary = vision.secondaryGlass ? renderGlassBlock(vision.secondaryGlass) : null;
+      return (primary || secondary) ? (
+        <div className="mt-1 space-y-2">
+          {primary}
+          {secondary}
         </div>
       ) : null;
     }
 
     if (panel === "followUp") {
       const value = [followUpDate, notes.followUp].filter(Boolean).join(" ");
-      return value ? <div className="mt-4 line-clamp-2 text-sm text-slate-700">{value}</div> : null;
+      return value ? <div className="mt-0.5 line-clamp-2 text-xs text-slate-700">{value}</div> : null;
+    }
+
+    if (panel === "complaint" && complaints.length > 0) {
+      return (
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {complaints.map((c) => {
+            const dur = c.forType === "For" && c.forAmount
+              ? `for ${c.forAmount} ${c.forUnit}${Number(c.forAmount) !== 1 ? "s" : ""}`
+              : c.forType === "Since" && c.forAmount
+              ? `since ${c.forAmount} ${c.forUnit}${Number(c.forAmount) !== 1 ? "s" : ""}`
+              : c.forType === "On" && c.forDate ? `on ${c.forDate}` : "";
+            return (
+              <span key={c.id} className="group inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/8 px-2 py-0.5 text-xs font-semibold text-primary">
+                {c.name}
+                {dur && <span className="font-normal text-muted-foreground">· {dur}</span>}
+                {c.value && <span className="font-normal text-muted-foreground">· {c.value}</span>}
+                <button className="no-print ml-0.5 rounded text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100 transition-opacity"
+                  type="button" title="Delete"
+                  onClick={(e) => { e.stopPropagation(); setComplaints((prev) => prev.filter((x) => x.id !== c.id)); }}>
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (panel === "history" && histories.length > 0) {
+      const groups = historyTabs
+        .map((t) => ({ tab: t, entries: histories.filter((h) => h.tab === t) }))
+        .filter((g) => g.entries.length > 0);
+      return (
+        <div className="mt-1 space-y-1.5 text-foreground">
+          {groups.map((group) => (
+            <div key={group.tab}>
+              <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{group.tab}</div>
+              <div className="flex flex-wrap gap-1">
+                {group.entries.map((h) => {
+                  const dur = h.duration ? formatHistoryDuration(h.duration) : "";
+                  return (
+                    <span key={h.id} className="group inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/8 px-2 py-0.5 text-xs font-semibold text-primary">
+                      {h.name}
+                      {h.value && <span className="font-normal text-muted-foreground">: {h.value}</span>}
+                      {dur && <span className="font-normal text-muted-foreground">· {dur}</span>}
+                      <button className="no-print ml-0.5 rounded opacity-0 hover:text-destructive group-hover:opacity-100 transition-opacity"
+                        type="button" title="Delete"
+                        onClick={(e) => { e.stopPropagation(); setHistories((prev) => prev.filter((x) => x.id !== h.id)); }}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (panel === "findings") {
+      const rows: { label: string; value: string; clear: () => void }[] = [
+        { label: "Blood Pressure", value: findings.bpSystolic || findings.bpDiastolic ? `${findings.bpSystolic || "-"} / ${findings.bpDiastolic || "-"} mmHg` : "", clear: () => updateFindings({ bpSystolic: "", bpDiastolic: "" }) },
+        { label: "Temperature", value: findings.temperature ? `${findings.temperature} °F` : "", clear: () => updateFindings({ temperature: "" }) },
+        { label: "Weight", value: findings.weight ? `${findings.weight} kg` : "", clear: () => updateFindings({ weight: "" }) },
+        { label: "Height", value: [findings.heightFeet && `${findings.heightFeet} ft`, findings.heightInch && `${findings.heightInch} in`, findings.heightCm && `${findings.heightCm} cm`].filter(Boolean).join(" "), clear: () => updateFindings({ heightFeet: "", heightInch: "", heightCm: "" }) },
+        { label: "Pulse", value: findings.pulse ? `${findings.pulse} bpm` : "", clear: () => updateFindings({ pulse: "" }) },
+        { label: "SpO2", value: findings.spo2 ? `${findings.spo2}%` : "", clear: () => updateFindings({ spo2: "" }) },
+        { label: "RBS", value: findings.rbs ? `${findings.rbs} mmol/l` : "", clear: () => updateFindings({ rbs: "" }) },
+        { label: "FBS", value: findings.fbs ? `${findings.fbs} mmol/l` : "", clear: () => updateFindings({ fbs: "" }) },
+        { label: "Respiratory Rate", value: findings.respiratoryRate ?? "", clear: () => updateFindings({ respiratoryRate: "" }) },
+      ].filter((r) => r.value);
+
+      // Build ophthalmic rows with individual clear buttons
+      const ophthalmicRows: { label: string; value: string; clear: () => void }[] = [];
+      for (const row of ophthalmicFindingRows) {
+        if (row.inputType === "varecord") {
+          const r = { sphere: findings.ophthalmicVaRecordRightSphere.trim(), cyl: findings.ophthalmicVaRecordRightCyl.trim(), axis: findings.ophthalmicVaRecordRightAxis.trim(), va: findings.ophthalmicVaRecordRightVa.trim() };
+          const l = { sphere: findings.ophthalmicVaRecordLeftSphere.trim(), cyl: findings.ophthalmicVaRecordLeftCyl.trim(), axis: findings.ophthalmicVaRecordLeftAxis.trim(), va: findings.ophthalmicVaRecordLeftVa.trim() };
+          const fmt = (e: typeof r) => [e.sphere && `Sph ${e.sphere}`, e.cyl && `CYL ${e.cyl}`, e.axis && `Axis ${e.axis}`, e.va && `VA ${e.va}`].filter(Boolean).join(" / ");
+          const rt = fmt(r); const lt = fmt(l);
+          if (rt || lt) ophthalmicRows.push({ label: row.label, value: [rt && `RE: ${rt}`, lt && `LE: ${lt}`].filter(Boolean).join(", "), clear: () => updateFindings({ ophthalmicVaRecordRightSphere: "", ophthalmicVaRecordRightCyl: "", ophthalmicVaRecordRightAxis: "", ophthalmicVaRecordRightVa: "", ophthalmicVaRecordLeftSphere: "", ophthalmicVaRecordLeftCyl: "", ophthalmicVaRecordLeftAxis: "", ophthalmicVaRecordLeftVa: "" }) });
+          continue;
+        }
+        if (row.inputType === "checkbox") {
+          const rc = String(findings[row.rightKey] ?? "") === "yes";
+          const lc = String(findings[row.leftKey] ?? "") === "yes";
+          if (rc || lc) ophthalmicRows.push({ label: row.label, value: rc && lc ? "BE" : rc ? "RE" : "LE", clear: () => updateFindings({ [row.rightKey]: "", [row.leftKey]: "" } as Partial<FindingsState>) });
+          continue;
+        }
+        const rv = String(findings[row.rightKey] ?? "").trim();
+        const lv = String(findings[row.leftKey] ?? "").trim();
+        const rn = row.rightNoteKey ? String(findings[row.rightNoteKey] ?? "").trim() : "";
+        const ln = row.leftNoteKey ? String(findings[row.leftNoteKey] ?? "").trim() : "";
+        const rph = row.rightWithPhKey ? String(findings[row.rightWithPhKey] ?? "").trim() : "";
+        const lph = row.leftWithPhKey ? String(findings[row.leftWithPhKey] ?? "").trim() : "";
+        const rpgp = row.rightWithPgpKey ? String(findings[row.rightWithPgpKey] ?? "").trim() : "";
+        const lpgp = row.leftWithPgpKey ? String(findings[row.leftWithPgpKey] ?? "").trim() : "";
+        const unit = row.unit ? ` ${row.unit}` : "";
+        const hasPhField = Boolean(row.rightWithPhKey);
+        const rtMain = hasPhField ? [rv && `Unaided ${rv}`, rph && `With PH ${rph}`, rpgp && `W/PGP ${rpgp}`].filter(Boolean).join(" : ") : rv ? `${rv}${unit}` : "";
+        const ltMain = hasPhField ? [lv && `Unaided ${lv}`, lph && `With PH ${lph}`, lpgp && `W/PGP ${lpgp}`].filter(Boolean).join(" : ") : lv ? `${lv}${unit}` : "";
+        const rtRaw = [rtMain, rn].filter(Boolean).join(" : ");
+        const ltRaw = [ltMain, ln].filter(Boolean).join(" : ");
+        const rt = row.unit && rtRaw && !rtMain ? `${rtRaw}${unit}` : rtRaw;
+        const lt = row.unit && ltRaw && !ltMain ? `${ltRaw}${unit}` : ltRaw;
+        if (rt || lt) {
+          ophthalmicRows.push({
+            label: row.label,
+            value: [rt && `RE: ${rt}`, lt && `LE: ${lt}`].filter(Boolean).join(", "),
+            clear: () => {
+              const patch: Partial<FindingsState> = { [row.rightKey]: "", [row.leftKey]: "" };
+              if (row.rightNoteKey) patch[row.rightNoteKey as keyof FindingsState] = "" as never;
+              if (row.leftNoteKey) patch[row.leftNoteKey as keyof FindingsState] = "" as never;
+              if (row.rightWithPhKey) patch[row.rightWithPhKey as keyof FindingsState] = "" as never;
+              if (row.leftWithPhKey) patch[row.leftWithPhKey as keyof FindingsState] = "" as never;
+              if (row.rightWithPgpKey) patch[row.rightWithPgpKey as keyof FindingsState] = "" as never;
+              if (row.leftWithPgpKey) patch[row.leftWithPgpKey as keyof FindingsState] = "" as never;
+              updateFindings(patch);
+            }
+          });
+        }
+      }
+
+      const allRows = [...rows, ...ophthalmicRows];
+      if (!allRows.length) return null;
+      return (
+        <div className="mt-0.5 space-y-0 text-sm text-foreground">
+          {allRows.map((r) => (
+            <div key={r.label} className="group flex w-full items-center gap-1">
+              <span className="font-bold whitespace-nowrap">{r.label}:</span>
+              <span className="text-muted-foreground whitespace-nowrap">{r.value}</span>
+              <span className="flex-1 border-b border-dotted border-muted-foreground/30 mb-0.5 min-w-[12px]" />
+              <button
+                className="no-print shrink-0 rounded p-1 font-bold text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 transition-opacity"
+                title="Clear"
+                type="button"
+                onClick={(e) => { e.stopPropagation(); r.clear(); }}
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (panel === "investigation" && rxInvestigations.length > 0) {
+      return (
+        <ol className="mt-1 space-y-0.5 pl-0">
+          {rxInvestigations.map((inv, idx) => (
+            <li key={inv.id} className="group flex items-center gap-1 text-xs text-foreground">
+              <span className="shrink-0 font-semibold text-primary">{idx + 1}.</span>
+              <span className="font-medium">{inv.name}</span>
+              {inv.value && <span className="text-muted-foreground">: {inv.value}</span>}
+              <button className="no-print ml-auto rounded opacity-0 hover:text-destructive group-hover:opacity-100 transition-opacity"
+                type="button" title="Delete"
+                onClick={(e) => { e.stopPropagation(); setRxInvestigations((prev) => prev.filter((x) => x.id !== inv.id)); }}>
+                <X className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ol>
+      );
+    }
+
+    if (panel === "diagnosis" && rxDiagnoses.length > 0) {
+      return (
+        <ol className="mt-1 space-y-0.5 pl-0">
+          {rxDiagnoses.map((d, idx) => (
+            <li key={d.id} className="group flex items-center gap-1 text-xs text-foreground">
+              <span className="shrink-0 font-semibold text-primary">{idx + 1}.</span>
+              <span className="font-medium">{d.name}</span>
+              {d.value && <span className="text-muted-foreground">: {d.value}</span>}
+              <button className="no-print ml-auto rounded opacity-0 hover:text-destructive group-hover:opacity-100 transition-opacity"
+                type="button" title="Delete"
+                onClick={(e) => { e.stopPropagation(); setRxDiagnoses((prev) => prev.filter((x) => x.id !== d.id)); }}>
+                <X className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ol>
+      );
     }
 
     const value = notes[panel];
     return value ? (
-      <div className="mt-4 whitespace-pre-line text-sm leading-6 text-slate-700">
+      <div className="mt-0.5 whitespace-pre-line text-xs leading-4 text-slate-700">
         {value}
       </div>
     ) : null;
@@ -1336,118 +2231,397 @@ export function PrescriptionBuilder() {
       return referrals.some(referralHasContent) || Boolean(notes.referral.trim());
     }
 
+    if (panel === "complaint") return complaints.length > 0 || Boolean(notes.complaint.trim());
+    if (panel === "history") return histories.length > 0 || Boolean(notes.history.trim());
+    if (panel === "investigation") return rxInvestigations.length > 0 || Boolean(notes.investigation.trim());
+    if (panel === "diagnosis") return rxDiagnoses.length > 0 || Boolean(notes.diagnosis.trim());
+
     return Boolean(notes[panel].trim());
+  }
+
+  // On every mount: clear the pad first, then — if arriving via "Attend" — immediately
+  // load that patient. Both happen in the same effect so the final setSelectedPatient
+  // (the patient) always overwrites the null from clearPrescriptionPad().
+  useEffect(() => {
+    clearPrescriptionPad();
+
+    // Prefer the URL param; fall back to the localStorage relay written by attendAppointment()
+    const aptId =
+      searchParams.get("attend") ??
+      (typeof window !== "undefined" ? localStorage.getItem("rx-attend-apt") : null);
+
+    if (!aptId) return;
+    if (typeof window !== "undefined") localStorage.removeItem("rx-attend-apt");
+
+    try {
+      const raw = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
+      if (!raw) return;
+      const all = JSON.parse(raw) as Array<{
+        id: string; patientName: string; phone: string;
+        gender: string; dateOfBirth: string;
+        ageYears: string; ageMonths: string; ageDays: string; bloodGroup: string;
+      }>;
+
+      const apt = all.find((a) => a.id === aptId);
+      if (!apt) return;
+
+      const genderMap: Record<string, PatientGender> = { Male: "MALE", Female: "FEMALE", Other: "OTHER" };
+      const mappedGender = genderMap[apt.gender] ?? "UNKNOWN";
+      const toInt = (v: string) => { const n = parseInt(v, 10); return isNaN(n) ? undefined : n; };
+
+      forceSelectAfterRegisterRef.current = true;
+      attendAptIdRef.current = apt.id;
+
+      // Load patient into the bar immediately from local data
+      setSelectedPatient({
+        id: apt.id,
+        tenantId: sessionUser?.tenantId ?? "",
+        name: apt.patientName,
+        phone: apt.phone || null,
+        gender: mappedGender,
+        dateOfBirth: apt.dateOfBirth || null,
+        ageYears: toInt(apt.ageYears) ?? null,
+        ageMonths: toInt(apt.ageMonths) ?? null,
+        ageDays: toInt(apt.ageDays) ?? null,
+        bloodGroup: apt.bloodGroup || null,
+      });
+
+      // Register in the backend in the background; onSuccess replaces the local patient with the real one
+      registerPatient.mutate({
+        name: apt.patientName,
+        phone: apt.phone || undefined,
+        gender: mappedGender,
+        dateOfBirth: apt.dateOfBirth || undefined,
+        ageYears: toInt(apt.ageYears),
+        ageMonths: toInt(apt.ageMonths),
+        ageDays: toInt(apt.ageDays),
+        bloodGroup: apt.bloodGroup || undefined,
+      });
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    function loadQueue() {
+      try {
+        const raw = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
+        const all: QueueAppointment[] = raw ? JSON.parse(raw) : [];
+        const confirmed = all
+          .filter((a) => a.status === "Confirmed")
+          .sort((a, b) => {
+            const toMin = (t: string) => {
+              const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+              if (!m) return 0;
+              let h = parseInt(m[1], 10);
+              const min = parseInt(m[2], 10);
+              if (m[3].toUpperCase() === "PM" && h !== 12) h += 12;
+              if (m[3].toUpperCase() === "AM" && h === 12) h = 0;
+              return h * 60 + min;
+            };
+            return toMin(a.time) - toMin(b.time);
+          });
+        setQueueAppointments(confirmed);
+      } catch {}
+    }
+    loadQueue();
+    window.addEventListener("storage", loadQueue);
+    return () => window.removeEventListener("storage", loadQueue);
+  }, []);
+
+  useEffect(() => {
+    setNoteEditing(false);
+    setPrevRxOpen(false);
+    setPrevRxPreviewId(null);
+    if (!selectedPatient) { setPatientNote(""); return; }
+    try {
+      const stored = JSON.parse(localStorage.getItem(PATIENT_NOTES_STORAGE_KEY) ?? "{}") as Record<string, string>;
+      setPatientNote(stored[selectedPatient.id] ?? "");
+    } catch { setPatientNote(""); }
+  }, [selectedPatient]);
+
+  function savePatientNote(note: string) {
+    setPatientNote(note);
+    if (!selectedPatient) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(PATIENT_NOTES_STORAGE_KEY) ?? "{}") as Record<string, string>;
+      stored[selectedPatient.id] = note;
+      localStorage.setItem(PATIENT_NOTES_STORAGE_KEY, JSON.stringify(stored));
+    } catch {}
   }
 
   return (
     <>
-      <div className="space-y-4 pb-20">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">New Prescription</h1>
-            <p className="text-sm text-muted-foreground">
-              {currentChamber?.name ?? (chambersQuery.isLoading ? "Loading chamber" : "No chamber selected")}
-              {currentDoctor ? ` - ${currentDoctor.displayName}` : ""}
-              {lastSavedPrescription ? ` - Saved ${lastSavedPrescription.prescriptionNo}` : ""}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={copyRx}>
-              <Copy className="h-4 w-4" />
-              Copy Rx
-            </Button>
+      <div className="flex h-[calc(100vh-40px)] -mt-2 -mb-3 flex-col xl:-ml-[38px]">
+        <div className="flex flex-1 min-h-0 gap-[5px]">
+
+        {/* Left sidebar: Patient Queue only */}
+        <div className="no-print hidden xl:flex w-[230px] shrink-0 self-start flex-col gap-3 overflow-y-auto py-[5px]">
+
+          {/* Page title */}
+          <h1 className="text-2xl font-semibold leading-tight px-0.5">New Prescription</h1>
+
+          {/* Patient Queue */}
+          <div className="rounded-xl border bg-card shadow-soft overflow-hidden">
+            <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2">
+              <span className="text-xs font-bold text-primary uppercase tracking-wide">Patient Queue</span>
+              {queueAppointments.length > 0 && (
+                <span className="ml-auto text-[10px] font-semibold bg-primary text-primary-foreground rounded-full px-1.5 py-0.5">
+                  {queueAppointments.length}
+                </span>
+              )}
+            </div>
+            {queueAppointments.length > 0 ? (
+              <div className="divide-y max-h-72 overflow-y-auto">
+                {queueAppointments.map((appt, idx) => {
+                  const age = [
+                    appt.ageYears ? `${appt.ageYears}Y` : null,
+                    appt.ageMonths ? `${appt.ageMonths}M` : null,
+                  ].filter(Boolean).join(" ");
+                  const lastVisit = getLastVisit(null, appt.phone);
+                  return (
+                    <div key={appt.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted/30 transition-colors">
+                      <span className="w-5 shrink-0 text-center text-[10px] font-bold text-muted-foreground">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-xs font-semibold leading-tight">{appt.patientName}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {[age, lastVisit ? formatTimeAgo(lastVisit) : null].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                        onClick={() => attendFromQueue(appt)}
+                      >
+                        <UserCheck className="h-3 w-3" />
+                        Attend
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-6">
+                <p className="text-xs font-semibold text-muted-foreground">No appointment today</p>
+              </div>
+            )}
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-md border bg-card shadow-soft">
-          <div className="border-b p-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-              <div className="relative flex-1">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      className="pl-9"
-                      placeholder="Patient Search"
-                      value={patientQuery}
-                      onChange={(event) => {
-                        setPatientQuery(event.target.value);
-                        setPatientSearchOpen(true);
-                      }}
-                      onFocus={() => setPatientSearchOpen(true)}
-                    />
+        {/* Main prescription content */}
+        <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+
+        <section className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-md border bg-card shadow-soft">
+          <div className="shrink-0 border-b bg-primary/5 px-3 py-2">
+            {selectedPatient ? (
+              /* ── Patient selected: highlighted info bar ── */
+              <div className="space-y-2">
+                {/* Main row */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="flex-1 min-w-0 text-sm font-bold leading-snug text-foreground">
+                    {selectedPatient.name}
+                    {selectedPatient.registrationNo && (
+                      <span className="ml-1.5 font-semibold text-primary">#{selectedPatient.registrationNo}</span>
+                    )}
+                    <span className="ml-1.5 font-medium text-muted-foreground">
+                      ({formatPatientAge(selectedPatient)},{" "}
+                      {selectedPatient.gender
+                        ? selectedPatient.gender.charAt(0).toUpperCase() + selectedPatient.gender.slice(1).toLowerCase()
+                        : "Unknown"}
+                      {selectedPatient.phone ? `, ${selectedPatient.phone}` : ""})
+                    </span>
+                    {(() => {
+                      const lv =
+                        (patientRxQuery.data && patientRxQuery.data.length > 0
+                          ? patientRxQuery.data[0]?.createdAt
+                          : null) ??
+                        getLastVisit(selectedPatient.id, selectedPatient.phone);
+                      return lv ? (
+                        <span className="ml-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+                          · {formatTimeAgo(lv)}
+                        </span>
+                      ) : null;
+                    })()}
+                  </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* Add Note — transforms into textbox on click */}
+                    {noteEditing ? (
+                      <textarea
+                        autoFocus
+                        rows={1}
+                        className="h-8 w-44 resize-none rounded-md border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
+                        placeholder="Add note…"
+                        value={patientNote}
+                        onChange={(e) => {
+                          const { selectionStart, selectionEnd } = e.target;
+                          const transformed = toTitleCase(e.target.value);
+                          e.target.value = transformed;
+                          const el = e.target;
+                          requestAnimationFrame(() => {
+                            try { el.setSelectionRange(selectionStart, selectionEnd); } catch {}
+                          });
+                          savePatientNote(transformed);
+                        }}
+                        onBlur={() => setNoteEditing(false)}
+                      />
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={patientNote ? "secondary" : "outline"}
+                        className="h-8 max-w-[11rem] gap-1.5"
+                        onClick={() => setNoteEditing(true)}
+                      >
+                        {patientNote ? <Pencil className="h-3.5 w-3.5 shrink-0" /> : <Plus className="h-3.5 w-3.5 shrink-0" />}
+                        <span className="truncate">{patientNote || "Add Note"}</span>
+                      </Button>
+                    )}
+                    {/* Previous Prescriptions */}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={prevRxOpen ? "secondary" : "outline"}
+                      className="h-8 gap-1.5"
+                      onClick={() => setPrevRxOpen((o) => !o)}
+                    >
+                      <History className="h-3.5 w-3.5" />
+                      Prev. Rx
+                      {patientRxQuery.isSuccess && (patientRxQuery.data?.length ?? 0) > 0 && (
+                        <span className="ml-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                          {patientRxQuery.data!.length}
+                        </span>
+                      )}
+                    </Button>
+                    {/* Edit Patient */}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-8 gap-1.5 font-semibold"
+                      onClick={openPatientEdit}
+                    >
+                      <UserCog className="h-4 w-4" />
+                      Edit Patient
+                    </Button>
+                    {/* Patient Search */}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1.5"
+                      onClick={openDraftPopup}
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      Patient Search
+                    </Button>
+                    {/* Remove */}
+                    <button
+                      type="button"
+                      title="Remove patient"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10"
+                      onClick={() => { setSelectedPatient(null); setPatientQuery(""); }}
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
                   </div>
-                  <Button type="button" onClick={() => setPatientSearchOpen(true)}>
-                    <Search className="h-4 w-4" />
-                    Search
-                  </Button>
                 </div>
 
-                {patientSearchOpen && patientQuery.trim().length > 1 ? (
-                  <div className="absolute z-40 mt-2 w-full rounded-md border bg-card p-1 shadow-soft">
-                    {patientSearch.isFetching ? (
-                      <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Searching patients
+                {/* Previous Prescriptions list */}
+                {prevRxOpen && (
+                  <div className="overflow-hidden rounded-md border bg-background">
+                    {patientRxQuery.isFetching ? (
+                      <div className="flex items-center justify-center gap-1.5 py-3 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Loading…
                       </div>
-                    ) : null}
-
-                    {!patientSearch.isFetching && patientSearch.isError ? (
-                      <div className="px-3 py-2 text-sm text-destructive">
-                        {getApiErrorMessage(patientSearch.error)}
+                    ) : !patientRxQuery.data?.length ? (
+                      <p className="py-3 text-center text-xs text-muted-foreground">No previous prescriptions</p>
+                    ) : (
+                      <div className="divide-y max-h-48 overflow-y-auto">
+                        {patientRxQuery.data.map((rx) => (
+                          <div key={rx.id} className="flex items-center gap-2 px-2 py-1.5">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium truncate">{rx.prescriptionNo}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {rx.createdAt ? formatTimeAgo(rx.createdAt) : `${rx.medicines?.length ?? 0} med${rx.medicines?.length !== 1 ? "s" : ""}`}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              className="flex shrink-0 items-center gap-1 rounded-md bg-muted px-2 py-1 text-[10px] font-medium transition-colors hover:bg-muted/60"
+                              onClick={() => setPrevRxPreviewId(rx.id)}
+                            >
+                              <Eye className="h-3 w-3" />
+                              View
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ) : null}
-
-                    {!patientSearch.isFetching &&
-                    !patientSearch.isError &&
-                    patientSearchResults.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">
-                        No patient found
-                      </div>
-                    ) : null}
-
-                    {!patientSearch.isFetching && !patientSearch.isError
-                      ? patientSearchResults.map((patient) => (
-                          <button
-                            key={patient.id}
-                            className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
-                            onClick={() => selectPatient(patient)}
-                            type="button"
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate font-medium">{patient.name}</span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {patient.phone ?? patient.registrationNo}
-                              </span>
-                            </span>
-                            <Check className="h-4 w-4 flex-none" />
-                          </button>
-                        ))
-                      : null}
+                    )}
                   </div>
-                ) : null}
-              </div>
-
-              <Button type="button" onClick={() => setRegistrationOpen(true)}>
-                <UserPlus className="h-4 w-4" />
-                Register New Patient
-              </Button>
-            </div>
-
-            {selectedPatient ? (
-              <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_140px_120px]">
-                <PatientSummaryItem label="Patient Name" value={selectedPatient.name} />
-                <PatientSummaryItem label="Mobile" value={selectedPatient.phone ?? "Not set"} />
-                <PatientSummaryItem label="Age" value={formatPatientAge(selectedPatient)} />
-                <PatientSummaryItem
-                  label="Blood Group"
-                  value={selectedPatient.bloodGroup ?? "Not set"}
-                />
+                )}
               </div>
             ) : (
-              <div className="mt-3 rounded-md border border-dashed border-primary/70 bg-primary/5 px-4 py-3 text-sm">
-                <span className="font-semibold">No patient selected.</span>{" "}
-                <span>To save this prescription, select a patient first.</span>
+              /* ── No patient: search + register ── */
+              <div className="flex gap-2 items-start">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    placeholder="Patient Search"
+                    value={patientQuery}
+                    onChange={(event) => {
+                      setPatientQuery(event.target.value);
+                      setPatientSearchOpen(true);
+                    }}
+                    onFocus={() => setPatientSearchOpen(true)}
+                  />
+                  {patientSearchOpen && patientQuery.trim().length > 1 ? (
+                    <div className="absolute z-40 mt-2 w-full rounded-md border bg-card p-1 shadow-soft">
+                      {patientSearch.isFetching ? (
+                        <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Searching patients
+                        </div>
+                      ) : null}
+                      {!patientSearch.isFetching && patientSearch.isError ? (
+                        <div className="px-3 py-2 text-sm text-destructive">
+                          {getApiErrorMessage(patientSearch.error)}
+                        </div>
+                      ) : null}
+                      {!patientSearch.isFetching && !patientSearch.isError && patientSearchResults.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">No patient found</div>
+                      ) : null}
+                      {!patientSearch.isFetching && !patientSearch.isError
+                        ? patientSearchResults.map((patient) => {
+                            const lv = getLastVisit(patient.id, patient.phone);
+                            return (
+                              <button
+                                key={patient.id}
+                                className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                                onClick={() => selectPatient(patient)}
+                                type="button"
+                              >
+                                <span className="min-w-0">
+                                  <span className="block truncate font-medium">{patient.name}</span>
+                                  <span className="block truncate text-xs text-muted-foreground">
+                                    {patient.phone ?? patient.registrationNo}
+                                    {lv && <span className="ml-1 text-amber-600 dark:text-amber-400">· {formatTimeAgo(lv)}</span>}
+                                  </span>
+                                </span>
+                                <Check className="h-4 w-4 flex-none" />
+                              </button>
+                            );
+                          })
+                        : null}
+                    </div>
+                  ) : null}
+                </div>
+                <Button type="button" className="shrink-0" onClick={() => setRegistrationOpen(true)}>
+                  <UserPlus className="h-4 w-4" />
+                  Register New Patient
+                </Button>
               </div>
             )}
           </div>
@@ -1455,7 +2629,7 @@ export function PrescriptionBuilder() {
           {statusMessage ? (
             <div
               className={cn(
-                "border-b px-4 py-2 text-sm",
+                "shrink-0 border-b px-4 py-2 text-sm",
                 statusMessage.tone === "warning"
                   ? "border-destructive/30 bg-destructive/10 text-destructive"
                   : "border-primary/30 bg-primary/10 text-primary"
@@ -1466,43 +2640,34 @@ export function PrescriptionBuilder() {
           ) : null}
 
           <div
-            className="relative min-h-[50rem] p-4"
+            className="flex-1 relative p-4 min-h-0 flex flex-col"
             style={{
               backgroundImage:
                 "radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)",
               backgroundSize: "22px 22px"
             }}
           >
-            <div className="no-print absolute left-6 top-6 hidden w-11 flex-col overflow-hidden rounded-md border bg-card shadow-soft md:flex">
+            <div className="no-print absolute right-6 top-6 hidden w-11 flex-col overflow-hidden rounded-md border bg-card shadow-soft md:flex">
+              <FloatingPadButton title="All Draft" onClick={() => setDraftDialogOpen(true)}>
+                <FileText className="h-4 w-4" />
+              </FloatingPadButton>
+              <FloatingPadButton title="All Templates" onClick={() => setTemplateDialogOpen(true)}>
+                <LayoutGrid className="h-4 w-4" />
+              </FloatingPadButton>
               <FloatingPadButton title="Clear All" onClick={clearAll}>
                 <Eraser className="h-4 w-4" />
-              </FloatingPadButton>
-              <FloatingPadButton title="Copy Rx" onClick={copyRx}>
-                <Copy className="h-4 w-4" />
               </FloatingPadButton>
             </div>
 
             <div
               className={cn(
-                "grid gap-4 md:pl-16",
+                "grid flex-1 min-h-0 gap-4 md:pl-16",
                 leftPanelCollapsed
                   ? "md:grid-cols-[64px_minmax(0,1fr)]"
-                  : "md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]"
+                  : "md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:pr-16"
               )}
             >
-              <div className={cn("md:border-r", leftPanelCollapsed ? "md:pr-2" : "md:pr-4")}>
-                <div className={cn("mb-2 flex", leftPanelCollapsed ? "justify-center" : "justify-end")}>
-                  <PanelIconButton
-                    title={leftPanelCollapsed ? "Expand left panel" : "Collapse left panel"}
-                    onClick={() => setLeftPanelCollapsed((current) => !current)}
-                  >
-                    {leftPanelCollapsed ? (
-                      <ChevronRight className="h-4 w-4" />
-                    ) : (
-                      <ChevronLeft className="h-4 w-4" />
-                    )}
-                  </PanelIconButton>
-                </div>
+              <div className={cn("flex flex-col md:border-r", leftPanelCollapsed ? "md:pr-2" : "md:pr-4")}>
 
                 {leftPanelCollapsed ? (
                   <div className="grid grid-cols-5 gap-1 md:grid-cols-1">
@@ -1517,24 +2682,33 @@ export function PrescriptionBuilder() {
                     ))}
                   </div>
                 ) : (
-                  leftPanels.map((panel) => (
-                    <PrescriptionOptionTile
-                      key={panel}
-                      title={panelTitles[panel]}
-                      hasContent={panelHasContent(panel)}
-                      onClear={() => clearPanel(panel)}
-                      onOpen={() => setActivePanel(panel)}
-                    />
-                  ))
+                  <>
+                    {leftPanels.map((panel) => (
+                      <PrescriptionOptionTile
+                        key={panel}
+                        className="flex-1 min-h-0"
+                        title={panelTitles[panel]}
+                        hasContent={panelHasContent(panel)}
+                        preview={renderPanelPreview(panel)}
+                        onClear={() => clearPanel(panel)}
+                        onOpen={() => setActivePanel(panel)}
+                      />
+                    ))}
+                    {fees && (
+                      <div className="shrink-0 border-t px-3 pb-2 pt-3 text-sm text-slate-600">{fees}</div>
+                    )}
+                  </>
                 )}
               </div>
 
-              <div>
+              <div className="flex flex-col">
                 {rightPanels.map((panel) => (
                   <PrescriptionOptionTile
                     key={panel}
+                    className="flex-1 min-h-0"
                     title={panelTitles[panel]}
                     hasContent={panelHasContent(panel)}
+                    preview={renderPanelPreview(panel)}
                     onClear={() => clearPanel(panel)}
                     onOpen={() => setActivePanel(panel)}
                   />
@@ -1554,24 +2728,29 @@ export function PrescriptionBuilder() {
             <option key={item} value={item} />
           ))}
         </datalist>
-      </div>
-
-      <nav className="no-print sticky bottom-0 z-30 -mx-4 border bg-background/95 px-4 py-2 shadow-soft backdrop-blur lg:-mx-6 lg:px-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <Button
-            aria-label="Toggle patient sidebar"
-            title="Toggle patient sidebar"
-            size="icon"
-            variant="outline"
-            onClick={() => setPatientSearchOpen((current) => !current)}
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-
-          <div className="flex flex-wrap justify-end gap-2">
+      </div>{/* end flex-1 main content */}
+        </div>{/* end inner row */}
+        <nav className="no-print shrink-0 z-30 border-t bg-background/95 px-4 py-2 shadow-soft backdrop-blur">
+          <div className="flex flex-wrap justify-end gap-2 md:flex-row md:items-center">
             <Button variant="outline" onClick={() => showStatus("success", "Settings option selected.")}>
               <Settings className="h-4 w-4" />
               Settings
+            </Button>
+            <Button variant="outline" onClick={openDraftPopup}>
+              <FileText className="h-4 w-4" />
+              Add to Draft
+            </Button>
+            <Button variant="outline" onClick={() => { setTemplateNameInput(""); setTemplateNamePopupOpen(true); }}>
+              <LayoutGrid className="h-4 w-4" />
+              Make Template
+            </Button>
+            <Button
+              variant="outline"
+              disabled={isSavingPrescription}
+              onClick={() => saveAction("save-exit")}
+            >
+              <LogOut className="h-4 w-4" />
+              Save & Exit
             </Button>
             <div className="relative flex">
               <Button
@@ -1634,24 +2813,20 @@ export function PrescriptionBuilder() {
               ) : null}
             </div>
           </div>
-        </div>
-      </nav>
+        </nav>
+      </div>{/* end outer flex-col */}
 
       {activePanel === "complaint" ? (
         <ComplaintSidebar
-          value={notes.complaint}
-          onAddTag={(tag) => appendNote("complaint", tag)}
-          onChange={(value) => updateNote("complaint", value)}
-          onClear={() => clearPanel("complaint")}
+          complaints={complaints}
           onClose={() => setActivePanel(null)}
+          onSetComplaints={setComplaints}
         />
       ) : activePanel === "history" ? (
         <HistorySidebar
-          value={notes.history}
-          onAddTag={(tag) => appendNote("history", tag)}
-          onChange={(value) => updateNote("history", value)}
-          onClear={() => clearPanel("history")}
+          histories={histories}
           onClose={() => setActivePanel(null)}
+          onSetHistories={setHistories}
         />
       ) : activePanel === "findings" ? (
         <FindingsSidebar
@@ -1680,44 +2855,34 @@ export function PrescriptionBuilder() {
           onStatus={showStatus}
         />
       ) : activePanel === "advice" ? (
-        <TagNoteSidebar
-          addCustomLabel="Add Custom Advice"
-          title="Advice"
+        <AdviceSidebar
           value={notes.advice}
-          onAddTag={(tag) => appendNote("advice", tag)}
           onChange={(value) => updateNote("advice", value)}
           onClear={() => clearPanel("advice")}
           onClose={() => setActivePanel(null)}
           onStatus={showStatus}
         />
       ) : activePanel === "investigation" ? (
-        <TagNoteSidebar
-          addCustomLabel="Add Custom Investigation"
-          title="Investigation"
-          value={notes.investigation}
-          onAddTag={(tag) => appendNote("investigation", tag)}
-          onChange={(value) => updateNote("investigation", value)}
-          onClear={() => clearPanel("investigation")}
+        <InvestigationSidebar
+          investigations={rxInvestigations}
           onClose={() => setActivePanel(null)}
-          onStatus={showStatus}
+          onSetInvestigations={setRxInvestigations}
         />
       ) : activePanel === "diagnosis" ? (
-        <TagNoteSidebar
-          title="Diagnosis"
-          value={notes.diagnosis}
-          onAddTag={(tag) => appendNote("diagnosis", tag)}
-          onChange={(value) => updateNote("diagnosis", value)}
-          onClear={() => clearPanel("diagnosis")}
+        <DiagnosisSidebar
+          diagnoses={rxDiagnoses}
           onClose={() => setActivePanel(null)}
-          onStatus={showStatus}
+          onSetDiagnoses={setRxDiagnoses}
         />
       ) : activePanel === "followUp" ? (
         <FollowUpSidebar
           date={followUpDate}
           note={notes.followUp}
+          fees={fees}
           onClose={() => setActivePanel(null)}
           onDateChange={setFollowUpDate}
           onNoteChange={(value) => updateNote("followUp", value)}
+          onFeesChange={setFees}
         />
       ) : activePanel === "referral" ? (
         <ReferralSidebar
@@ -1739,8 +2904,31 @@ export function PrescriptionBuilder() {
         </PanelDialog>
       ) : null}
 
+      {draftDialogOpen ? (
+        <DraftSidebar
+          drafts={drafts}
+          onClose={() => setDraftDialogOpen(false)}
+          onDelete={deleteDraft}
+          onEdit={editDraftFromSidebar}
+          onLoad={loadDraft}
+          onUpdate={updateDraft}
+        />
+      ) : null}
+
+      {templateDialogOpen ? (
+        <TemplateSidebar
+          templates={templates}
+          onClose={() => setTemplateDialogOpen(false)}
+          onDelete={deleteTemplate}
+          onLoad={loadTemplate}
+          onMerge={mergeTemplate}
+          onUpdate={updateTemplate}
+        />
+      ) : null}
+
       {registrationOpen ? (
         <PatientRegistrationDialog
+          asSidebar
           error={patientFormError || (registerPatient.isError ? getApiErrorMessage(registerPatient.error) : "")}
           form={patientForm}
           isSaving={registerPatient.isPending}
@@ -1749,39 +2937,372 @@ export function PrescriptionBuilder() {
           onUpdate={updatePatientForm}
         />
       ) : null}
+
+      {draftPopupOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-xl border bg-card shadow-xl">
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <h2 className="text-base font-semibold">
+                {draftPopupEditId ? "Edit Draft" : "Save to Draft"}
+              </h2>
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted"
+                onClick={() => { setDraftPopupOpen(false); setDraftPopupEditId(null); }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              {/* Non-editable patient name */}
+              {(selectedPatient || draftPopupEditId) && (
+                <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                  <span className="text-xs font-medium text-muted-foreground shrink-0">Patient:</span>
+                  <span className="text-sm font-semibold truncate">
+                    {selectedPatient?.name ?? drafts.find(d => d.id === draftPopupEditId)?.patient?.name ?? "—"}
+                  </span>
+                </div>
+              )}
+              {/* Notes */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">
+                  Notes <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <Textarea
+                  placeholder="Add notes about this draft…"
+                  rows={2}
+                  value={draftPopupNote}
+                  onChange={(e) => setDraftPopupNote(e.target.value)}
+                />
+              </div>
+              {/* Multi-select tags */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Tags</label>
+                <div className="flex flex-wrap gap-2">
+                  {["Dilate", "IOP", "SPT", "BP", "RBS", "Refraction"].map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        draftPopupTags.includes(tag)
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground hover:border-primary/60 hover:text-foreground"
+                      )}
+                      onClick={() =>
+                        setDraftPopupTags((prev) =>
+                          prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+                        )
+                      }
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t px-5 py-3">
+              <Button type="button" variant="outline" onClick={() => { setDraftPopupOpen(false); setDraftPopupEditId(null); }}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleDraftPopupSave}>
+                <FileText className="h-4 w-4" />
+                {draftPopupEditId ? "Update Draft" : "Save to Draft"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loadConflict && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm overflow-hidden rounded-xl border bg-card shadow-xl">
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <h2 className="text-base font-semibold text-destructive">Prescription Already Loaded</h2>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                onClick={() => setLoadConflict(null)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 text-sm text-muted-foreground">
+              A prescription is already loaded
+              {selectedPatient && <span className="font-semibold text-foreground"> for {selectedPatient.name}</span>}.
+              Save it to draft before loading another?
+            </div>
+            <div className="flex flex-col gap-2 border-t px-5 py-3">
+              <Button type="button" className="w-full" onClick={() => {
+                pendingLoadRef.current = loadConflict;
+                setLoadConflict(null);
+                openDraftPopup();
+              }}>
+                <FileText className="h-4 w-4" />
+                Save to Draft &amp; Load
+              </Button>
+              <Button type="button" variant="outline" className="w-full text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  const pending = loadConflict;
+                  setLoadConflict(null);
+                  clearPrescriptionPad();
+                  window.setTimeout(() => {
+                    if (pending.type === "draft") loadDraft(pending.item);
+                    else loadTemplate(pending.item);
+                  }, 50);
+                }}>
+                Discard &amp; Load
+              </Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => setLoadConflict(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {templateNamePopupOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm overflow-hidden rounded-xl border bg-card shadow-xl">
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <h2 className="text-base font-semibold">Save as Template</h2>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                onClick={() => setTemplateNamePopupOpen(false)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <label className="text-sm font-medium">Template Name</label>
+              <Input
+                autoFocus
+                className="mt-1.5"
+                placeholder="e.g. Cataract Post-op, Glaucoma…"
+                value={templateNameInput}
+                onChange={(e) => setTemplateNameInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { saveTemplate(templateNameInput); setTemplateNamePopupOpen(false); } }}
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t px-5 py-3">
+              <Button type="button" variant="outline" onClick={() => setTemplateNamePopupOpen(false)}>Cancel</Button>
+              <Button type="button" onClick={() => { saveTemplate(templateNameInput); setTemplateNamePopupOpen(false); }}>
+                <LayoutGrid className="h-4 w-4" />
+                Save Template
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {patientEditOpen ? (
+        <PatientRegistrationDialog
+          title="Edit Patient"
+          submitLabel="Save Changes"
+          error={patientFormError || (updatePatientMutation.isError ? getApiErrorMessage(updatePatientMutation.error) : "")}
+          form={patientForm}
+          isSaving={updatePatientMutation.isPending}
+          onClose={() => { setPatientEditOpen(false); setPatientForm(initialPatientForm); setPatientFormError(""); }}
+          onSubmit={handlePatientEdit}
+          onUpdate={updatePatientForm}
+        />
+      ) : null}
+
+      {prevRxPreviewId && (
+        <RxPreviewModal
+          prescriptionId={prevRxPreviewId}
+          onClose={() => setPrevRxPreviewId(null)}
+        />
+      )}
     </>
   );
 }
 
-type ComplaintSidebarProps = {
-  value: string;
-  onAddTag: (tag: string) => void;
-  onChange: (value: string) => void;
-  onClear: () => void;
-  onClose: () => void;
-};
+// ── RxPreviewModal ─────────────────────────────────────────────────────────
+
+function RxPreviewModal({ prescriptionId, onClose }: { prescriptionId: string; onClose: () => void }) {
+  const token = useSessionStore((s) => s.accessToken) ?? "";
+
+  const { data: rx, isFetching, isError } = useQuery({
+    queryKey: ["rx-preview", prescriptionId, token],
+    queryFn: () => fetchPrescriptionById(prescriptionId, token),
+    enabled: !!token,
+  });
+
+  function handlePrint() {
+    if (!rx) return;
+    const age = [
+      rx.patient.ageYears != null ? `${rx.patient.ageYears}Y` : null,
+      rx.patient.ageMonths != null ? `${rx.patient.ageMonths}M` : null,
+    ].filter(Boolean).join(" ") || "—";
+
+    const medicineRows = rx.medicines.map((m, i) =>
+      `<tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${i + 1}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee"><strong>${m.brandName}</strong>${m.genericName ? ` <small>(${m.genericName})</small>` : ""}${m.strength ? ` ${m.strength}` : ""}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.dose}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.duration}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.instruction ?? "—"}</td>
+      </tr>`
+    ).join("");
+
+    const win = window.open("", "_blank", "width=860,height=700");
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head>
+      <title>Prescription ${rx.prescriptionNo}</title>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:13px;color:#111;margin:0;padding:20px 30px}
+        h1{font-size:18px;margin:0 0 4px}
+        .meta{color:#555;font-size:12px;margin-bottom:16px}
+        .section{margin-bottom:14px}
+        .section-title{font-size:11px;font-weight:bold;text-transform:uppercase;color:#888;margin-bottom:4px;letter-spacing:.05em}
+        table{width:100%;border-collapse:collapse}
+        th{text-align:left;font-size:11px;color:#888;padding:4px 8px;border-bottom:2px solid #ddd}
+        .divider{border:none;border-top:1px solid #eee;margin:16px 0}
+        @media print{body{padding:10px}}
+      </style></head><body>
+      <h1>${rx.chamber?.name ?? "Prescription"}</h1>
+      <div class="meta">Dr. ${rx.doctor?.displayName ?? "—"} &nbsp;|&nbsp; Rx# ${rx.prescriptionNo}${rx.followUpDate ? ` &nbsp;|&nbsp; Follow-up: ${new Date(rx.followUpDate).toLocaleDateString()}` : ""}</div>
+      <div class="section"><div class="section-title">Patient</div>
+        <strong>${rx.patient.name}</strong> &nbsp; ${age}${rx.patient.gender ? ` · ${rx.patient.gender.charAt(0).toUpperCase() + rx.patient.gender.slice(1).toLowerCase()}` : ""}${rx.patient.phone ? ` &nbsp;|&nbsp; ${rx.patient.phone}` : ""}
+      </div>
+      <hr class="divider"/>
+      ${rx.chiefComplaints ? `<div class="section"><div class="section-title">Chief Complaints</div>${rx.chiefComplaints}</div>` : ""}
+      ${rx.examination ? `<div class="section"><div class="section-title">Examination</div>${rx.examination}</div>` : ""}
+      ${rx.diagnoses?.length ? `<div class="section"><div class="section-title">Diagnoses</div><ol style="margin:4px 0 0;padding-left:18px">${rx.diagnoses.map(d => `<li>${d.name}${d.note ? ` (${d.note})` : ""}</li>`).join("")}</ol></div>` : ""}
+      ${rx.medicines?.length ? `<div class="section"><div class="section-title">Medicines</div><table><thead><tr><th>#</th><th>Medicine</th><th>Dose</th><th>Duration</th><th>Instruction</th></tr></thead><tbody>${medicineRows}</tbody></table></div>` : ""}
+      ${rx.investigations?.length ? `<div class="section"><div class="section-title">Investigations</div><ol style="margin:4px 0 0;padding-left:18px">${rx.investigations.map(inv => `<li>${inv.name}${inv.note ? ` (${inv.note})` : ""}</li>`).join("")}</ol></div>` : ""}
+      ${rx.advice ? `<div class="section"><div class="section-title">Advice</div>${rx.advice}</div>` : ""}
+      <script>window.onload=()=>window.print()</script>
+    </body></html>`);
+    win.document.close();
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-10">
+      <div className="w-full max-w-2xl rounded-xl border bg-card shadow-xl">
+        <div className="flex items-center gap-3 border-b px-4 py-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Prescription Preview</p>
+            {rx && <p className="text-xs text-muted-foreground">{rx.prescriptionNo}</p>}
+          </div>
+          <Button size="sm" variant="outline" onClick={handlePrint} disabled={!rx}>
+            <Printer className="h-3.5 w-3.5" />
+            Print
+          </Button>
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-muted"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-4">
+          {isFetching && (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading prescription…
+            </div>
+          )}
+          {isError && (
+            <p className="py-12 text-center text-sm text-destructive">Failed to load prescription.</p>
+          )}
+          {rx && (
+            <div className="space-y-4 text-sm">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Patient</p>
+                  <p className="font-semibold">{rx.patient.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {[rx.patient.ageYears != null ? `${rx.patient.ageYears}Y` : null, rx.patient.ageMonths != null ? `${rx.patient.ageMonths}M` : null].filter(Boolean).join(" ")}
+                    {rx.patient.gender ? ` · ${rx.patient.gender.charAt(0).toUpperCase() + rx.patient.gender.slice(1).toLowerCase()}` : ""}
+                    {rx.patient.phone ? ` · ${rx.patient.phone}` : ""}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Doctor</p>
+                  <p className="font-medium">{rx.doctor?.displayName ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground">{rx.chamber?.name ?? "—"}</p>
+                </div>
+              </div>
+              <div className="border-t" />
+              {rx.chiefComplaints && <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Chief Complaints</p><p className="whitespace-pre-wrap">{rx.chiefComplaints}</p></div>}
+              {rx.examination && <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Examination</p><p className="whitespace-pre-wrap">{rx.examination}</p></div>}
+              {rx.diagnoses?.length > 0 && <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Diagnoses</p><ol className="ml-4 space-y-0.5 list-decimal">{rx.diagnoses.map((d, i) => <li key={i}>{d.name}{d.note ? ` (${d.note})` : ""}</li>)}</ol></div>}
+              {rx.medicines?.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Medicines</p>
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          {["#","Medicine","Dose","Duration","Instruction"].map(h => (
+                            <th key={h} className="px-2 py-1.5 text-left font-semibold">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {rx.medicines.map((m, i) => (
+                          <tr key={i}>
+                            <td className="px-2 py-1.5 text-muted-foreground">{i + 1}</td>
+                            <td className="px-2 py-1.5 font-medium">
+                              {m.brandName}
+                              {m.genericName && <span className="ml-1 font-normal text-muted-foreground">({m.genericName})</span>}
+                              {m.strength && <span className="ml-1 text-muted-foreground">{m.strength}</span>}
+                            </td>
+                            <td className="px-2 py-1.5">{m.dose}</td>
+                            <td className="px-2 py-1.5">{m.duration}</td>
+                            <td className="px-2 py-1.5 text-muted-foreground">{m.instruction ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {rx.investigations?.length > 0 && <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Investigations</p><ol className="ml-4 space-y-0.5 list-decimal">{rx.investigations.map((inv, i) => <li key={i}>{inv.name}{inv.note ? ` (${inv.note})` : ""}</li>)}</ol></div>}
+              {rx.advice && <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Advice</p><p className="whitespace-pre-wrap">{rx.advice}</p></div>}
+              {rx.followUpDate && (
+                <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+                  <span className="text-xs font-semibold text-primary">Follow-up: </span>
+                  <span className="text-xs">{new Date(rx.followUpDate).toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" })}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 function ComplaintSidebar({
-  value,
-  onAddTag,
-  onChange,
-  onClear,
-  onClose
-}: ComplaintSidebarProps) {
-  const [query, setQuery] = useState("");
+  complaints,
+  onClose,
+  onSetComplaints
+}: {
+  complaints: ComplaintEntry[];
+  onClose: () => void;
+  onSetComplaints: (items: ComplaintEntry[]) => void;
+}) {
+  function addComplaint(name: string) {
+    onSetComplaints([
+      ...complaints,
+      { id: crypto.randomUUID(), name, value: "", forType: "For", forAmount: "", forUnit: "Day", forDate: "", note: "" }
+    ]);
+    // SuggestionInput already calls persistSuggestion
+  }
 
-  function addSearchText() {
-    const text = query.trim();
-    if (!text) return;
-    onAddTag(text);
-    setQuery("");
+  function updateComplaint(id: string, patch: Partial<Omit<ComplaintEntry, "id">>) {
+    onSetComplaints(complaints.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+
+  function deleteComplaint(id: string) {
+    onSetComplaints(complaints.filter((c) => c.id !== id));
   }
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
       <aside
         className="ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft md:w-[60%]"
-        onClick={(event) => event.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-card px-4">
           <h2 className="text-base font-semibold text-primary">Complaint</h2>
@@ -1793,7 +3314,6 @@ function ComplaintSidebar({
             <Button
               aria-label="Close complaint"
               size="icon"
-              title="Close complaint"
               type="button"
               variant="ghost"
               onClick={onClose}
@@ -1803,82 +3323,199 @@ function ComplaintSidebar({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-5">
-            <Input
-              autoFocus
-              className="h-14 border-primary/50 text-lg focus-visible:ring-primary"
-              placeholder="Search..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addSearchText();
-                }
-              }}
-            />
-
-            <div className="space-y-2 border-t pt-3">
-              <Textarea
-                className="min-h-28 resize-y bg-background"
-                placeholder="Type here..."
-                value={value}
-                onChange={(event) => onChange(event.target.value)}
-              />
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <button
-                  className="inline-flex items-center gap-1 text-primary hover:underline"
-                  type="button"
-                  onClick={onClear}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Clear
-                </button>
-              </div>
-            </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-4">
+            <SuggestionInput suggKey={SUGG_COMPLAINT} placeholder="Type complaint name and press Enter…" onAdd={addComplaint} autoFocus />
           </div>
+
+          {complaints.length > 0 && (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
+                    <th className="px-3 py-2">Name</th>
+                    <th className="px-3 py-2">Value</th>
+                    <th className="px-3 py-2">Duration</th>
+                    <th className="px-3 py-2 w-10 text-center">Edit</th>
+                    <th className="px-3 py-2 w-10 text-center">Delete</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {complaints.map((c) => (
+                    <tr key={c.id} className="border-b last:border-b-0 hover:bg-muted/20">
+                      <td className="px-2 py-1.5">
+                        <input
+                          className="w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                          id={`complaint-name-${c.id}`}
+                          placeholder="Name"
+                          value={c.name}
+                          onChange={(e) => updateComplaint(c.id, { name: e.target.value })}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          className="w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Value"
+                          value={c.value}
+                          onChange={(e) => updateComplaint(c.id, { value: e.target.value })}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <select
+                            className="rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                            value={c.forType}
+                            onChange={(e) => updateComplaint(c.id, { forType: e.target.value as ComplaintEntry["forType"] })}
+                          >
+                            <option>For</option>
+                            <option>Since</option>
+                            <option>On</option>
+                          </select>
+
+                          {c.forType === "For" && (
+                            <>
+                              <input
+                                className="w-14 rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                                min="0"
+                                placeholder="0"
+                                type="number"
+                                value={c.forAmount}
+                                onChange={(e) => updateComplaint(c.id, { forAmount: e.target.value })}
+                              />
+                              <select
+                                className="rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                                value={c.forUnit}
+                                onChange={(e) => updateComplaint(c.id, { forUnit: e.target.value as ComplaintEntry["forUnit"] })}
+                              >
+                                <option>Day</option>
+                                <option>Week</option>
+                                <option>Month</option>
+                                <option>Year</option>
+                                <option>Hour</option>
+                              </select>
+                            </>
+                          )}
+
+                          {c.forType === "Since" && (
+                            <>
+                              <input
+                                className="w-14 rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                                min="0"
+                                placeholder="0"
+                                type="number"
+                                value={c.forAmount}
+                                onChange={(e) => updateComplaint(c.id, { forAmount: e.target.value })}
+                              />
+                              <select
+                                className="rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                                value={c.forUnit}
+                                onChange={(e) => updateComplaint(c.id, { forUnit: e.target.value as ComplaintEntry["forUnit"] })}
+                              >
+                                <option>Day</option>
+                                <option>Week</option>
+                                <option>Month</option>
+                                <option>Year</option>
+                                <option>Hour</option>
+                              </select>
+                            </>
+                          )}
+
+                          {c.forType === "On" && (
+                            <DatePickerInput
+                              placeholder="Select date"
+                              value={c.forDate}
+                              onChange={(v) => updateComplaint(c.id, { forDate: v })}
+                            />
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-primary"
+                          title="Edit"
+                          type="button"
+                          onClick={() => {
+                            const row = document.getElementById(`complaint-name-${c.id}`);
+                            row?.focus();
+                          }}
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button
+                          className="rounded p-1.5 font-bold text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          title="Delete"
+                          type="button"
+                          onClick={() => deleteComplaint(c.id)}
+                        >
+                          <X className="h-6 w-6" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {complaints.length === 0 && (
+            <p className="mt-8 text-center text-sm text-muted-foreground">
+              No complaints added yet. Type a name above and press Enter.
+            </p>
+          )}
         </div>
       </aside>
     </div>
   );
 }
 
-type HistorySidebarProps = {
-  value: string;
-  onAddTag: (tag: string) => void;
-  onChange: (value: string) => void;
-  onClear: () => void;
-  onClose: () => void;
-};
-
 function HistorySidebar({
-  value,
-  onAddTag,
-  onChange,
-  onClear,
-  onClose
-}: HistorySidebarProps) {
-  const [query, setQuery] = useState("");
+  histories,
+  onClose,
+  onSetHistories
+}: {
+  histories: HistoryEntry[];
+  onClose: () => void;
+  onSetHistories: (items: HistoryEntry[]) => void;
+}) {
   const [tab, setTab] = useState<HistoryTab>("Medical");
 
-  function addSearchText() {
-    const text = query.trim();
-    if (!text) return;
-    onAddTag(text);
-    setQuery("");
+  const tabEntries = histories.filter((h) => h.tab === tab);
+
+  function addEntry(name: string) {
+    onSetHistories([
+      ...histories,
+      {
+        id: crypto.randomUUID(),
+        tab,
+        name,
+        value: "",
+        note: "",
+        duration: { type: (tab === "Investigation" || tab === "Surgery") ? "On" : "For", amount: "", unit: "Day", text: "", rangeTo: "" }
+      }
+    ]);
+    // SuggestionInput already calls persistSuggestion with the per-tab key
+  }
+
+  function updateEntry(id: string, patch: Partial<Omit<HistoryEntry, "id">>) {
+    onSetHistories(histories.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+  }
+
+  function deleteEntry(id: string) {
+    onSetHistories(histories.filter((h) => h.id !== id));
   }
 
   function goToNextTab() {
-    const currentIndex = historyTabs.indexOf(tab);
-    setTab(historyTabs[(currentIndex + 1) % historyTabs.length]);
+    const i = historyTabs.indexOf(tab);
+    setTab(historyTabs[(i + 1) % historyTabs.length]);
   }
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
       <aside
         className="ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft md:w-[60%]"
-        onClick={(event) => event.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-card px-4">
           <h2 className="text-base font-semibold text-primary">History</h2>
@@ -1887,14 +3524,7 @@ function HistorySidebar({
               <Check className="h-4 w-4" />
               Done
             </Button>
-            <Button
-              aria-label="Close history"
-              size="icon"
-              title="Close history"
-              type="button"
-              variant="ghost"
-              onClick={onClose}
-            >
+            <Button aria-label="Close" size="icon" type="button" variant="ghost" onClick={onClose}>
               <X className="h-5 w-5 text-destructive" />
             </Button>
           </div>
@@ -1903,19 +3533,18 @@ function HistorySidebar({
         <div className="flex items-center border-b">
           <div className="flex min-w-0 flex-1 overflow-x-auto">
             {historyTabs.map((item) => (
-              <TabButton
-                key={item}
-                active={tab === item}
-                onClick={() => setTab(item)}
-              >
+              <TabButton key={item} active={tab === item} onClick={() => setTab(item)}>
                 {item}
+                {histories.filter((h) => h.tab === item).length > 0 && (
+                  <span className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-white">
+                    {histories.filter((h) => h.tab === item).length}
+                  </span>
+                )}
               </TabButton>
             ))}
           </div>
           <button
-            aria-label="Next history tab"
             className="flex h-16 w-12 flex-none items-center justify-center border-l text-primary hover:bg-muted"
-            title="Next history tab"
             type="button"
             onClick={goToNextTab}
           >
@@ -1923,37 +3552,142 @@ function HistorySidebar({
           </button>
         </div>
 
-        <div className="flex flex-1 flex-col overflow-y-auto px-6 py-8">
-          <Input
-            autoFocus
-            className="h-12 text-lg"
-            placeholder="Search..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addSearchText();
-              }
-            }}
-          />
-
-          <div className="mt-5">
-            <Textarea
-              className="min-h-32 resize-y bg-background"
-              placeholder="Type here..."
-              value={value}
-              onChange={(event) => onChange(event.target.value)}
-            />
-            <button
-              className="mt-3 inline-flex items-center gap-1 text-sm text-primary hover:underline"
-              type="button"
-              onClick={onClear}
-            >
-              <RotateCcw className="h-4 w-4" />
-              Clear
-            </button>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-4">
+            <SuggestionInput suggKey={`${SUGG_HISTORY}-${tab}`} placeholder={`Type ${tab.toLowerCase()} history and press Enter…`} onAdd={addEntry} autoFocus />
           </div>
+
+          {tabEntries.length === 0 ? (
+            <p className="mt-8 text-center text-sm text-muted-foreground">
+              No {tab.toLowerCase()} history added yet.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
+                    <th className="px-3 py-2">Name</th>
+                    {(tab === "Medical" || tab === "Investigation" || tab === "Drug" || tab === "Surgery") && (
+                      <th className="px-3 py-2">Value</th>
+                    )}
+                    <th className="px-3 py-2">Duration</th>
+                    <th className="px-3 py-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tabEntries.map((h) => (
+                    <tr key={h.id} className="border-b last:border-b-0 hover:bg-muted/20">
+                      <td className="px-2 py-1.5">
+                        <input
+                          className="w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Name"
+                          value={h.name}
+                          onChange={(e) => updateEntry(h.id, { name: e.target.value })}
+                        />
+                      </td>
+
+                      {(tab === "Medical" || tab === "Investigation" || tab === "Drug" || tab === "Surgery") && (
+                        <td className="px-2 py-1.5">
+                          <input
+                            className="w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                            placeholder={tab === "Investigation" ? "Result" : "Value"}
+                            value={h.value}
+                            onChange={(e) => updateEntry(h.id, { value: e.target.value })}
+                          />
+                        </td>
+                      )}
+
+                      <td className="px-2 py-1.5">
+                        {h.duration && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <select
+                              className="rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                              value={h.duration.type}
+                              onChange={(e) =>
+                                updateEntry(h.id, { duration: { ...h.duration!, type: e.target.value as HistoryDuration["type"] } })
+                              }
+                            >
+                              <option>For</option>
+                              <option>Since</option>
+                              <option>On</option>
+                              <option>Range</option>
+                            </select>
+
+                            {h.duration.type === "For" && (
+                              <>
+                                <input
+                                  className="w-14 rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                                  min="0"
+                                  placeholder="0"
+                                  type="number"
+                                  value={h.duration.amount}
+                                  onChange={(e) =>
+                                    updateEntry(h.id, { duration: { ...h.duration!, amount: e.target.value } })
+                                  }
+                                />
+                                <select
+                                  className="rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                                  value={h.duration.unit}
+                                  onChange={(e) =>
+                                    updateEntry(h.id, { duration: { ...h.duration!, unit: e.target.value as HistoryDuration["unit"] } })
+                                  }
+                                >
+                                  <option>Day</option>
+                                  <option>Week</option>
+                                  <option>Month</option>
+                                  <option>Year</option>
+                                </select>
+                              </>
+                            )}
+
+                            {(h.duration.type === "Since" || h.duration.type === "On") && (
+                              <DatePickerInput
+                                placeholder={h.duration.type === "Since" ? "Since date" : "Select date"}
+                                value={h.duration.text}
+                                onChange={(v) =>
+                                  updateEntry(h.id, { duration: { ...h.duration!, text: v } })
+                                }
+                              />
+                            )}
+
+                            {h.duration.type === "Range" && (
+                              <>
+                                <DatePickerInput
+                                  placeholder="From"
+                                  value={h.duration.text}
+                                  onChange={(v) =>
+                                    updateEntry(h.id, { duration: { ...h.duration!, text: v } })
+                                  }
+                                />
+                                <span className="text-xs text-muted-foreground">to</span>
+                                <DatePickerInput
+                                  placeholder="To"
+                                  value={h.duration.rangeTo}
+                                  onChange={(v) =>
+                                    updateEntry(h.id, { duration: { ...h.duration!, rangeTo: v } })
+                                  }
+                                />
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-2 py-1.5 text-center">
+                        <button
+                          className="rounded p-1.5 font-bold text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          type="button"
+                          onClick={() => deleteEntry(h.id)}
+                        >
+                          <X className="h-6 w-6" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </aside>
     </div>
@@ -1981,7 +3715,7 @@ function FindingsSidebar({
 
   return (
     <RightDrawer title="Findings" onClose={onClose}>
-      <div className="space-y-6">
+      <div className="space-y-0">
         <div className="border-b">
           <div className="flex min-w-0 overflow-x-auto">
             {(["Basic", "Other", "Gynae & Obs"] as const).map((item) => (
@@ -1994,19 +3728,19 @@ function FindingsSidebar({
 
         {tab === "Basic" ? (
           <div className="overflow-hidden rounded-md border bg-card shadow-sm">
-            <FindingsSection title="Preliminary">
-              <div className="grid gap-4 xl:grid-cols-[1.2fr_0.85fr_0.95fr_1.8fr_0.85fr]">
+            <section className="border-b p-2 last:border-b-0">
+              <div className="grid gap-4 grid-cols-[1.2fr_0.85fr_0.95fr_1.8fr_0.85fr]">
                 <div className="space-y-1">
-                  <FieldLabel>B. Pressure</FieldLabel>
+                  <FieldLabel>Blood Pressure</FieldLabel>
                   <div className="grid grid-cols-2 overflow-hidden rounded-md border">
                     <Input
-                      className="rounded-none border-0 border-r"
+                      className="rounded-none border-0 border-r text-xs"
                       placeholder="Sys"
                       value={findings.bpSystolic}
                       onChange={(event) => onChange({ bpSystolic: event.target.value })}
                     />
                     <Input
-                      className="rounded-none border-0"
+                      className="rounded-none border-0 text-xs"
                       placeholder="Dias"
                       value={findings.bpDiastolic}
                       onChange={(event) => onChange({ bpDiastolic: event.target.value })}
@@ -2014,30 +3748,35 @@ function FindingsSidebar({
                   </div>
                 </div>
                 <FindingInput
-                  label="Temp."
+                  label="Temperature"
                   value={findings.temperature}
                   onChange={(value) => onChange({ temperature: value })}
+                  className="text-xs"
                 />
                 <FindingInput
                   label="Weight (kg)"
                   value={findings.weight}
                   onChange={(value) => onChange({ weight: value })}
+                  className="text-xs"
                 />
                 <div className="space-y-1">
                   <FieldLabel>Height</FieldLabel>
                   <div className="grid grid-cols-[1fr_1fr_auto_1fr] items-center gap-2">
                     <Input
+                      className="text-xs"
                       placeholder="feet"
                       value={findings.heightFeet}
                       onChange={(event) => onChange({ heightFeet: event.target.value })}
                     />
                     <Input
+                      className="text-xs"
                       placeholder="inch"
                       value={findings.heightInch}
                       onChange={(event) => onChange({ heightInch: event.target.value })}
                     />
                     <span className="text-lg font-semibold">/</span>
                     <Input
+                      className="text-xs"
                       placeholder="cm"
                       value={findings.heightCm}
                       onChange={(event) => onChange({ heightCm: event.target.value })}
@@ -2048,13 +3787,13 @@ function FindingsSidebar({
                   label="RBS"
                   value={findings.rbs}
                   onChange={(value) => onChange({ rbs: value })}
+                  className="text-xs"
                 />
               </div>
-            </FindingsSection>
-
-            <FindingsSection title="Ophthalmic Findings">
+            </section>
+            <section className="border-b p-2 last:border-b-0">
               <OphthalmicFindingsTable findings={findings} onChange={onChange} />
-            </FindingsSection>
+            </section>
           </div>
         ) : tab === "Gynae & Obs" ? (
           <GynaeObsForm findings={findings} onChange={onChange} />
@@ -2133,13 +3872,6 @@ function FindingsSidebar({
           </div>
         )}
 
-        <Textarea
-          className="min-h-24 bg-background"
-          placeholder="Additional notes, comment, suggestion..."
-          value={note}
-          onChange={(event) => onNoteChange(event.target.value)}
-        />
-
         <div className="flex justify-end">
           <Button size="sm" variant="outline" onClick={onClear}>
             <RotateCcw className="h-4 w-4" />
@@ -2151,6 +3883,150 @@ function FindingsSidebar({
   );
 }
 
+const OPHTHALMIC_CUSTOM_OPTS_KEY = "rx-ophthalmic-custom-opts";
+
+function EyeSelectField({
+  ariaLabel, value, placeholder = "Select", className, multiSelect = false, suffix, presetOptions, customOptions, onChange, onRemove, onAdd
+}: {
+  ariaLabel: string;
+  value: string;
+  placeholder?: string;
+  className?: string;
+  multiSelect?: boolean;
+  suffix?: string;
+  presetOptions: string[];
+  customOptions: string[];
+  onChange: (v: string) => void;
+  onRemove: (opt: string) => void;
+  onAdd: (opt: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addValue, setAddValue] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setAdding(false);
+        setAddValue("");
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  function commit() {
+    const v = addValue.trim();
+    if (v) onAdd(v);
+    setAddValue("");
+    setAdding(false);
+  }
+
+  const selectedSet = multiSelect
+    ? new Set(value.split(",").map((s) => s.trim()).filter(Boolean))
+    : null;
+  const displayText = multiSelect
+    ? (selectedSet!.size > 0 ? [...selectedSet!].join(", ") : placeholder)
+    : (value || placeholder);
+
+  function toggleOption(opt: string) {
+    if (!multiSelect) {
+      onChange(opt === value ? "" : opt);
+      setOpen(false);
+      return;
+    }
+    const next = new Set(selectedSet!);
+    if (next.has(opt)) next.delete(opt); else next.add(opt);
+    onChange([...next].join(", "));
+  }
+
+  const triggerButton = (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      className={cn(
+        "flex h-8 items-center justify-between border border-border/70 bg-card px-2 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-primary",
+        suffix ? "rounded-l-md" : "w-full rounded-md"
+      )}
+      onClick={() => setOpen((o) => !o)}
+    >
+      <span className={cn("truncate", value ? "" : "text-muted-foreground")}>{displayText}</span>
+      <ChevronDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+    </button>
+  );
+
+  return (
+    <div ref={ref} className={cn("relative", className)}>
+      {suffix ? (
+        <div className="flex items-stretch">
+          {triggerButton}
+          <span className="inline-flex h-8 shrink-0 items-center rounded-r-md border border-l-0 bg-muted px-2 text-xs text-muted-foreground">
+            {suffix}
+          </span>
+        </div>
+      ) : (
+        triggerButton
+      )}
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[160px] w-max rounded-md border bg-card shadow-md max-h-64 overflow-y-auto">
+          <div>
+          {presetOptions.map((opt) => (
+            <div
+              key={opt}
+              className="flex cursor-pointer items-center px-2 py-1 text-xs hover:bg-muted"
+              onClick={() => toggleOption(opt)}
+            >
+              <span className="flex-1">{opt}</span>
+              {(multiSelect ? selectedSet!.has(opt) : opt === value) && <Check className="h-3 w-3 text-primary" />}
+            </div>
+          ))}
+          {customOptions.map((opt) => (
+            <div key={opt} className="flex cursor-pointer items-center px-2 py-1 text-xs hover:bg-muted">
+              <span className="flex-1" onClick={() => toggleOption(opt)}>{opt}</span>
+              {(multiSelect ? selectedSet!.has(opt) : opt === value) && <Check className="h-3 w-3 text-primary mr-1" />}
+              <button
+                type="button"
+                aria-label={`Remove ${opt}`}
+                className="ml-1 rounded text-muted-foreground hover:text-destructive transition-colors"
+                onClick={(e) => { e.stopPropagation(); onRemove(opt); }}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+          </div>
+          {adding ? (
+            <div className="shrink-0 border-t px-2 py-1">
+              <input
+                autoFocus
+                className="w-full rounded border border-primary/50 bg-background px-1 py-0.5 text-xs outline-none"
+                placeholder="New value…"
+                value={addValue}
+                onChange={(e) => setAddValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); commit(); }
+                  if (e.key === "Escape") { setAdding(false); setAddValue(""); }
+                }}
+                onBlur={commit}
+              />
+            </div>
+          ) : (
+            <div
+              className="shrink-0 cursor-pointer border-t px-2 py-1 text-xs text-primary hover:bg-muted"
+              onClick={() => setAdding(true)}
+            >
+              + Add value
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OphthalmicFindingsTable({
   findings,
   onChange
@@ -2158,8 +4034,39 @@ function OphthalmicFindingsTable({
   findings: FindingsState;
   onChange: (patch: Partial<FindingsState>) => void;
 }) {
+  const [customOptions, setCustomOptions] = useState<Record<string, string[]>>(() => {
+    try { return JSON.parse(localStorage.getItem(OPHTHALMIC_CUSTOM_OPTS_KEY) ?? "{}"); } catch { return {}; }
+  });
+  const [vaPickerTarget, setVaPickerTarget] = useState<{ side: "right" | "left"; field: "sphere" | "cyl" | "va" } | null>(null);
+  const vaRecordRightRef = useRef<HTMLDivElement>(null);
+  const vaRecordLeftRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!vaPickerTarget) return;
+    function close(e: PointerEvent) {
+      const t = e.target as Node;
+      if (vaRecordRightRef.current?.contains(t) || vaRecordLeftRef.current?.contains(t)) return;
+      setVaPickerTarget(null);
+    }
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [vaPickerTarget]);
+
   function updateField(key: keyof FindingsState, value: string) {
     onChange({ [key]: value } as Partial<FindingsState>);
+  }
+
+  function addCustomOption(rowLabel: string, val: string) {
+    if (!val.trim()) return;
+    const updated = { ...customOptions, [rowLabel]: [...(customOptions[rowLabel] ?? []), val.trim()] };
+    setCustomOptions(updated);
+    try { localStorage.setItem(OPHTHALMIC_CUSTOM_OPTS_KEY, JSON.stringify(updated)); } catch {}
+  }
+
+  function removeCustomOption(rowLabel: string, val: string) {
+    const updated = { ...customOptions, [rowLabel]: (customOptions[rowLabel] ?? []).filter((o) => o !== val) };
+    setCustomOptions(updated);
+    try { localStorage.setItem(OPHTHALMIC_CUSTOM_OPTS_KEY, JSON.stringify(updated)); } catch {}
   }
 
   function renderEyeField(
@@ -2170,73 +4077,228 @@ function OphthalmicFindingsTable({
     const noteKey = side === "right" ? row.rightNoteKey : row.leftNoteKey;
     const ariaLabel = `${row.label} ${side} eye`;
 
-    if (row.inputType === "select") {
+    if (row.inputType === "checkbox") {
+      const checked = String(findings[key] ?? "") === "yes";
       return (
-        <div className={cn("grid gap-2", noteKey ? "grid-cols-[minmax(0,1fr)_76px]" : "")}>
-          <select
+        <label className="flex h-full w-full cursor-pointer items-center justify-center p-2">
+          <input
+            type="checkbox"
             aria-label={ariaLabel}
-            className="h-9 w-full rounded-md border border-border/70 bg-card px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-            value={String(findings[key] ?? "")}
-            onChange={(event) => updateField(key, event.target.value)}
-          >
-            <option value="">Select</option>
-            {row.options?.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
+            className="h-4 w-4 cursor-pointer accent-primary"
+            checked={checked}
+            onChange={(e) => updateField(key, e.target.checked ? "yes" : "")}
+          />
+        </label>
+      );
+    }
+
+    if (row.inputType === "freetext") {
+      return (
+        <textarea
+          aria-label={ariaLabel}
+          rows={1}
+          className="w-full resize-none overflow-hidden rounded-none border-0 bg-transparent px-1 py-1 text-sm leading-tight outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          value={String(findings[key] ?? "")}
+          ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+          onChange={(event) => {
+            updateField(key, event.target.value);
+            const el = event.currentTarget;
+            el.style.height = "auto";
+            el.style.height = el.scrollHeight + "px";
+          }}
+        />
+      );
+    }
+
+    if (row.inputType === "varecord") {
+      const prefix = side === "right" ? "ophthalmicVaRecordRight" : "ophthalmicVaRecordLeft";
+      const cellRef = side === "right" ? vaRecordRightRef : vaRecordLeftRef;
+      const fields: { label: string; key: keyof FindingsState; pickerField?: "sphere" | "cyl" | "va" }[] = [
+        { label: "Sphere", key: `${prefix}Sphere` as keyof FindingsState, pickerField: "sphere" },
+        { label: "CYL",    key: `${prefix}Cyl`    as keyof FindingsState, pickerField: "cyl" },
+        { label: "Axis",   key: `${prefix}Axis`   as keyof FindingsState },
+        { label: "VA",     key: `${prefix}Va`     as keyof FindingsState, pickerField: "va" },
+      ];
+      const isPickerOpen = vaPickerTarget?.side === side;
+      return (
+        <div ref={cellRef} className="relative">
+          <div className="grid grid-cols-4 divide-x">
+            {fields.map((f) => (
+              <input
+                key={f.key}
+                aria-label={`${ariaLabel} ${f.label}`}
+                placeholder={f.label}
+                className={cn(
+                  "w-full bg-transparent px-1 py-1 text-center text-xs outline-none placeholder:text-muted-foreground",
+                  isPickerOpen && vaPickerTarget?.field === f.pickerField
+                    ? "ring-2 ring-inset ring-primary"
+                    : "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                )}
+                value={String(findings[f.key] ?? "")}
+                onChange={(e) => updateField(f.key, e.target.value)}
+                onClick={() => { if (f.pickerField) setVaPickerTarget({ side, field: f.pickerField }); }}
+                onFocus={() => { if (f.pickerField) setVaPickerTarget({ side, field: f.pickerField }); else setVaPickerTarget(null); }}
+              />
             ))}
-          </select>
-          {noteKey ? (
-            <Input
-              aria-label={`${ariaLabel} note`}
-              className="h-9 border-border/70 bg-card px-2 text-sm"
-              placeholder="Note"
-              value={String(findings[noteKey] ?? "")}
-              onChange={(event) => updateField(noteKey, event.target.value)}
+          </div>
+          {isPickerOpen && (() => {
+            const fieldLabel = vaPickerTarget!.field === "sphere" ? "Sphere" : vaPickerTarget!.field === "cyl" ? "CYL" : "VA";
+            const targetLabel = `${side === "right" ? "Right" : "Left"} Eye ${fieldLabel}`;
+            const placement = cn("top-full max-w-[calc(100vw-2rem)]", side === "right" ? "left-0" : "right-0");
+            const onSelect = (v: string) => {
+              const k = vaPickerTarget!.field === "sphere"
+                ? `${prefix}Sphere` as keyof FindingsState
+                : vaPickerTarget!.field === "cyl"
+                  ? `${prefix}Cyl` as keyof FindingsState
+                  : `${prefix}Va` as keyof FindingsState;
+              updateField(k, v);
+              setVaPickerTarget(null);
+            };
+            if (vaPickerTarget!.field === "va") {
+              return (
+                <GlassOptionsPicker
+                  options={glassVisualAcuityPickerOptions}
+                  placementClassName={cn(placement, "w-[400px]")}
+                  targetLabel={targetLabel}
+                  onClose={() => setVaPickerTarget(null)}
+                  onSelect={onSelect}
+                />
+              );
+            }
+            return (
+              <GlassPowerPicker
+                placementClassName={cn(placement, "w-[656px]")}
+                targetLabel={targetLabel}
+                onClose={() => setVaPickerTarget(null)}
+                onSelect={onSelect}
+              />
+            );
+          })()}
+        </div>
+      );
+    }
+
+    if (row.inputType === "select") {
+      const withPhKey = side === "right" ? row.rightWithPhKey : row.leftWithPhKey;
+      const withPhCustomLabel = `${row.label} (With PH)`;
+      const withPgpKey = side === "right" ? row.rightWithPgpKey : row.leftWithPgpKey;
+      const withPgpCustomLabel = `${row.label} (With PGP/Existing)`;
+      return (
+        <div className="flex items-start gap-1 p-1">
+          <EyeSelectField
+            ariaLabel={ariaLabel}
+            value={String(findings[key] ?? "")}
+            placeholder={withPhKey ? "Unaided" : "Select"}
+            className="w-fit shrink-0"
+            multiSelect={row.multiSelect}
+            presetOptions={row.options ?? []}
+            customOptions={customOptions[row.label] ?? []}
+            onChange={(v) => updateField(key, v)}
+            onRemove={(opt) => removeCustomOption(row.label, opt)}
+            onAdd={(opt) => addCustomOption(row.label, opt)}
+          />
+          {withPhKey && (
+            <EyeSelectField
+              ariaLabel={`${ariaLabel} with PH`}
+              value={String(findings[withPhKey] ?? "")}
+              placeholder="With PH"
+              className="w-fit shrink-0"
+              presetOptions={row.options ?? []}
+              customOptions={customOptions[withPhCustomLabel] ?? []}
+              onChange={(v) => updateField(withPhKey, v)}
+              onRemove={(opt) => removeCustomOption(withPhCustomLabel, opt)}
+              onAdd={(opt) => addCustomOption(withPhCustomLabel, opt)}
             />
+          )}
+          {withPgpKey && (
+            <EyeSelectField
+              ariaLabel={`${ariaLabel} with PGP/Existing`}
+              value={String(findings[withPgpKey] ?? "")}
+              placeholder="W/PGP"
+              className="w-fit shrink-0"
+              presetOptions={row.options ?? []}
+              customOptions={customOptions[withPgpCustomLabel] ?? []}
+              onChange={(v) => updateField(withPgpKey, v)}
+              onRemove={(opt) => removeCustomOption(withPgpCustomLabel, opt)}
+              onAdd={(opt) => addCustomOption(withPgpCustomLabel, opt)}
+            />
+          )}
+          {noteKey ? (
+            <div className="flex min-w-0 flex-1 items-center">
+              <textarea
+                aria-label={`${ariaLabel} note`}
+                rows={1}
+                className="min-w-0 flex-1 resize-none overflow-hidden rounded-none border-0 bg-transparent px-1 py-1 text-sm leading-tight outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                placeholder="Note"
+                value={String(findings[noteKey] ?? "")}
+                ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                onChange={(event) => {
+                  updateField(noteKey, event.target.value);
+                  const el = event.currentTarget;
+                  el.style.height = "auto";
+                  el.style.height = el.scrollHeight + "px";
+                }}
+              />
+              {row.unit && (
+                <span className="shrink-0 pr-1 text-xs text-muted-foreground">{row.unit}</span>
+              )}
+            </div>
           ) : null}
         </div>
       );
     }
 
     return (
-      <Textarea
-        className="min-h-16 resize-y border-border/70 bg-card text-sm"
+      <textarea
         aria-label={ariaLabel}
+        rows={1}
+        className="w-full resize-none overflow-hidden rounded-none border-0 bg-transparent px-1 py-1 text-sm leading-tight outline-none focus-visible:ring-2 focus-visible:ring-primary"
         value={String(findings[key] ?? "")}
-        onChange={(event) => updateField(key, event.target.value)}
+        ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+        onChange={(event) => {
+          updateField(key, event.target.value);
+          const el = event.currentTarget;
+          el.style.height = "auto";
+          el.style.height = el.scrollHeight + "px";
+        }}
       />
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="overflow-x-auto">
-        <div className="min-w-[680px] overflow-hidden rounded-md border bg-background">
-          <div className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)] border-b bg-card text-base font-semibold text-primary">
-            <div className="border-r px-3 py-2">Ophthalmic Findings</div>
-            <div className="border-r px-3 py-2 text-center">Right Eye</div>
-            <div className="px-3 py-2 text-center">Left Eye</div>
-          </div>
-          {ophthalmicFindingRows.map((row) => (
-            <div
-              key={row.label}
-              className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)] border-b last:border-b-0"
-            >
-              <div className="flex items-center border-r px-3 py-2 text-sm font-medium">
-                {row.label}
-              </div>
-              <div className="border-r p-2">{renderEyeField(row, "right")}</div>
-              <div className="p-2">{renderEyeField(row, "left")}</div>
-            </div>
-          ))}
-        </div>
+      <div>
+        <table className="w-full table-fixed rounded-md border bg-background text-left">
+          <colgroup>
+            <col style={{ width: "120px" }} />
+            <col />
+            <col />
+          </colgroup>
+          <thead>
+            <tr className="border-b bg-card text-sm font-semibold text-primary">
+              <th className="border-r px-2 pb-1.5 pt-0 font-semibold whitespace-nowrap">Ophthalmic Findings</th>
+              <th className="border-r px-2 pb-1.5 pt-0 text-center font-semibold">Right Eye</th>
+              <th className="px-2 pb-1.5 pt-0 text-center font-semibold">Left Eye</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ophthalmicFindingRows.map((row) => (
+              <tr key={row.label} className="border-b last:border-b-0">
+                <td className="border-r px-2 py-1.5 align-middle text-sm font-medium whitespace-nowrap w-px">
+                  {row.label}
+                </td>
+                <td className="border-r p-0 align-top cursor-text" onClick={(e) => { if (!(e.target as HTMLElement).closest("textarea, input, button, select")) (e.currentTarget.querySelector("textarea, input") as HTMLElement)?.focus(); }}>{renderEyeField(row, "right")}</td>
+                <td className="p-0 align-top cursor-text" onClick={(e) => { if (!(e.target as HTMLElement).closest("textarea, input, button, select")) (e.currentTarget.querySelector("textarea, input") as HTMLElement)?.focus(); }}>{renderEyeField(row, "left")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <div className="space-y-1">
         <FieldLabel>Remark</FieldLabel>
         <Textarea
-          className="min-h-20 bg-background"
+          className="min-h-20 bg-background text-xs"
           placeholder="Type ophthalmic remarks..."
           value={findings.ophthalmicRemark}
           onChange={(event) => updateField("ophthalmicRemark", event.target.value)}
@@ -2251,19 +4313,21 @@ function GlassPrescriptionForm({
   title,
   onChange,
   onEyeChange,
-  onRemove
+  onRemove,
+  sphereExtraOptions
 }: {
   prescription: GlassPrescriptionState;
   title: string;
   onChange: (patch: Partial<Omit<GlassPrescriptionState, "right" | "left">>) => void;
   onEyeChange: (side: "right" | "left", field: keyof EyePower, value: string) => void;
   onRemove?: () => void;
+  sphereExtraOptions?: string[];
 }) {
   const pickerRef = useRef<HTMLDivElement>(null);
   const [powerPickerTarget, setPowerPickerTarget] = useState<GlassPowerPickerTarget | null>(null);
   const powerPickerLabel = powerPickerTarget
     ? powerPickerTarget.kind === "add"
-      ? "ADD"
+      ? "Near Add"
       : `${powerPickerTarget.side === "right" ? "Right Eye" : "Left Eye"} ${
           powerPickerTarget.field === "sphere"
             ? "Sphere"
@@ -2310,9 +4374,9 @@ function GlassPrescriptionForm({
   }
 
   return (
-    <div className="relative space-y-3 rounded-md border bg-background p-3">
+    <div className="relative space-y-2 rounded-md border bg-background p-2">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-base font-semibold">{title}</h3>
+        <h3 className="text-sm font-semibold">{title}</h3>
         {onRemove ? (
           <Button type="button" variant="ghost" onClick={onRemove}>
             <X className="h-4 w-4" />
@@ -2322,34 +4386,34 @@ function GlassPrescriptionForm({
       </div>
 
       <div className="overflow-x-auto">
-        <div className="min-w-[620px] rounded-md border bg-background">
-          <div className="grid grid-cols-[120px_repeat(4,minmax(90px,1fr))] border-b text-center text-sm font-semibold">
-            <div className="border-r px-2 py-2">##</div>
-            <div className="border-r px-2 py-2">Sphere</div>
-            <div className="border-r px-2 py-2">CYL</div>
-            <div className="border-r px-2 py-2">Axis</div>
-            <div className="px-2 py-2">VA</div>
+        <div className="min-w-[340px] rounded-md border bg-background">
+          <div className="grid grid-cols-[90px_repeat(4,minmax(0,1fr))] border-b text-center text-xs font-semibold">
+            <div className="border-r px-1 py-1">##</div>
+            <div className="border-r px-1 py-1">Sphere</div>
+            <div className="border-r px-1 py-1">CYL</div>
+            <div className="border-r px-1 py-1">Axis</div>
+            <div className="px-1 py-1">VA</div>
           </div>
           {(["right", "left"] as const).map((side) => (
             <div
               key={side}
-              className="grid grid-cols-[120px_repeat(4,minmax(90px,1fr))] border-b last:border-b-0"
+              className="grid grid-cols-[90px_repeat(4,minmax(0,1fr))] border-b last:border-b-0"
             >
-              <div className="flex items-center justify-center border-r px-2 py-2 text-sm">
+              <div className="flex items-center justify-center border-r px-1 py-1 text-xs">
                 {side === "right" ? "Right Eye" : "Left Eye"}
               </div>
               {(["sphere", "cyl", "axis", "va"] as const).map((field) => (
-                <div key={field} className="border-r p-2 last:border-r-0">
+                <div key={field} className="border-r p-1 last:border-r-0">
                   <Input
                     aria-label={`${side === "right" ? "Right Eye" : "Left Eye"} ${field}`}
                     className={cn(
-                      "bg-background",
+                      "h-7 bg-background text-center text-xs",
                       isActivePickerTarget(side, field) ? "ring-2 ring-primary" : ""
                     )}
                     value={prescription[side][field]}
-                    onClick={() => setPowerPickerTarget({ kind: "eye", side, field })}
+                    onClick={() => { if (field !== "axis") setPowerPickerTarget({ kind: "eye", side, field }); }}
                     onChange={(event) => onEyeChange(side, field, event.target.value)}
-                    onFocus={() => setPowerPickerTarget({ kind: "eye", side, field })}
+                    onFocus={() => { if (field !== "axis") setPowerPickerTarget({ kind: "eye", side, field }); else setPowerPickerTarget(null); }}
                   />
                 </div>
               ))}
@@ -2358,90 +4422,67 @@ function GlassPrescriptionForm({
         </div>
       </div>
 
-      <div className="grid gap-2 md:grid-cols-2">
-        <LabeledField label="ADD">
-          <Input
-            className={cn(
-              "bg-background",
-              powerPickerTarget?.kind === "add" ? "ring-2 ring-primary" : ""
-            )}
-            value={prescription.add}
-            onClick={() => setPowerPickerTarget({ kind: "add" })}
-            onChange={(event) => onChange({ add: event.target.value })}
-            onFocus={() => setPowerPickerTarget({ kind: "add" })}
-          />
-        </LabeledField>
-        <LabeledField label="IPD">
-          <Input
-            value={prescription.ipd}
-            onChange={(event) => onChange({ ipd: event.target.value })}
-            onFocus={() => setPowerPickerTarget(null)}
-          />
-        </LabeledField>
-      </div>
-
-      <div className="grid gap-2 md:grid-cols-2">
-        <GlassFieldBlock label="Glass Feature">
-          <GlassFeaturesMultiSelect
-            value={prescription.glassFeatures}
-            onChange={(value) => onChange({ glassFeatures: value })}
-          />
-        </GlassFieldBlock>
-        <GlassFieldBlock label="Lens Type">
+      <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">Near Add</span>
+          <div className="flex">
+            <Input
+              className={cn("h-8 w-14 rounded-r-none bg-background text-xs", powerPickerTarget?.kind === "add" ? "ring-2 ring-primary" : "")}
+              value={prescription.add}
+              onClick={() => setPowerPickerTarget({ kind: "add" })}
+              onChange={(event) => onChange({ add: event.target.value })}
+              onFocus={() => setPowerPickerTarget({ kind: "add" })}
+            />
+            <span className="inline-flex h-8 items-center rounded-r-md border border-l-0 bg-muted px-1.5 text-xs">DS</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">IPD</span>
+          <div className="flex">
+            <Input
+              className="h-8 w-14 rounded-r-none text-xs"
+              value={prescription.ipd}
+              onChange={(event) => onChange({ ipd: event.target.value })}
+              onFocus={() => setPowerPickerTarget(null)}
+            />
+            <span className="inline-flex h-8 items-center rounded-r-md border border-l-0 bg-muted px-1.5 text-xs">mm</span>
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">Glass Coating</span>
+          <div className="min-w-0 flex-1">
+            <GlassFeaturesMultiSelect
+              value={prescription.glassFeatures}
+              onChange={(value) => onChange({ glassFeatures: value })}
+            />
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">Lens Type</span>
           <select
-            className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+            className="h-8 w-28 rounded-md border bg-background px-2 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
             value={prescription.lensType}
             onChange={(event) => onChange({ lensType: event.target.value })}
             onFocus={() => setPowerPickerTarget(null)}
           >
-            <option value="">Select Lens Type</option>
+            <option value="">Select</option>
             {lensTypeOptions.map((lensType) => (
-              <option key={lensType} value={lensType}>
-                {lensType}
-              </option>
+              <option key={lensType} value={lensType}>{lensType}</option>
             ))}
           </select>
-        </GlassFieldBlock>
+        </div>
       </div>
 
-      <div className="grid gap-2 md:grid-cols-2">
-        <LabeledField label="IOP (Right Eye)">
-          <div className="flex">
-            <Input
-              className="rounded-r-none"
-              value={prescription.iopRight}
-              onChange={(event) => onChange({ iopRight: event.target.value })}
-              onFocus={() => setPowerPickerTarget(null)}
-            />
-            <span className="inline-flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm">
-              mmHg
-            </span>
-          </div>
-        </LabeledField>
-        <LabeledField label="IOP (Left Eye)">
-          <div className="flex">
-            <Input
-              className="rounded-r-none"
-              value={prescription.iopLeft}
-              onChange={(event) => onChange({ iopLeft: event.target.value })}
-              onFocus={() => setPowerPickerTarget(null)}
-            />
-            <span className="inline-flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm">
-              mmHg
-            </span>
-          </div>
-        </LabeledField>
-      </div>
-
-      <GlassFieldBlock label="Remarks">
-        <Textarea
-          className="min-h-16 bg-background"
+      <div className="space-y-1">
+        <span className="text-[11px] font-medium text-muted-foreground">Remarks</span>
+        <Input
+          className="h-8 bg-background text-xs"
           placeholder="Type additional information..."
           value={prescription.note}
           onChange={(event) => onChange({ note: event.target.value })}
           onFocus={() => setPowerPickerTarget(null)}
         />
-      </GlassFieldBlock>
+      </div>
 
       {powerPickerTarget ? (
         <div ref={pickerRef}>
@@ -2450,6 +4491,7 @@ function GlassPrescriptionForm({
             targetLabel={powerPickerLabel}
             onClose={() => setPowerPickerTarget(null)}
             onSelect={selectPowerValue}
+            sphereExtraOptions={sphereExtraOptions}
           />
         </div>
       ) : null}
@@ -2461,12 +4503,14 @@ function GlassPrescriptionPicker({
   target,
   targetLabel,
   onClose,
-  onSelect
+  onSelect,
+  sphereExtraOptions
 }: {
   target: GlassPowerPickerTarget;
   targetLabel: string;
   onClose: () => void;
   onSelect: (value: string) => void;
+  sphereExtraOptions?: string[];
 }) {
   if (target.kind === "add") {
     return (
@@ -2519,6 +4563,7 @@ function GlassPrescriptionPicker({
       targetLabel={targetLabel}
       onClose={onClose}
       onSelect={onSelect}
+      extraOptions={target.field === "sphere" ? sphereExtraOptions : undefined}
     />
   );
 }
@@ -2558,15 +4603,18 @@ function GlassPowerPicker({
   placementClassName,
   targetLabel,
   onClose,
-  onSelect
+  onSelect,
+  extraOptions
 }: {
   placementClassName: string;
   targetLabel: string;
   onClose: () => void;
   onSelect: (value: string) => void;
+  extraOptions?: string[];
 }) {
   const [mode, setMode] = useState<"positive" | "negative">("positive");
-  const options = mode === "positive" ? positiveGlassPowerOptions : negativeGlassPowerOptions;
+  const baseOptions = mode === "positive" ? positiveGlassPowerOptions : negativeGlassPowerOptions;
+  const options = extraOptions?.length ? [...extraOptions, ...baseOptions] : baseOptions;
 
   return (
     <div
@@ -2654,10 +4702,23 @@ function GlassFeaturesMultiSelect({
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = glassFeatureOptions.filter((option) =>
     normalizedQuery ? option.toLowerCase().includes(normalizedQuery) : true
   );
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
 
   function toggleOption(option: string) {
     onChange(
@@ -2668,15 +4729,15 @@ function GlassFeaturesMultiSelect({
   }
 
   return (
-    <div className="relative">
+    <div ref={ref} className="relative">
       <button
         aria-expanded={open}
-        className="flex min-h-9 w-full items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-left text-sm outline-none transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
+        className="flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-background px-2 py-1 text-left text-xs outline-none transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
         type="button"
         onClick={() => setOpen((current) => !current)}
       >
         <span className="min-w-0 flex-1 truncate">
-          {value.length ? value.join(", ") : "Select Glass Feature"}
+          {value.length ? value.join(", ") : "Select Glass Coating"}
         </span>
         <ChevronDown
           className={cn("h-4 w-4 shrink-0 transition", open ? "rotate-180" : "")}
@@ -2687,7 +4748,7 @@ function GlassFeaturesMultiSelect({
         <div className="absolute left-0 right-0 z-30 mt-2 rounded-md border bg-card p-2 shadow-soft">
           <Input
             className="h-9 border-border/70 bg-background"
-            placeholder="Search glass feature..."
+            placeholder="Search glass coating..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -2736,7 +4797,7 @@ function GlassFeaturesMultiSelect({
                 );
               })
             ) : (
-              <div className="px-3 py-2 text-sm text-muted-foreground">No glass feature found</div>
+              <div className="px-3 py-2 text-sm text-muted-foreground">No glass coating found</div>
             )}
           </div>
         </div>
@@ -3383,6 +5444,453 @@ function MedicationNoteArea({
   );
 }
 
+function SuggestionInput({
+  suggKey,
+  placeholder,
+  onAdd,
+  autoFocus
+}: {
+  suggKey: string;
+  placeholder: string;
+  onAdd: (name: string) => void;
+  autoFocus?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  // Only show matches when the user has typed something
+  const filtered = query.trim().length > 0
+    ? suggestions.filter((s) => s.toLowerCase().includes(query.trim().toLowerCase()))
+    : [];
+
+  function handleFocus() {
+    // Always read fresh from localStorage so recently-saved items appear immediately
+    if (typeof window !== "undefined") setSuggestions(loadSuggestions(suggKey));
+    setOpen(true);
+  }
+
+  function handleAdd(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onAdd(trimmed);
+    persistSuggestion(suggKey, trimmed);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex gap-2">
+        <Input
+          autoFocus={autoFocus}
+          className="h-10 border-primary/50 focus-visible:ring-primary"
+          placeholder={placeholder}
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={handleFocus}
+          onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAdd(query); } }}
+        />
+        <Button type="button" onClick={() => handleAdd(query)}>Add</Button>
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute left-0 right-20 z-30 mt-1 max-h-52 overflow-y-auto rounded-md border bg-card shadow-lg p-2">
+          <div className="flex flex-wrap gap-1.5">
+            {filtered.map((s) => (
+              <div
+                key={s}
+                className="group flex items-center gap-0.5 rounded-full border border-border bg-muted px-2.5 py-1 text-xs cursor-pointer hover:border-primary/50 hover:bg-primary/10"
+                onMouseDown={(e) => { e.preventDefault(); handleAdd(s); }}
+              >
+                <span className="group-hover:text-primary">{s}</span>
+                <button
+                  type="button"
+                  className="ml-0.5 shrink-0 rounded-full text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                  title="Remove from saved suggestions"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    deleteSuggestion(suggKey, s);
+                    setSuggestions((prev) => prev.filter((x) => x !== s));
+                  }}
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InvestigationSidebar({
+  investigations,
+  onClose,
+  onSetInvestigations
+}: {
+  investigations: InvestigationEntry[];
+  onClose: () => void;
+  onSetInvestigations: (items: InvestigationEntry[]) => void;
+}) {
+  function addEntry(name: string) {
+    onSetInvestigations([...investigations, { id: crypto.randomUUID(), name, value: "" }]);
+  }
+  function updateEntry(id: string, patch: Partial<InvestigationEntry>) {
+    onSetInvestigations(investigations.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  }
+  function deleteEntry(id: string) {
+    onSetInvestigations(investigations.filter((i) => i.id !== id));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
+      <aside className="ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft md:w-[60%]"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-card px-4">
+          <h2 className="text-base font-semibold text-primary">Investigation</h2>
+          <div className="flex items-center gap-2">
+            <Button type="button" onClick={onClose}><Check className="h-4 w-4" />Done</Button>
+            <Button aria-label="Close" size="icon" type="button" variant="ghost" onClick={onClose}>
+              <X className="h-5 w-5 text-destructive" />
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-4">
+            <SuggestionInput suggKey={SUGG_INVESTIGATION} placeholder="Type investigation and press Enter…" onAdd={addEntry} autoFocus />
+          </div>
+          {investigations.length === 0 ? (
+            <p className="mt-8 text-center text-sm text-muted-foreground">No investigations added yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
+                    <th className="px-3 py-2">Name</th>
+                    <th className="px-3 py-2">Result / Value</th>
+                    <th className="px-3 py-2 w-10 text-center">Del</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {investigations.map((inv) => (
+                    <tr key={inv.id} className="border-b last:border-b-0 hover:bg-muted/20">
+                      <td className="px-2 py-1.5">
+                        <input className="w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Name" value={inv.name} onChange={(e) => updateEntry(inv.id, { name: e.target.value })} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input className="w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Result" value={inv.value} onChange={(e) => updateEntry(inv.id, { value: e.target.value })} />
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button type="button" className="rounded p-1 text-destructive hover:bg-destructive/10"
+                          onClick={() => deleteEntry(inv.id)}><X className="h-4 w-4" /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DiagnosisSidebar({
+  diagnoses,
+  onClose,
+  onSetDiagnoses
+}: {
+  diagnoses: DiagnosisEntry[];
+  onClose: () => void;
+  onSetDiagnoses: (items: DiagnosisEntry[]) => void;
+}) {
+  function addEntry(name: string) {
+    onSetDiagnoses([...diagnoses, { id: crypto.randomUUID(), name, value: "" }]);
+  }
+  function updateEntry(id: string, patch: Partial<DiagnosisEntry>) {
+    onSetDiagnoses(diagnoses.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+  }
+  function deleteEntry(id: string) {
+    onSetDiagnoses(diagnoses.filter((d) => d.id !== id));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
+      <aside className="ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft md:w-[60%]"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-card px-4">
+          <h2 className="text-base font-semibold text-primary">Diagnosis</h2>
+          <div className="flex items-center gap-2">
+            <Button type="button" onClick={onClose}><Check className="h-4 w-4" />Done</Button>
+            <Button aria-label="Close" size="icon" type="button" variant="ghost" onClick={onClose}>
+              <X className="h-5 w-5 text-destructive" />
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-4">
+            <SuggestionInput suggKey={SUGG_DIAGNOSIS} placeholder="Type diagnosis and press Enter…" onAdd={addEntry} autoFocus />
+          </div>
+          {diagnoses.length === 0 ? (
+            <p className="mt-8 text-center text-sm text-muted-foreground">No diagnoses added yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
+                    <th className="px-3 py-2">Diagnosis Name</th>
+                    <th className="px-3 py-2">Value</th>
+                    <th className="px-3 py-2 w-10 text-center">Del</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diagnoses.map((d) => (
+                    <tr key={d.id} className="border-b last:border-b-0 hover:bg-muted/20">
+                      <td className="px-2 py-1.5">
+                        <input className="w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Name" value={d.name} onChange={(e) => updateEntry(d.id, { name: e.target.value })} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input className="w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Value" value={d.value ?? ""} onChange={(e) => updateEntry(d.id, { value: e.target.value })} />
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button type="button" className="rounded p-1 text-destructive hover:bg-destructive/10"
+                          onClick={() => deleteEntry(d.id)}><X className="h-4 w-4" /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+type SavedAdvice = { id: string; name: string; text: string };
+
+function loadAdviceLibrary(): SavedAdvice[] {
+  try { return JSON.parse(localStorage.getItem(ADVICE_LIBRARY_KEY) ?? "[]"); } catch { return []; }
+}
+
+function saveAdviceLibrary(items: SavedAdvice[]) {
+  localStorage.setItem(ADVICE_LIBRARY_KEY, JSON.stringify(items));
+}
+
+function AdviceSidebar({
+  value,
+  onChange,
+  onClear,
+  onClose,
+  onStatus
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onClear: () => void;
+  onClose: () => void;
+  onStatus: (tone: "success" | "warning", text: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [library, setLibrary] = useState<SavedAdvice[]>(() => loadAdviceLibrary());
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newText, setNewText] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [localText, setLocalText] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editText, setEditText] = useState("");
+
+  const trimmedQuery = query.trim();
+  const filtered = trimmedQuery.length > 0
+    ? library.filter((a) => a.name.toLowerCase().includes(trimmedQuery.toLowerCase()))
+    : [];
+
+  function saveNew() {
+    const name = newName.trim();
+    const text = newText.trim();
+    if (!name) { onStatus("warning", "Enter a name for the advice."); return; }
+    if (!text) { onStatus("warning", "Enter the advice text."); return; }
+    const item: SavedAdvice = { id: Date.now().toString(), name, text };
+    const updated = [item, ...library];
+    setLibrary(updated);
+    saveAdviceLibrary(updated);
+    setNewName("");
+    setNewText("");
+    setAdding(false);
+    onStatus("success", "Advice saved.");
+  }
+
+  function deleteItem(id: string) {
+    const updated = library.filter((a) => a.id !== id);
+    setLibrary(updated);
+    saveAdviceLibrary(updated);
+    if (selectedId === id) setSelectedId(null);
+    onStatus("success", "Advice deleted.");
+  }
+
+  function saveEdit(id: string) {
+    const name = editName.trim();
+    const text = editText.trim();
+    if (!name) { onStatus("warning", "Enter a name for the advice."); return; }
+    if (!text) { onStatus("warning", "Enter the advice text."); return; }
+    const updated = library.map((a) => a.id === id ? { ...a, name, text } : a);
+    setLibrary(updated);
+    saveAdviceLibrary(updated);
+    setEditingId(null);
+    onStatus("success", "Advice updated.");
+  }
+
+  function insertAdvice(text: string) {
+    onChange(value ? `${value}\n${text}` : text);
+  }
+
+  const selected = selectedId ? library.find((a) => a.id === selectedId) ?? null : null;
+  const editing = editingId ? library.find((a) => a.id === editingId) ?? null : null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
+      <aside
+        className="ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft md:w-1/2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-card px-4">
+          <h2 className="text-base font-semibold text-primary">Advice</h2>
+          <div className="flex items-center gap-2">
+            <Button type="button" onClick={onClose}><Check className="h-4 w-4" />Done</Button>
+            <Button aria-label="Close" size="icon" type="button" variant="ghost" onClick={onClose}>
+              <X className="h-5 w-5 text-destructive" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-4 relative">
+            <div className="flex gap-2">
+              <Input
+                autoFocus
+                className="h-10 border-primary/50 focus-visible:ring-primary"
+                placeholder="Search advice by name..."
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setDropdownOpen(true); setSelectedId(null); setEditingId(null); }}
+                onFocus={() => setDropdownOpen(true)}
+                onBlur={() => window.setTimeout(() => setDropdownOpen(false), 150)}
+              />
+              <Button type="button" onClick={() => { setAdding((v) => !v); setNewName(""); setNewText(""); }}>
+                <Plus className="h-4 w-4" />
+                Add Advice
+              </Button>
+            </div>
+            {dropdownOpen && filtered.length > 0 && (
+              <div className="absolute left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-md border bg-card p-2 shadow-lg">
+                <div className="flex flex-wrap gap-1.5">
+                  {filtered.map((item) => (
+                    <div
+                      key={item.id}
+                      className="cursor-pointer rounded-full border border-border bg-muted px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                      onMouseDown={(e) => { e.preventDefault(); insertAdvice(item.text); setSelectedId(item.id); setLocalText(item.text); setQuery(""); setDropdownOpen(false); }}
+                    >
+                      {item.name}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {dropdownOpen && trimmedQuery && filtered.length === 0 && (
+              <div className="absolute left-0 right-0 z-30 mt-1 rounded-md border bg-card p-3 shadow-lg">
+                <p className="text-center text-sm text-muted-foreground">No advice found.</p>
+              </div>
+            )}
+          </div>
+
+          {adding && (
+            <div className="mb-4 space-y-2 rounded-md border bg-background p-3">
+              <Input
+                autoFocus
+                placeholder="Advice name (e.g. Post-Op Care)"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("advice-new-text")?.focus(); } }}
+              />
+              <textarea
+                id="advice-new-text"
+                className="w-full resize-none overflow-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                placeholder="Advice text..."
+                rows={1}
+                value={newText}
+                onChange={(e) => { setNewText(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${e.target.scrollHeight}px`; }}
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => { setAdding(false); setNewName(""); setNewText(""); }}>Cancel</Button>
+                <Button type="button" onClick={saveNew}>Save</Button>
+              </div>
+            </div>
+          )}
+
+          {selected && !editing && (
+            <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+              <span className="shrink-0 pt-1.5 text-sm font-semibold">{selected.name}</span>
+              <textarea
+                className="min-h-0 flex-1 resize-none overflow-hidden rounded-md border bg-background px-2 py-1.5 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                rows={1}
+                value={localText}
+                onChange={(e) => {
+                  setLocalText(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = `${e.target.scrollHeight}px`;
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => { setEditingId(selected.id); setEditName(selected.name); setEditText(selected.text); }}
+              >
+                Edit
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="shrink-0"
+                onClick={() => setSelectedId(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {editing && (
+            <div className="space-y-2 rounded-md border border-primary/30 bg-background p-3">
+              <Input autoFocus placeholder="Advice name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              <textarea
+                className="w-full resize-none overflow-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                placeholder="Advice text..." rows={1} value={editText}
+                onChange={(e) => { setEditText(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${e.target.scrollHeight}px`; }}
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+                <Button type="button" onClick={() => saveEdit(editingId!)}>Save</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 type TagNoteSidebarProps = {
   addCustomLabel?: string;
   title: string;
@@ -3460,17 +5968,21 @@ function TagNoteSidebar({
 type FollowUpSidebarProps = {
   date: string;
   note: string;
+  fees: string;
   onClose: () => void;
   onDateChange: (value: string) => void;
   onNoteChange: (value: string) => void;
+  onFeesChange: (value: string) => void;
 };
 
 function FollowUpSidebar({
   date,
   note,
+  fees,
   onClose,
   onDateChange,
-  onNoteChange
+  onNoteChange,
+  onFeesChange
 }: FollowUpSidebarProps) {
   const selectedDate = date ? new Date(`${date}T00:00:00`) : new Date();
   const [visibleMonth, setVisibleMonth] = useState(
@@ -3495,81 +6007,76 @@ function FollowUpSidebar({
   }
 
   return (
-    <RightDrawer title="Follow-Up" onClose={onClose}>
-      <div className="space-y-4">
-        <div className="max-w-32 space-y-1">
-          <FieldLabel>Days</FieldLabel>
+    <RightDrawer title="Follow-Up" onClose={onClose} widthClass="md:w-1/2">
+      <div className="flex h-full flex-col gap-3">
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="shrink-0 text-sm font-medium text-foreground">Fees</span>
           <Input
-            inputMode="numeric"
-            value={daysFromToday(date)}
-            onChange={(event) => {
-              const value = event.target.value.replace(/\D/g, "");
-              if (!value) {
-                onDateChange("");
-                return;
-              }
-              setDateFromDays(Number.parseInt(value, 10));
-            }}
+            className="h-8 rounded-full bg-background px-4 text-sm"
+            placeholder="Enter fees..."
+            value={fees}
+            onChange={(event) => onFeesChange(event.target.value)}
           />
         </div>
 
-        <div className="overflow-hidden rounded-md border">
-          <div className="flex h-16 items-center justify-between bg-muted px-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border">
+          <div className="flex h-12 shrink-0 items-center justify-between bg-muted px-3">
             <button
               aria-label="Previous month"
-              className="rounded-md p-2 text-muted-foreground hover:bg-background hover:text-primary"
+              className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-primary"
               type="button"
               onClick={() => moveMonth(-1)}
             >
-              <ChevronLeft className="h-6 w-6" />
+              <ChevronLeft className="h-5 w-5" />
             </button>
-            <div className="text-xl font-medium">{monthLabel}</div>
+            <div className="text-base font-medium">{monthLabel}</div>
             <button
               aria-label="Next month"
-              className="rounded-md p-2 text-muted-foreground hover:bg-background hover:text-primary"
+              className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-primary"
               type="button"
               onClick={() => moveMonth(1)}
             >
-              <ChevronRight className="h-6 w-6" />
+              <ChevronRight className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="grid grid-cols-7 border-t text-center text-lg font-semibold">
+          <div className="grid shrink-0 grid-cols-7 border-t text-center text-sm font-medium text-muted-foreground">
             {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((item) => (
-              <div key={item} className="py-4">
+              <div key={item} className="py-2">
                 {item}
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7 text-center text-xl">
+          <div className="flex-1 grid grid-cols-7 text-center text-sm [grid-auto-rows:1fr]">
             {calendarDays.map((item) => {
               const inputDate = formatInputDate(item.date);
               const isSelected = inputDate === date;
               const isOutside = item.date.getMonth() !== visibleMonth.getMonth();
 
               return (
-                <button
-                  key={inputDate}
-                  className={cn(
-                    "mx-auto my-3 flex h-12 w-16 items-center justify-center rounded-sm",
-                    isSelected
-                      ? "bg-muted-foreground text-background"
-                      : isOutside
-                        ? "text-muted-foreground/25 hover:bg-muted"
-                        : "text-foreground hover:bg-muted"
-                  )}
-                  type="button"
-                  onClick={() => onDateChange(inputDate)}
-                >
-                  {item.date.getDate()}
-                </button>
+                <div key={inputDate} className="flex items-center justify-center p-0.5">
+                  <button
+                    className={cn(
+                      "flex h-full w-full items-center justify-center rounded text-sm",
+                      isSelected
+                        ? "bg-muted-foreground text-background"
+                        : isOutside
+                          ? "text-muted-foreground/25 hover:bg-muted"
+                          : "text-foreground hover:bg-muted"
+                    )}
+                    type="button"
+                    onClick={() => onDateChange(inputDate)}
+                  >
+                    {item.date.getDate()}
+                  </button>
+                </div>
               );
             })}
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-0">
+        <div className="flex shrink-0 flex-wrap gap-0">
           {[
             ["3 days", 3],
             ["5 days", 5],
@@ -3584,7 +6091,7 @@ function FollowUpSidebar({
           ].map(([label, days]) => (
             <button
               key={label}
-              className="border px-4 py-3 text-sm hover:bg-muted"
+              className="border px-2.5 py-1.5 text-xs hover:bg-muted"
               type="button"
               onClick={() => setDateFromDays(days as number)}
             >
@@ -3594,7 +6101,7 @@ function FollowUpSidebar({
         </div>
 
         <Textarea
-          className="min-h-28 bg-background"
+          className="shrink-0 min-h-16 bg-background"
           placeholder="Follow-up note"
           value={note}
           onChange={(event) => onNoteChange(event.target.value)}
@@ -3747,16 +6254,18 @@ function ReferralTableInput({
 function RightDrawer({
   title,
   children,
-  onClose
+  onClose,
+  widthClass = "md:w-[60%]"
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  widthClass?: string;
 }) {
   return (
     <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
       <aside
-        className="ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft md:w-[60%]"
+        className={cn("ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft", widthClass)}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-card px-4">
@@ -3778,7 +6287,7 @@ function RightDrawer({
             </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
+        <div className="flex-1 overflow-y-auto px-[10px] pb-[10px] pt-0">{children}</div>
       </aside>
     </div>
   );
@@ -3796,7 +6305,7 @@ function TabButton({
   return (
     <button
       className={cn(
-        "h-12 border-b-2 px-5 text-base font-semibold",
+        "h-8 border-b-2 px-5 text-base font-semibold",
         active
           ? "border-primary text-primary"
           : "border-transparent text-muted-foreground hover:text-foreground"
@@ -3817,7 +6326,7 @@ function FindingsSection({
   children: ReactNode;
 }) {
   return (
-    <section className="border-b p-5 last:border-b-0">
+    <section className="border-b p-2 last:border-b-0">
       <h3 className="mb-4 border-b pb-3 text-lg font-semibold">{title}</h3>
       {children}
     </section>
@@ -3831,16 +6340,18 @@ function FieldLabel({ children }: { children: ReactNode }) {
 function FindingInput({
   label,
   value,
-  onChange
+  onChange,
+  className
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  className?: string;
 }) {
   return (
     <label className="space-y-1">
       <FieldLabel>{label}</FieldLabel>
-      <Input value={value} onChange={(event) => onChange(event.target.value)} />
+      <Input className={className} value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }
@@ -4035,8 +6546,10 @@ function NoteTextArea({
 type PrescriptionOptionTileProps = {
   title: string;
   hasContent: boolean;
+  preview?: ReactNode;
   onClear: () => void;
   onOpen: () => void;
+  className?: string;
 };
 
 function CollapsedPanelButton({
@@ -4083,13 +6596,15 @@ function PanelGlyph({ panel }: { panel: PanelKey }) {
 function PrescriptionOptionTile({
   title,
   hasContent,
+  preview,
   onClear,
-  onOpen
+  onOpen,
+  className
 }: PrescriptionOptionTileProps) {
   return (
     <section
       aria-label={`Open ${title}`}
-      className="min-h-[118px] cursor-pointer border-b border-border/70 px-5 py-6 outline-none last:border-b-0 hover:bg-background/45 focus-visible:ring-2 focus-visible:ring-primary"
+      className={cn("cursor-pointer border-b border-border/70 px-4 py-2 outline-none last:border-b-0 hover:bg-background/45 focus-visible:ring-2 focus-visible:ring-primary overflow-hidden", className)}
       role="button"
       tabIndex={0}
       onClick={onOpen}
@@ -4101,8 +6616,8 @@ function PrescriptionOptionTile({
       }}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold uppercase text-muted-foreground">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-xs font-semibold uppercase text-muted-foreground">
             {title}
             {hasContent ? (
               <span
@@ -4112,6 +6627,7 @@ function PrescriptionOptionTile({
               />
             ) : null}
           </h2>
+          {preview}
         </div>
         <div
           className="flex shrink-0 items-center gap-1"
@@ -4167,7 +6683,7 @@ function FloatingPadButton({
       onClick={onClick}
     >
       {children}
-      <span className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-md border bg-card px-2 py-1 text-xs text-foreground shadow-soft group-hover:block">
+      <span className="pointer-events-none absolute right-full mr-2 hidden whitespace-nowrap rounded-md border bg-card px-2 py-1 text-xs text-foreground shadow-soft group-hover:block">
         {title}
       </span>
     </button>
@@ -4190,7 +6706,7 @@ function PanelDialog({
       <aside
         className={cn(
           "ml-auto flex h-full w-full flex-col border-l bg-card shadow-soft",
-          size === "wide" ? "md:w-[calc(100%-2rem)] xl:w-[1120px]" : "md:w-[60%]"
+          size === "wide" ? "md:w-[50%]" : "md:w-[60%]"
         )}
         onClick={(event) => event.stopPropagation()}
       >
@@ -4238,198 +6754,361 @@ function PatientSummaryItem({ label, value }: { label: string; value: string }) 
 }
 
 type PatientRegistrationDialogProps = {
+  asSidebar?: boolean;
   error: string;
   form: PatientFormState;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUpdate: (patch: Partial<PatientFormState>) => void;
+  title?: string;
+  submitLabel?: string;
 };
 
 function PatientRegistrationDialog({
+  asSidebar = false,
   error,
   form,
   isSaving,
   onClose,
   onSubmit,
-  onUpdate
+  onUpdate,
+  title = "Register New Patient",
+  submitLabel = "Register Patient"
 }: PatientRegistrationDialogProps) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/20 p-3 backdrop-blur-sm md:p-6">
-      <form
-        className="mt-4 w-full max-w-6xl overflow-hidden rounded-md border bg-card shadow-soft"
-        onSubmit={onSubmit}
-      >
-        <div className="flex items-center justify-between gap-3 border-b px-4 py-2">
-          <h2 className="text-sm font-semibold text-primary">Patient Registration</h2>
-          <div className="flex items-center gap-3">
-            <Button disabled={isSaving} type="submit">
-              {isSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <UserPlus className="h-4 w-4" />
-              )}
-              Register This Patient
-            </Button>
-            <Button
-              aria-label="Close patient registration"
-              size="icon"
-              title="Close patient registration"
+  const genderLabels = ["Male", "Female", "Other"] as const;
+  const genderValues = ["MALE", "FEMALE", "OTHER"] as const;
+
+  // ── Phone search ────────────────────────────────────────────────────────
+  const token = useSessionStore((s) => s.accessToken) ?? "";
+  const [phoneSearchDismissed, setPhoneSearchDismissed] = useState(false);
+
+  // Reset dismissal whenever the mobile number changes
+  const prevMobileRef = useRef(form.mobile);
+  if (form.mobile !== prevMobileRef.current) {
+    prevMobileRef.current = form.mobile;
+    if (phoneSearchDismissed) setPhoneSearchDismissed(false);
+  }
+
+  const debouncedMobile = useDebounce(form.mobile, 350);
+  const phoneSearchQuery = useQuery({
+    queryKey: ["reg-phone-search", debouncedMobile],
+    queryFn: () => searchPatients(debouncedMobile, token),
+    enabled: debouncedMobile.length >= 4 && !!token,
+    staleTime: 30_000,
+  });
+  const phoneResults = phoneSearchQuery.data?.data ?? [];
+  const showPhoneDropdown = phoneResults.length > 0 && !phoneSearchDismissed && debouncedMobile.length >= 4;
+
+  function fillFromPatient(patient: Patient) {
+    onUpdate({
+      name: patient.name,
+      mobile: patient.phone?.replace(/^\+88/, "") ?? form.mobile,
+      gender: patient.gender,
+      dateOfBirth: patient.dateOfBirth ?? "",
+      ageYears: patient.ageYears != null ? String(patient.ageYears) : "",
+      ageMonths: patient.ageMonths != null ? String(patient.ageMonths) : "",
+      ageDays: patient.ageDays != null ? String(patient.ageDays) : "",
+      bloodGroup: patient.bloodGroup ?? "",
+    });
+    setPhoneSearchDismissed(true);
+  }
+  // ────────────────────────────────────────────────────────────────────────
+
+  const formFields = (
+    <>
+      <p className="text-xs font-semibold text-muted-foreground">Patient Information</p>
+
+      {error ? (
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+
+      {/* Name */}
+      <label className="block space-y-0.5">
+        <span className="text-sm font-medium"><span className="text-destructive">*</span> Patient&apos;s Name</span>
+        <Input
+          autoFocus
+          className="h-9 rounded-xl"
+          placeholder="Type patient's name here"
+          value={form.name}
+          onChange={(e) => onUpdate({ name: e.target.value })}
+        />
+      </label>
+
+      {/* Phone — search box */}
+      <div className="relative space-y-0.5">
+        <span className="text-sm font-medium"><span className="text-destructive">*</span> Mobile Number</span>
+        <div className="flex overflow-hidden rounded-xl border focus-within:ring-1 focus-within:ring-primary">
+          <span className="inline-flex items-center border-r bg-muted px-3 text-sm text-muted-foreground">+88</span>
+          <input
+            className="h-9 flex-1 bg-background px-3 text-sm outline-none"
+            inputMode="tel"
+            maxLength={11}
+            placeholder="01XXXXXXXXX"
+            value={form.mobile}
+            onChange={(e) => onUpdate({ mobile: e.target.value.replace(/\D/g, "").slice(0, 11) })}
+          />
+          <span className={cn(
+            "flex items-center pr-3 text-xs tabular-nums",
+            form.mobile.length === 11 ? "text-primary font-medium" : "text-muted-foreground"
+          )}>
+            {phoneSearchQuery.isFetching
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <span>{form.mobile.length}/11</span>
+            }
+          </span>
+        </div>
+
+        {/* Search results dropdown */}
+        {showPhoneDropdown && (
+          <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border bg-card shadow-xl">
+            <div className="flex items-center justify-between border-b px-3 py-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {phoneResults.length} patient{phoneResults.length > 1 ? "s" : ""} found — select to fill form
+              </span>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setPhoneSearchDismissed(true)}
+              >
+                ✕
+              </button>
+            </div>
+            {phoneResults.map((patient) => {
+              const ageParts = [
+                patient.ageYears != null ? `${patient.ageYears}Y` : "",
+                patient.ageMonths != null ? `${patient.ageMonths}M` : "",
+              ].filter(Boolean);
+              const genderLabel = patient.gender === "MALE" ? "Male" : patient.gender === "FEMALE" ? "Female" : "Other";
+              return (
+                <button
+                  key={patient.id}
+                  type="button"
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-muted"
+                  onClick={() => fillFromPatient(patient)}
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                    {patient.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{patient.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {[ageParts.join(" "), genderLabel, patient.phone?.replace(/^\+88/, "")].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-[10px] font-medium text-primary">Select</span>
+                </button>
+              );
+            })}
+            <button
               type="button"
-              variant="ghost"
+              className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted"
+              onClick={() => setPhoneSearchDismissed(true)}
+            >
+              + Register as new patient with this number
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* DOB + Age */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-0.5">
+          <span className="text-sm font-medium">Date of Birth</span>
+          <DatePickerInput
+            className="h-9 w-full rounded-xl px-3"
+            placeholder="dd/mm/yyyy"
+            value={form.dateOfBirth}
+            onChange={(iso) => onUpdate({ dateOfBirth: iso, ...calcAgeFromDOB(iso) })}
+          />
+        </div>
+        <div className="space-y-0.5">
+          <span className="text-sm font-medium"><span className="text-destructive">*</span> Age</span>
+          <div className="grid grid-cols-3 gap-1">
+            <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Yr"
+              value={form.ageYears} onChange={(e) => onUpdate({ ageYears: e.target.value.replace(/\D/g, "") })} />
+            <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Mo"
+              value={form.ageMonths} onChange={(e) => onUpdate({ ageMonths: e.target.value.replace(/\D/g, "") })} />
+            <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Dy"
+              value={form.ageDays} onChange={(e) => onUpdate({ ageDays: e.target.value.replace(/\D/g, "") })} />
+          </div>
+          <p className="text-[10px] text-muted-foreground">At least one field required</p>
+        </div>
+      </div>
+
+      {/* Gender */}
+      <div className="space-y-0.5">
+        <span className="text-sm font-medium"><span className="text-destructive">*</span> Gender</span>
+        <div className="grid grid-cols-3 overflow-hidden rounded-xl border">
+          {genderLabels.map((label, i) => (
+            <button
+              key={label}
+              type="button"
+              className={cn(
+                "h-9 border-r text-sm font-medium last:border-r-0 transition-colors",
+                form.gender === genderValues[i]
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              )}
+              onClick={() => onUpdate({ gender: genderValues[i] })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Blood Group */}
+      <div className="space-y-0.5">
+        <span className="text-sm font-medium">Blood Group</span>
+        <div className="grid grid-cols-8 overflow-hidden rounded-xl border">
+          {bloodGroups.map((bg) => (
+            <button
+              key={bg}
+              type="button"
+              className={cn(
+                "h-9 border-r text-xs font-medium last:border-r-0 transition-colors",
+                form.bloodGroup === bg
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              )}
+              onClick={() => onUpdate({ bloodGroup: form.bloodGroup === bg ? "" : bg })}
+            >
+              {bg}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Occupation */}
+      <div className="space-y-0.5">
+        <span className="text-sm font-medium">Occupation</span>
+        <select
+          className="h-9 w-full rounded-xl border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+          value={form.occupation}
+          onChange={(e) => onUpdate({ occupation: e.target.value })}
+        >
+          <option value="">Select Occupation</option>
+          {occupations.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+
+      {/* Create prescription toggle */}
+      <label className="flex cursor-pointer items-center gap-3 rounded-xl border bg-muted/40 px-4 py-2.5 text-sm">
+        <input
+          checked={form.createPrescription}
+          className="h-4 w-4 accent-primary"
+          type="checkbox"
+          onChange={(e) => onUpdate({ createPrescription: e.target.checked })}
+        />
+        <span>Create prescription after registration</span>
+      </label>
+    </>
+  );
+
+  const resetBtn = (
+    <Button
+      className="h-9 rounded-xl text-sm"
+      type="button"
+      variant="outline"
+      onClick={() => onUpdate({
+        name: "", mobile: "", gender: "MALE", dateOfBirth: "",
+        ageYears: "", ageMonths: "", ageDays: "",
+        bloodGroup: "", occupation: "", createPrescription: false
+      })}
+    >
+      Reset
+    </Button>
+  );
+
+  const submitBtn = (
+    <Button className="h-9 rounded-xl text-sm" disabled={isSaving} type="submit">
+      {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+      {submitLabel}
+    </Button>
+  );
+
+  if (asSidebar) {
+    return (
+      <>
+        {/* Backdrop */}
+        <div className="fixed inset-0 z-40 bg-black/60" onClick={onClose} />
+
+        {/* Right sidebar — 50% of screen */}
+        <form
+          className="fixed right-0 top-0 z-50 flex h-full w-1/2 flex-col bg-card shadow-2xl"
+          style={{ animation: "slideInFromRight 0.25s ease-out" }}
+          onClick={(e) => e.stopPropagation()}
+          onSubmit={onSubmit}
+        >
+          {/* Header */}
+          <div className="flex shrink-0 items-center justify-between border-b bg-primary/5 px-5 py-3">
+            <h2 className="text-base font-semibold text-primary">{title}</h2>
+            <button
+              aria-label="Close"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive"
+              type="button"
               onClick={onClose}
             >
-              <X className="h-5 w-5 text-destructive" />
-            </Button>
-          </div>
-        </div>
-
-        <div className="max-h-[calc(100vh-7rem)] space-y-5 overflow-y-auto p-4">
-          <label className="flex items-center gap-3 rounded-md border bg-muted px-4 py-3 text-sm md:text-base">
-            <input
-              checked={form.createPrescription}
-              className="h-4 w-4 accent-primary"
-              type="checkbox"
-              onChange={(event) => onUpdate({ createPrescription: event.target.checked })}
-            />
-            <span>Create prescription for this patient after registration complete.</span>
-          </label>
-
-          {error ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div className="space-y-2">
-              <RequiredLabel htmlFor="patient-name">Patient Name</RequiredLabel>
-              <Input
-                autoFocus
-                id="patient-name"
-                value={form.name}
-                onChange={(event) => onUpdate({ name: event.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <RequiredLabel htmlFor="patient-mobile">Patient Mobile</RequiredLabel>
-              <div className="flex">
-                <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 bg-muted px-4 text-sm">
-                  +88
-                </span>
-                <Input
-                  className="rounded-l-none"
-                  id="patient-mobile"
-                  inputMode="tel"
-                  placeholder="01X XXXX XXXX"
-                  value={form.mobile}
-                  onChange={(event) => onUpdate({ mobile: event.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <RequiredLabel>Patient Gender</RequiredLabel>
-              <div className="grid grid-cols-3 overflow-hidden rounded-md border">
-                {genderOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    className={cn(
-                      "h-10 border-r text-sm font-medium last:border-r-0",
-                      form.gender === option.value
-                        ? "bg-muted-foreground text-background"
-                        : "bg-background text-muted-foreground hover:bg-muted"
-                    )}
-                    type="button"
-                    onClick={() => onUpdate({ gender: option.value })}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="patient-occupation">
-                Occupation
-              </label>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                id="patient-occupation"
-                value={form.occupation}
-                onChange={(event) => onUpdate({ occupation: event.target.value })}
-              >
-                <option value="">Select Occupation</option>
-                {occupations.map((occupation) => (
-                  <option key={occupation} value={occupation}>
-                    {occupation}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="patient-dob">
-                Date of Birth
-              </label>
-              <Input
-                id="patient-dob"
-                inputMode="numeric"
-                placeholder="DD/MM/YYYY"
-                value={form.dateOfBirth}
-                onChange={(event) => onUpdate({ dateOfBirth: event.target.value })}
-              />
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-[40px_repeat(3,minmax(0,1fr))] sm:items-end">
-              <div className="pb-2 text-center text-sm">or</div>
-              <AgeInput
-                label="Age"
-                placeholder="Y"
-                required
-                value={form.ageYears}
-                onChange={(value) => onUpdate({ ageYears: value })}
-              />
-              <AgeInput
-                label=" "
-                placeholder="M"
-                value={form.ageMonths}
-                onChange={(value) => onUpdate({ ageMonths: value })}
-              />
-              <AgeInput
-                label=" "
-                placeholder="D"
-                value={form.ageDays}
-                onChange={(value) => onUpdate({ ageDays: value })}
-              />
-            </div>
+              <X className="h-5 w-5" />
+            </button>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Blood Group</label>
-            <div className="grid overflow-hidden rounded-md border sm:grid-cols-4 lg:grid-cols-8">
-              {bloodGroups.map((bloodGroup) => (
-                <button
-                  key={bloodGroup}
-                  className={cn(
-                    "h-10 border-b border-r text-sm font-medium sm:[&:nth-child(4n)]:border-r-0 lg:border-b-0 lg:[&:nth-child(4n)]:border-r lg:last:border-r-0",
-                    form.bloodGroup === bloodGroup
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-muted-foreground hover:bg-muted"
-                  )}
-                  type="button"
-                  onClick={() =>
-                    onUpdate({ bloodGroup: form.bloodGroup === bloodGroup ? "" : bloodGroup })
-                  }
-                >
-                  {bloodGroup}
-                </button>
-              ))}
+          {/* Scrollable body */}
+          <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
+            {formFields}
+          </div>
+
+          {/* Sticky footer */}
+          <div className="shrink-0 border-t bg-card px-5 py-3">
+            <div className="grid gap-2 sm:grid-cols-[72px_minmax(0,1fr)]">
+              {resetBtn}
+              {submitBtn}
             </div>
           </div>
-        </div>
-      </form>
+        </form>
+
+        <style>{`
+          @keyframes slideInFromRight {
+            from { transform: translateX(100%); }
+            to   { transform: translateX(0); }
+          }
+        `}</style>
+      </>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60" />
+      <div className="relative flex min-h-full items-start justify-center p-3 py-4">
+        <form
+          className="relative w-full max-w-lg rounded-2xl bg-card shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+          onSubmit={onSubmit}
+        >
+          <div className="flex items-center justify-between rounded-t-2xl border-b bg-primary/5 px-5 py-2.5">
+            <h2 className="text-base font-semibold text-primary">{title}</h2>
+            <button
+              aria-label="Close"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive"
+              type="button"
+              onClick={onClose}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="space-y-1.5 px-4 py-3">
+            {formFields}
+            <div className="grid gap-2 pt-1 sm:grid-cols-[72px_minmax(0,1fr)]">
+              {resetBtn}
+              {submitBtn}
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -4557,8 +7236,6 @@ function glassPrescriptionHasContent(prescription: GlassPrescriptionState) {
     || Boolean(prescription.ipd)
     || prescription.glassFeatures.length > 0
     || Boolean(prescription.lensType)
-    || Boolean(prescription.iopRight)
-    || Boolean(prescription.iopLeft)
     || Boolean(prescription.note.trim());
 }
 
@@ -4568,10 +7245,9 @@ function getGlassPrescriptionPreview(prescription: GlassPrescriptionState) {
     prescription.right.cyl,
     prescription.left.sphere,
     prescription.left.cyl,
-    prescription.glassFeatures.join(" + "),
+    prescription.add ? `Near Add: ${prescription.add} DS` : "",
+    prescription.glassFeatures.length ? `Glass Coating: ${prescription.glassFeatures.join(" + ")}` : "",
     prescription.lensType,
-    prescription.iopRight,
-    prescription.iopLeft,
     prescription.note
   ]
     .filter(Boolean)
@@ -4596,14 +7272,12 @@ function formatGlassPrescriptionBlock(title: string, prescription: GlassPrescrip
     title,
     formatEyePowerLine("Right Eye", prescription.right),
     formatEyePowerLine("Left Eye", prescription.left),
-    prescription.add ? `ADD: ${prescription.add}` : "",
-    prescription.ipd ? `IPD: ${prescription.ipd}` : "",
+    prescription.add ? `Near Add: ${prescription.add} DS` : "",
+    prescription.ipd ? `IPD: ${prescription.ipd} mm` : "",
     prescription.glassFeatures.length
-      ? `Glass Feature: ${prescription.glassFeatures.join(" + ")}`
+      ? `Glass Coating: ${prescription.glassFeatures.join(" + ")}`
       : "",
     prescription.lensType ? `Lens Type: ${prescription.lensType}` : "",
-    prescription.iopRight ? `IOP Right Eye: ${prescription.iopRight} mmHg` : "",
-    prescription.iopLeft ? `IOP Left Eye: ${prescription.iopLeft} mmHg` : "",
     prescription.note ? `Remarks: ${prescription.note}` : ""
   ]
     .filter(Boolean)
@@ -4706,6 +7380,222 @@ function daysFromToday(value: string) {
   return String(Math.max(diff, 0));
 }
 
+function calcAgeFromDOB(dob: string): { ageYears: string; ageMonths: string; ageDays: string } {
+  if (!dob) return { ageYears: "", ageMonths: "", ageDays: "" };
+  const birth = new Date(`${dob}T00:00:00`);
+  if (isNaN(birth.getTime())) return { ageYears: "", ageMonths: "", ageDays: "" };
+  const today = new Date();
+  let years = today.getFullYear() - birth.getFullYear();
+  let months = today.getMonth() - birth.getMonth();
+  let days = today.getDate() - birth.getDate();
+  if (days < 0) { months--; days += new Date(today.getFullYear(), today.getMonth(), 0).getDate(); }
+  if (months < 0) { years--; months += 12; }
+  return { ageYears: String(Math.max(0, years)), ageMonths: String(Math.max(0, months)), ageDays: String(Math.max(0, days)) };
+}
+
+function parseDateText(text: string): string | null {
+  const match = text.trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (!match) return null;
+  const [, d, m, y] = match;
+  const year = y.length === 2 ? (Number(y) < 50 ? 2000 + Number(y) : 1900 + Number(y)) : Number(y);
+  const date = new Date(year, Number(m) - 1, Number(d));
+  if (isNaN(date.getTime()) || date.getMonth() !== Number(m) - 1) return null;
+  return formatInputDate(date);
+}
+
+function DatePickerInput({
+  value,
+  placeholder = "Pick a date",
+  onChange,
+  className
+}: {
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [textInput, setTextInput] = useState("");
+  const [textError, setTextError] = useState(false);
+  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const parsed = value ? new Date(`${value}T00:00:00`) : null;
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const base = parsed ?? new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+
+  const displayValue = parsed
+    ? parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "";
+
+  function openPicker() {
+    if (parsed) setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+    const initText = parsed
+      ? `${String(parsed.getDate()).padStart(2, "0")}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getFullYear()).slice(-2)}`
+      : "";
+    setTextInput(initText);
+    setTextError(false);
+
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const popupHeight = 380;
+      const spaceAbove = rect.top;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const placeAbove = spaceAbove >= popupHeight || spaceAbove > spaceBelow;
+      setPopupStyle(
+        placeAbove
+          ? { position: "fixed", bottom: window.innerHeight - rect.top + 6, left: rect.left }
+          : { position: "fixed", top: rect.bottom + 6, left: rect.left }
+      );
+    }
+
+    setOpen(true);
+  }
+
+  function handleTextChange(raw: string) {
+    setTextInput(raw);
+    setTextError(false);
+    const iso = parseDateText(raw);
+    if (iso) {
+      const d = new Date(`${iso}T00:00:00`);
+      setVisibleMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+  }
+
+  function handleTextConfirm() {
+    if (!textInput.trim()) { onChange(""); setOpen(false); return; }
+    const iso = parseDateText(textInput);
+    if (iso) { onChange(iso); setOpen(false); }
+    else setTextError(true);
+  }
+
+  const calendarDays = buildCalendarDays(visibleMonth);
+  const monthLabel = visibleMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        className={cn(
+          "flex items-center gap-1.5 border bg-background text-sm text-left outline-none hover:border-primary focus:ring-1 focus:ring-primary transition",
+          className ?? "rounded px-2 py-1.5 min-w-[130px]"
+        )}
+        type="button"
+        onClick={openPicker}
+      >
+        <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className={cn("truncate", displayValue ? "text-foreground" : "text-muted-foreground")}>
+          {displayValue || placeholder}
+        </span>
+      </button>
+
+      {open && typeof document !== "undefined" && createPortal(
+        <>
+          <div
+            className="fixed inset-0 z-[9998]"
+            onMouseDown={() => setOpen(false)}
+          />
+          <div
+            className="z-[9999] w-72 rounded-xl border bg-card shadow-2xl"
+            style={popupStyle}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 pt-3 pb-1">
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  className={cn(
+                    "flex-1 rounded border px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary",
+                    textError ? "border-destructive" : "border-border"
+                  )}
+                  placeholder="DD-MM-YY"
+                  value={textInput}
+                  onChange={(e) => handleTextChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleTextConfirm(); if (e.key === "Escape") setOpen(false); }}
+                />
+                <button
+                  className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90"
+                  type="button"
+                  onClick={handleTextConfirm}
+                >
+                  Set
+                </button>
+              </div>
+              {textError && (
+                <p className="mt-1 text-xs text-destructive">Invalid — use DD-MM-YY (e.g. 10-05-26)</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between px-4 py-2">
+              <button
+                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                type="button"
+                onClick={() => setVisibleMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-sm font-semibold">{monthLabel}</span>
+              <button
+                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                type="button"
+                onClick={() => setVisibleMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 border-t px-2 text-center text-[10px] font-semibold text-muted-foreground">
+              {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                <div key={d} className="py-1">{d}</div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 px-2 pb-3 text-center">
+              {calendarDays.map((item) => {
+                const iso = formatInputDate(item.date);
+                const isSelected = iso === value;
+                const isOutside = item.date.getMonth() !== visibleMonth.getMonth();
+                return (
+                  <button
+                    key={iso}
+                    className={cn(
+                      "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs",
+                      isSelected
+                        ? "bg-primary font-bold text-white"
+                        : isOutside
+                          ? "text-muted-foreground/30"
+                          : "hover:bg-muted"
+                    )}
+                    type="button"
+                    onClick={() => { onChange(iso); setOpen(false); }}
+                  >
+                    {item.date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+
+            {value && (
+              <div className="border-t px-4 py-2 text-right">
+                <button
+                  className="text-xs text-muted-foreground hover:text-destructive"
+                  type="button"
+                  onClick={() => { onChange(""); setOpen(false); }}
+                >
+                  Clear date
+                </button>
+              </div>
+            )}
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  );
+}
+
 function formatTriState(value: TriStateValue) {
   if (value === "yes") return "Yes";
   if (value === "no") return "No";
@@ -4714,26 +7604,66 @@ function formatTriState(value: TriStateValue) {
 }
 
 function buildOphthalmicFindingLines(findings: FindingsState) {
-  const lines = ophthalmicFindingRows
-    .map((row) => {
-      const rightValue = String(findings[row.rightKey] ?? "").trim();
-      const leftValue = String(findings[row.leftKey] ?? "").trim();
-      const rightNote = row.rightNoteKey ? String(findings[row.rightNoteKey] ?? "").trim() : "";
-      const leftNote = row.leftNoteKey ? String(findings[row.leftNoteKey] ?? "").trim() : "";
-      const rightText = [rightValue, rightNote].filter(Boolean).join(" ");
-      const leftText = [leftValue, leftNote].filter(Boolean).join(" ");
+  const result: string[] = [];
 
-      if (!rightText && !leftText) return "";
+  for (const row of ophthalmicFindingRows) {
+    if (row.inputType === "varecord") {
+      const r = { sphere: findings.ophthalmicVaRecordRightSphere.trim(), cyl: findings.ophthalmicVaRecordRightCyl.trim(), axis: findings.ophthalmicVaRecordRightAxis.trim(), va: findings.ophthalmicVaRecordRightVa.trim() };
+      const l = { sphere: findings.ophthalmicVaRecordLeftSphere.trim(), cyl: findings.ophthalmicVaRecordLeftCyl.trim(), axis: findings.ophthalmicVaRecordLeftAxis.trim(), va: findings.ophthalmicVaRecordLeftVa.trim() };
+      const fmt = (e: typeof r) => [e.sphere && `Sph ${e.sphere}`, e.cyl && `CYL ${e.cyl}`, e.axis && `Axis ${e.axis}`, e.va && `VA ${e.va}`].filter(Boolean).join(" / ");
+      const rightText = fmt(r);
+      const leftText = fmt(l);
+      if (rightText || leftText) {
+        result.push(`${row.label}:`);
+        if (rightText) result.push(`  RE: ${rightText}`);
+        if (leftText) result.push(`  LE: ${leftText}`);
+      }
+      continue;
+    }
 
-      return `${row.label}: Right Eye ${rightText || "-"} | Left Eye ${leftText || "-"}`;
-    })
-    .filter(Boolean);
+    if (row.inputType === "checkbox") {
+      const rightChecked = String(findings[row.rightKey] ?? "") === "yes";
+      const leftChecked = String(findings[row.leftKey] ?? "") === "yes";
+      if (rightChecked || leftChecked) {
+        const eye = rightChecked && leftChecked ? "BE" : rightChecked ? "RE" : "LE";
+        result.push(`${row.label}: ${eye}`);
+      }
+      continue;
+    }
 
-  if (findings.ophthalmicRemark.trim()) {
-    lines.push(`Ophthalmic Remark: ${findings.ophthalmicRemark.trim()}`);
+    const rightValue = String(findings[row.rightKey] ?? "").trim();
+    const leftValue = String(findings[row.leftKey] ?? "").trim();
+    const rightWithPh = row.rightWithPhKey ? String(findings[row.rightWithPhKey] ?? "").trim() : "";
+    const leftWithPh = row.leftWithPhKey ? String(findings[row.leftWithPhKey] ?? "").trim() : "";
+    const rightWithPgp = row.rightWithPgpKey ? String(findings[row.rightWithPgpKey] ?? "").trim() : "";
+    const leftWithPgp = row.leftWithPgpKey ? String(findings[row.leftWithPgpKey] ?? "").trim() : "";
+    const rightNote = row.rightNoteKey ? String(findings[row.rightNoteKey] ?? "").trim() : "";
+    const leftNote = row.leftNoteKey ? String(findings[row.leftNoteKey] ?? "").trim() : "";
+    const hasPhField = Boolean(row.rightWithPhKey);
+    const unit = row.unit ? ` ${row.unit}` : "";
+    const rightMain = hasPhField
+      ? [rightValue ? `Unaided ${rightValue}` : "", rightWithPh ? `With PH ${rightWithPh}` : "", rightWithPgp ? `With PGP/Existing ${rightWithPgp}` : ""].filter(Boolean).join(" : ")
+      : rightValue ? `${rightValue}${unit}` : "";
+    const leftMain = hasPhField
+      ? [leftValue ? `Unaided ${leftValue}` : "", leftWithPh ? `With PH ${leftWithPh}` : "", leftWithPgp ? `With PGP/Existing ${leftWithPgp}` : ""].filter(Boolean).join(" : ")
+      : leftValue ? `${leftValue}${unit}` : "";
+    const rightRaw = [rightMain, rightNote].filter(Boolean).join(" : ");
+    const leftRaw = [leftMain, leftNote].filter(Boolean).join(" : ");
+    const rightText = row.unit && rightRaw && !rightMain ? `${rightRaw}${unit}` : rightRaw;
+    const leftText = row.unit && leftRaw && !leftMain ? `${leftRaw}${unit}` : leftRaw;
+
+    if (rightText || leftText) {
+      result.push(`${row.label}:`);
+      if (rightText) result.push(`  RE: ${rightText}`);
+      if (leftText) result.push(`  LE: ${leftText}`);
+    }
   }
 
-  return lines;
+  if (findings.ophthalmicRemark.trim()) {
+    result.push(`Ophthalmic Remark: ${findings.ophthalmicRemark.trim()}`);
+  }
+
+  return result;
 }
 
 function buildFindingsText(findings: FindingsState, note: string) {
@@ -4806,7 +7736,9 @@ function buildPrescriptionText(
   findings: FindingsState,
   followUpDate: string,
   vision: VisionState,
-  referrals: ReferralEntry[]
+  referrals: ReferralEntry[],
+  rxInvestigations: InvestigationEntry[] = [],
+  rxDiagnoses: DiagnosisEntry[] = []
 ) {
   const medicineLines = medicines.map(
     (item, index) => {
@@ -4835,8 +7767,8 @@ function buildPrescriptionText(
     notes.complaint ? `Complaint:\n${notes.complaint}` : "",
     notes.history ? `History:\n${notes.history}` : "",
     findingsText ? `Findings:\n${findingsText}` : "",
-    notes.investigation ? `Investigation:\n${notes.investigation}` : "",
-    notes.diagnosis ? `Diagnosis:\n${notes.diagnosis}` : "",
+    rxInvestigations.length ? `Investigation:\n${rxInvestigations.map((i) => i.name + (i.value ? `: ${i.value}` : "")).join("\n")}` : notes.investigation ? `Investigation:\n${notes.investigation}` : "",
+    rxDiagnoses.length ? `Diagnosis:\n${rxDiagnoses.map((d) => d.name + (d.value ? `: ${d.value}` : "")).join("\n")}` : notes.diagnosis ? `Diagnosis:\n${notes.diagnosis}` : "",
     medicineLines.length || medicationNote
       ? `Medication:\n${[medicineLines.join("\n"), medicationNote].filter(Boolean).join("\n")}`
       : "",
@@ -4851,4 +7783,245 @@ function buildPrescriptionText(
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function DraftSidebar({
+  drafts,
+  onClose,
+  onDelete,
+  onEdit,
+  onLoad,
+  onUpdate
+}: {
+  drafts: RxDraft[];
+  onClose: () => void;
+  onDelete: (id: string) => void;
+  onEdit: (draft: RxDraft) => void;
+  onLoad: (draft: RxDraft) => void;
+  onUpdate: (id: string, patch: Partial<Pick<RxDraft, "name" | "note" | "tags">>) => void;
+}) {
+  // Build serial numbers: drafts with serialNo keep their queue position; others get sequential numbers after the max
+  const maxQueueSerial = drafts.reduce((max, d) => (d.serialNo && d.serialNo > max ? d.serialNo : max), 0);
+  let autoCounter = maxQueueSerial;
+  const serialMap = new Map<string, number>();
+  for (const draft of drafts) {
+    if (draft.serialNo) {
+      serialMap.set(draft.id, draft.serialNo);
+    } else {
+      autoCounter += 1;
+      serialMap.set(draft.id, autoCounter);
+    }
+  }
+
+  return (
+    <RightDrawer title="All Drafts" onClose={onClose} widthClass="md:w-[50%]">
+      {drafts.length === 0 ? (
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+          No drafts saved yet.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b bg-muted text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <th className="border-r px-3 py-2 text-center w-10">#</th>
+                <th className="border-r px-3 py-2 w-36">Patient</th>
+                <th className="border-r px-3 py-2">Note</th>
+                <th className="border-r px-3 py-2 w-36">Tags</th>
+                <th className="border-r px-3 py-2 w-28">Saved</th>
+                <th className="px-3 py-2 w-40 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {drafts.map((draft) => (
+                <tr key={draft.id} className="hover:bg-muted/30">
+                  <td className="border-r px-3 py-2 text-center">
+                    <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
+                      draft.serialNo ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+                      {serialMap.get(draft.id)}
+                    </span>
+                  </td>
+                  <td className="border-r px-3 py-2">
+                    <p className="font-semibold text-xs leading-tight">{draft.patient?.name ?? "—"}</p>
+                    {draft.patient?.registrationNo && (
+                      <p className="text-[10px] text-primary">#{draft.patient.registrationNo}</p>
+                    )}
+                  </td>
+                  <td className="border-r px-2 py-1.5">
+                    <textarea
+                      className="w-full resize-none rounded border-0 bg-transparent px-1 py-1 text-xs outline-none focus:bg-background focus:ring-1 focus:ring-primary"
+                      rows={2}
+                      defaultValue={draft.note ?? ""}
+                      placeholder="Add note…"
+                      onBlur={(e) => onUpdate(draft.id, { note: e.target.value.trim() || undefined })}
+                    />
+                  </td>
+                  <td className="border-r px-3 py-2">
+                    {draft.tags && draft.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {draft.tags.map((tag) => (
+                          <span key={tag} className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="border-r px-3 py-2 text-[10px] text-muted-foreground">
+                    {new Date(draft.savedAt).toLocaleDateString()}<br />
+                    {new Date(draft.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </td>
+                  <td className="px-2 py-2">
+                    <div className="flex items-center justify-center gap-1">
+                      <Button size="sm" type="button" className="h-7 text-xs" onClick={() => onLoad(draft)}>
+                        Load
+                      </Button>
+                      <Button size="sm" type="button" variant="secondary" className="h-7 text-xs" onClick={() => onEdit(draft)}>
+                        Edit
+                      </Button>
+                      <Button size="sm" type="button" variant="outline" className="h-7 text-xs text-destructive hover:bg-destructive/10" onClick={() => onDelete(draft.id)}>
+                        Discard
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </RightDrawer>
+  );
+}
+
+function TemplateSidebar({
+  templates,
+  onClose,
+  onDelete,
+  onLoad,
+  onMerge,
+  onUpdate
+}: {
+  templates: RxTemplate[];
+  onClose: () => void;
+  onDelete: (id: string) => void;
+  onLoad: (template: RxTemplate) => void;
+  onMerge: (template: RxTemplate) => void;
+  onUpdate: (id: string, name: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+
+  const filtered = search.trim()
+    ? templates.filter(
+        (t) =>
+          t.name.toLowerCase().includes(search.toLowerCase()) ||
+          t.medicines.some((m) => m.brandName.toLowerCase().includes(search.toLowerCase()))
+      )
+    : templates;
+
+  function startEdit(template: RxTemplate) {
+    setEditingId(template.id);
+    setEditingName(template.name);
+  }
+
+  function commitEdit(id: string) {
+    if (editingName.trim()) onUpdate(id, editingName.trim());
+    setEditingId(null);
+    setEditingName("");
+  }
+
+  return (
+    <RightDrawer title="All Templates" onClose={onClose} widthClass="md:w-[50%]">
+      {/* Search bar */}
+      <div className="border-b px-4 py-3">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            className="w-full rounded-md border bg-background py-1.5 pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+            placeholder="Search by name or medicine…"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+          {templates.length === 0 ? "No templates saved yet." : "No templates match your search."}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b bg-muted text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <th className="border-r px-3 py-2 text-center w-10">#</th>
+                <th className="border-r px-3 py-2">Template Name</th>
+                <th className="border-r px-3 py-2">Medication</th>
+                <th className="px-3 py-2 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {filtered.map((template, idx) => (
+                <tr key={template.id} className="hover:bg-muted/30">
+                  <td className="border-r px-3 py-2 text-center text-xs text-muted-foreground">{idx + 1}</td>
+                  <td className="border-r px-3 py-2 w-44">
+                    {editingId === template.id ? (
+                      <input
+                        autoFocus
+                        className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onBlur={() => commitEdit(template.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter") commitEdit(template.id); if (e.key === "Escape") setEditingId(null); }}
+                      />
+                    ) : (
+                      <>
+                        <p className="font-semibold text-xs leading-tight">{template.name}</p>
+                        {template.notes.diagnosis && (
+                          <p className="text-[10px] text-muted-foreground truncate max-w-[140px]">
+                            {template.notes.diagnosis.split("\n")[0]}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </td>
+                  <td className="border-r px-3 py-2 text-xs text-muted-foreground">
+                    {template.medicines.length > 0 ? (
+                      <>
+                        {template.medicines.slice(0, 2).map((m) => m.brandName).join(", ")}
+                        {template.medicines.length > 2 && (
+                          <span className="text-primary"> +{template.medicines.length - 2}</span>
+                        )}
+                      </>
+                    ) : "—"}
+                  </td>
+                  <td className="px-2 py-2">
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                      <Button size="sm" type="button" className="h-7 text-xs" title="Replace current prescription with this template" onClick={() => onLoad(template)}>
+                        Load to Rx
+                      </Button>
+                      <Button size="sm" type="button" variant="secondary" className="h-7 text-xs" title="Add medicines & notes to current prescription" onClick={() => onMerge(template)}>
+                        Merge
+                      </Button>
+                      <Button size="sm" type="button" variant="outline" className="h-7 text-xs" onClick={() => startEdit(template)}>
+                        Edit
+                      </Button>
+                      <Button size="sm" type="button" variant="outline" className="h-7 text-xs text-destructive hover:bg-destructive/10" onClick={() => onDelete(template.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </RightDrawer>
+  );
 }

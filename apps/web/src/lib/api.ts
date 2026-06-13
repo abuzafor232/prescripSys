@@ -168,6 +168,14 @@ export function createPatient(input: CreatePatientInput, token: string) {
   });
 }
 
+export function updatePatient(id: string, input: Partial<CreatePatientInput>, token: string) {
+  return apiFetch<Patient>(`/patients/${id}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(input)
+  });
+}
+
 export type MedicineSearchResult = {
   id: string;
   brandName: string;
@@ -250,6 +258,7 @@ export type Prescription = {
   chamberId: string;
   appointmentId?: string | null;
   prescriptionNo: string;
+  createdAt?: string;
   status: "DRAFT" | "SIGNED" | "CANCELLED";
   chiefComplaints?: string | null;
   examination?: string | null;
@@ -278,4 +287,12 @@ export function createPrescription(input: CreatePrescriptionInput, token: string
     token,
     body: JSON.stringify(input)
   });
+}
+
+export function fetchPrescriptionById(id: string, token: string) {
+  return apiFetch<Prescription>(`/prescriptions/${id}`, { token });
+}
+
+export function fetchPatientPrescriptions(patientId: string, token: string) {
+  return apiFetch<Prescription[]>(`/prescriptions?patientId=${encodeURIComponent(patientId)}&limit=20`, { token });
 }

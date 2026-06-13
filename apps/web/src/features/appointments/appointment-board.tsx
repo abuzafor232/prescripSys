@@ -1,25 +1,41 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+
+const APPOINTMENTS_STORAGE_KEY = "rx-appointments";
+const PATIENTS_STORAGE_KEY = "rx-registered-patients";
+
 import {
   CalendarDays,
-  Check,
-  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
+  Eye,
+  Loader2,
+  Printer,
   PlusCircle,
   RefreshCw,
-  Search,
-  X
+  Settings,
+  UserPlus,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { fetchPrescriptionById, type Prescription } from "@/lib/api";
+import { useSessionStore } from "@/stores/session-store";
 
-type AppointmentStatus = "Pending" | "Confirmed" | "Completed";
+// ── Types ──────────────────────────────────────────────────────────────────
+
+type AppointmentStatus = "Pending" | "Confirmed" | "Completed" | "Cancelled";
 
 type Appointment = {
   id: string;
+  date: string;
   patientName: string;
   phone: string;
   time: string;
@@ -31,6 +47,10 @@ type Appointment = {
   gender: "Male" | "Female" | "Other";
   appointmentType: "New" | "Follow-up" | "Report";
   status: AppointmentStatus;
+  bloodGroup: string;
+  bpSystolic: string;
+  bpDiastolic: string;
+  prescriptionId?: string;
 };
 
 type AppointmentFormState = {
@@ -45,87 +65,468 @@ type AppointmentFormState = {
   gender: "Male" | "Female" | "Other";
   appointmentType: "New" | "Follow-up" | "Report";
   status: AppointmentStatus;
+  bloodGroup: string;
+  bpSystolic: string;
+  bpDiastolic: string;
 };
 
+// ── Constants ──────────────────────────────────────────────────────────────
+
 const emptyAppointmentForm: AppointmentFormState = {
-  patientName: "",
-  phone: "",
-  time: "09:00 AM",
-  note: "",
-  dateOfBirth: "",
-  ageYears: "",
-  ageMonths: "",
-  ageDays: "",
-  gender: "Male",
-  appointmentType: "New",
-  status: "Pending"
+  patientName: "", phone: "", time: "09:00 AM", note: "",
+  dateOfBirth: "", ageYears: "", ageMonths: "", ageDays: "",
+  gender: "Male", appointmentType: "New", status: "Pending",
+  bloodGroup: "", bpSystolic: "", bpDiastolic: "",
 };
 
 const statusColumns: AppointmentStatus[] = ["Pending", "Confirmed", "Completed"];
-const bookingSlots = [
-  "09:00 AM",
-  "09:05 AM",
-  "09:10 AM",
-  "09:15 AM",
-  "09:20 AM",
-  "09:25 AM",
-  "09:30 AM",
-  "09:35 AM",
-  "09:40 AM",
-  "09:45 AM",
-  "09:50 AM",
-  "09:55 AM"
-];
+const BLOOD_GROUPS = ["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const MONTH_SHORT  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const SLOT_SETTINGS_KEY  = "rx-slot-settings";
+const INTERVAL_OPTIONS   = [5, 10, 15, 20, 30, 60];
+const MINUTE_OPTIONS     = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+type SlotSettings = {
+  startHour: number;
+  startMinute: number;
+  intervalMinutes: number;
+  totalSlots: number;
+};
+
+const DEFAULT_SLOT_SETTINGS: SlotSettings = {
+  startHour: 9, startMinute: 0, intervalMinutes: 10, totalSlots: 30,
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function formatISODate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatDOBDisplay(iso: string): string {
+  if (!iso) return "";
+  const parts = iso.split("-");
+  if (parts.length !== 3) return iso;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+function formatDisplayDate(value: string) {
+  if (!value) return "Select date";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "Select date";
+  return date.toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric", year: "numeric",
+  });
+}
+
+function formatDateForInput(iso: string): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  return `${d}-${m}-${y.slice(2)}`;
+}
+
+function parseDateText(text: string): string | null {
+  const match = text.trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (!match) return null;
+  const [, d, m, y] = match;
+  const year = y.length === 2 ? (Number(y) < 50 ? 2000 + Number(y) : 1900 + Number(y)) : Number(y);
+  const date = new Date(year, Number(m) - 1, Number(d));
+  if (isNaN(date.getTime()) || date.getMonth() !== Number(m) - 1) return null;
+  return formatISODate(date);
+}
+
+function calcAgeFromDOB(dob: string): { ageYears: string; ageMonths: string; ageDays: string } {
+  if (!dob) return { ageYears: "", ageMonths: "", ageDays: "" };
+  const birth = new Date(`${dob}T00:00:00`);
+  if (isNaN(birth.getTime())) return { ageYears: "", ageMonths: "", ageDays: "" };
+  const today = new Date();
+  let years = today.getFullYear() - birth.getFullYear();
+  let months = today.getMonth() - birth.getMonth();
+  let days = today.getDate() - birth.getDate();
+  if (days < 0) { months--; days += new Date(today.getFullYear(), today.getMonth(), 0).getDate(); }
+  if (months < 0) { years--; months += 12; }
+  return { ageYears: String(Math.max(0, years)), ageMonths: String(Math.max(0, months)), ageDays: String(Math.max(0, days)) };
+}
+
+function generateTimeSlots(s: SlotSettings): string[] {
+  const slots: string[] = [];
+  let h = s.startHour, m = s.startMinute;
+  for (let i = 0; i < s.totalSlots; i++) {
+    if (h >= 24) break;
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    slots.push(`${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`);
+    m += s.intervalMinutes;
+    while (m >= 60) { m -= 60; h++; }
+  }
+  return slots;
+}
+
+function slotRangeLabel(slots: string[]): string {
+  if (!slots.length) return "No slots configured";
+  return slots.length === 1 ? slots[0] : `${slots[0]} – ${slots[slots.length - 1]}`;
+}
+
+// Builds a 42-cell (6-week) calendar grid starting from the Sunday before the month
+function buildCalendarDays(month: Date) {
+  const firstOfMonth  = new Date(month.getFullYear(), month.getMonth(), 1);
+  const calendarStart = new Date(firstOfMonth);
+  calendarStart.setDate(firstOfMonth.getDate() - firstOfMonth.getDay());
+  return Array.from({ length: 42 }, (_, i) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + i);
+    return { date };
+  });
+}
+
+// ── Shared calendar popup (Complaint-section style) ─────────────────────────
+
+function CalendarPopup({
+  style,
+  value,
+  visibleMonth,
+  onMonthChange,
+  onSelect,
+  onClose,
+}: {
+  style: CSSProperties;
+  value: string;
+  visibleMonth: Date;
+  onMonthChange: (m: Date) => void;
+  onSelect: (iso: string) => void;
+  onClose: () => void;
+}) {
+  const [textInput, setTextInput] = useState(() => formatDateForInput(value));
+  const [textError, setTextError] = useState(false);
+  const calendarDays = buildCalendarDays(visibleMonth);
+  const monthLabel   = visibleMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  function handleTextChange(raw: string) {
+    setTextInput(raw);
+    setTextError(false);
+    const iso = parseDateText(raw);
+    if (iso) {
+      const d = new Date(`${iso}T00:00:00`);
+      onMonthChange(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+  }
+
+  function handleTextConfirm() {
+    if (!textInput.trim()) { onSelect(""); return; }
+    const iso = parseDateText(textInput);
+    if (iso) onSelect(iso);
+    else setTextError(true);
+  }
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[9998]" onMouseDown={onClose} />
+      <div
+        className="z-[9999] w-72 rounded-xl border bg-card shadow-2xl"
+        style={style}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {/* Text input + Set */}
+        <div className="px-4 pt-3 pb-1">
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              className={cn(
+                "flex-1 rounded border px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary",
+                textError ? "border-destructive" : "border-border",
+              )}
+              placeholder="DD-MM-YY"
+              value={textInput}
+              onChange={(e) => handleTextChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter")  handleTextConfirm();
+                if (e.key === "Escape") onClose();
+              }}
+            />
+            <button
+              className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90"
+              type="button"
+              onClick={handleTextConfirm}
+            >
+              Set
+            </button>
+          </div>
+          {textError && (
+            <p className="mt-1 text-xs text-destructive">Invalid — use DD-MM-YY (e.g. 10-05-26)</p>
+          )}
+        </div>
+
+        {/* Month navigation */}
+        <div className="flex items-center justify-between px-4 py-2">
+          <button
+            className="rounded p-1 text-muted-foreground hover:bg-muted"
+            type="button"
+            onClick={() => onMonthChange(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="text-sm font-semibold">{monthLabel}</span>
+          <button
+            className="rounded p-1 text-muted-foreground hover:bg-muted"
+            type="button"
+            onClick={() => onMonthChange(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Day-of-week header */}
+        <div className="grid grid-cols-7 border-t px-2 text-center text-[10px] font-semibold text-muted-foreground">
+          {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+            <div key={d} className="py-1">{d}</div>
+          ))}
+        </div>
+
+        {/* Day grid */}
+        <div className="grid grid-cols-7 px-2 pb-3 text-center">
+          {calendarDays.map((item) => {
+            const iso       = formatISODate(item.date);
+            const isSel     = iso === value;
+            const isOutside = item.date.getMonth() !== visibleMonth.getMonth();
+            return (
+              <button
+                key={iso}
+                type="button"
+                className={cn(
+                  "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs",
+                  isSel      ? "bg-primary font-bold text-white"
+                  : isOutside ? "text-muted-foreground/30"
+                              : "hover:bg-muted",
+                )}
+                onClick={() => onSelect(iso)}
+              >
+                {item.date.getDate()}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Clear */}
+        {value && (
+          <div className="border-t px-4 py-2 text-right">
+            <button
+              className="text-xs text-muted-foreground hover:text-destructive"
+              type="button"
+              onClick={() => onSelect("")}
+            >
+              Clear date
+            </button>
+          </div>
+        )}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+// ── CustomDateControl — full-card trigger + Complaint-section calendar ──────
+
+function CustomDateControl({
+  value,
+  fullWidth = false,
+  compact = false,
+  onChange,
+}: {
+  value: string;
+  fullWidth?: boolean;
+  compact?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [popupStyle, setPopupStyle] = useState<CSSProperties>({});
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const base = value ? new Date(`${value}T00:00:00`) : new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  function openPicker() {
+    if (value) {
+      const d = new Date(`${value}T00:00:00`);
+      if (!isNaN(d.getTime())) setVisibleMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+    if (btnRef.current) {
+      const rect    = btnRef.current.getBoundingClientRect();
+      const popupH  = 390;
+      const placeUp = rect.top >= popupH || rect.top > window.innerHeight - rect.bottom;
+      setPopupStyle(
+        placeUp
+          ? { position: "fixed", bottom: window.innerHeight - rect.top + 6, left: rect.left }
+          : { position: "fixed", top: rect.bottom + 6, left: rect.left },
+      );
+    }
+    setOpen(true);
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className={cn(
+          compact ? "flex h-10 cursor-pointer overflow-hidden rounded-md border border-primary/30 bg-card transition hover:border-primary focus:outline-none focus:ring-1 focus:ring-primary" : "flex h-14 cursor-pointer overflow-hidden rounded-md border border-primary/30 bg-card transition hover:border-primary focus:outline-none focus:ring-1 focus:ring-primary",
+          fullWidth ? "w-full" : "w-full sm:w-72",
+        )}
+        onClick={openPicker}
+      >
+        <span className="flex flex-1 items-center justify-center px-4 text-sm font-semibold sm:text-base">
+          {formatDisplayDate(value)}
+        </span>
+        <span className="flex w-12 items-center justify-center border-l bg-muted">
+          <CalendarDays className="h-4 w-4" />
+        </span>
+      </button>
+
+      {open && (
+        <CalendarPopup
+          style={popupStyle}
+          value={value}
+          visibleMonth={visibleMonth}
+          onMonthChange={setVisibleMonth}
+          onSelect={(iso) => { if (iso) onChange(iso); setOpen(false); }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// ── DatePickerInput — compact trigger + same calendar popup ────────────────
+
+function DatePickerInput({
+  value,
+  onChange,
+  placeholder = "Pick a date",
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [popupStyle, setPopupStyle] = useState<CSSProperties>({});
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const base = value ? new Date(`${value}T00:00:00`) : new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const parsed = value ? new Date(`${value}T00:00:00`) : null;
+  const displayValue = parsed
+    ? parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "";
+
+  function openPicker() {
+    if (parsed) setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+    if (btnRef.current) {
+      const rect    = btnRef.current.getBoundingClientRect();
+      const popupH  = 390;
+      const placeUp = rect.top >= popupH || rect.top > window.innerHeight - rect.bottom;
+      setPopupStyle(
+        placeUp
+          ? { position: "fixed", bottom: window.innerHeight - rect.top + 6, left: rect.left }
+          : { position: "fixed", top: rect.bottom + 6, left: rect.left },
+      );
+    }
+    setOpen(true);
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className="flex h-9 w-full items-center gap-2 overflow-hidden rounded-xl border bg-background px-3 text-left outline-none transition hover:border-primary focus:ring-1 focus:ring-primary"
+        onClick={openPicker}
+      >
+        <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className={cn("text-sm", displayValue ? "text-foreground" : "text-muted-foreground")}>
+          {displayValue || placeholder}
+        </span>
+      </button>
+
+      {open && (
+        <CalendarPopup
+          style={popupStyle}
+          value={value}
+          visibleMonth={visibleMonth}
+          onMonthChange={setVisibleMonth}
+          onSelect={(iso) => { onChange(iso); setOpen(false); }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// ── AppointmentBoard ───────────────────────────────────────────────────────
 
 export function AppointmentBoard() {
-  const [selectedDate, setSelectedDate] = useState("2026-05-30");
+  const router = useRouter();
+  const user = useSessionStore((s) => s.user);
+  const [selectedDate, setSelectedDate] = useState(formatISODate(new Date()));
   const [appointmentOpen, setAppointmentOpen] = useState(false);
-  const [reportMenuOpen, setReportMenuOpen] = useState(false);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [patientForm, setPatientForm] = useState<AppointmentFormState>(emptyAppointmentForm);
+  const [showList, setShowList] = useState(false);
+  const [previewPrescriptionId, setPreviewPrescriptionId] = useState<string | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(APPOINTMENTS_STORAGE_KEY) : null;
+      return raw ? (JSON.parse(raw) as Appointment[]) : [];
+    } catch { return []; }
+  });
   const [form, setForm] = useState<AppointmentFormState>(emptyAppointmentForm);
   const [statusMessage, setStatusMessage] = useState("");
 
+  useEffect(() => {
+    try { localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(appointments)); } catch {}
+  }, [appointments]);
+
   const groupedAppointments = useMemo(
-    () =>
-      statusColumns.reduce<Record<AppointmentStatus, Appointment[]>>(
-        (acc, status) => {
-          acc[status] = appointments.filter((item) => item.status === status);
-          return acc;
-        },
-        { Pending: [], Confirmed: [], Completed: [] }
-      ),
-    [appointments]
+    () => ({
+      Pending:   appointments.filter((a) => a.status === "Pending"),
+      Confirmed: appointments.filter((a) => a.status === "Confirmed"),
+      Completed: appointments.filter((a) => a.status === "Completed"),
+    }),
+    [appointments],
   );
 
   function updateForm(patch: Partial<AppointmentFormState>) {
-    setForm((current) => ({ ...current, ...patch }));
+    setForm((cur) => ({ ...cur, ...patch }));
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const patientName = form.patientName.trim();
-
-    if (!patientName) {
-      setStatusMessage("Patient name is required.");
+    if (!patientName) { setStatusMessage("Patient name is required."); return; }
+    if (!form.ageYears.trim() && !form.ageMonths.trim() && !form.ageDays.trim()) {
+      setStatusMessage("Age is required — enter at least years, months, or days.");
       return;
     }
-
-    setAppointments((current) => [
-      ...current,
+    setAppointments((cur) => [
+      ...cur,
       {
-        id: `${Date.now()}-${current.length}`,
+        id: `${Date.now()}-${cur.length}`,
+        date: selectedDate,
         patientName,
         phone: form.phone.trim(),
         time: form.time,
         note: form.note.trim(),
-        dateOfBirth: form.dateOfBirth.trim(),
+        dateOfBirth: form.dateOfBirth,
         ageYears: form.ageYears.trim(),
         ageMonths: form.ageMonths.trim(),
         ageDays: form.ageDays.trim(),
         gender: form.gender,
         appointmentType: form.appointmentType,
-        status: form.status
-      }
+        status: form.status,
+        bloodGroup: form.bloodGroup,
+        bpSystolic: form.bpSystolic.trim(),
+        bpDiastolic: form.bpDiastolic.trim(),
+      },
     ]);
     setForm(emptyAppointmentForm);
     setAppointmentOpen(false);
@@ -133,522 +534,1270 @@ export function AppointmentBoard() {
   }
 
   function moveAppointment(id: string, status: AppointmentStatus) {
-    setAppointments((current) =>
-      current.map((item) => (item.id === id ? { ...item, status } : item))
-    );
+    setAppointments((cur) => cur.map((a) => (a.id === id ? { ...a, status } : a)));
   }
 
-  function refreshBoard() {
-    setStatusMessage("Appointment board refreshed.");
+  function attendAppointment(apt: Appointment) {
+    try { localStorage.setItem("rx-attend-apt", apt.id); } catch {}
+    router.push(`/prescriptions/new?attend=${encodeURIComponent(apt.id)}`);
+  }
+
+  function handleRegisterPatient(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const patientName = patientForm.patientName.trim();
+    if (!patientName) { setStatusMessage("Patient name is required."); return; }
+    if (!patientForm.ageYears.trim() && !patientForm.ageMonths.trim() && !patientForm.ageDays.trim()) {
+      setStatusMessage("Age is required — enter at least years, months, or days.");
+      return;
+    }
+    try {
+      const existing = JSON.parse(localStorage.getItem(PATIENTS_STORAGE_KEY) ?? "[]") as object[];
+      existing.push({
+        id: `${Date.now()}`,
+        patientName,
+        phone: patientForm.phone.trim(),
+        dateOfBirth: patientForm.dateOfBirth,
+        ageYears: patientForm.ageYears.trim(),
+        ageMonths: patientForm.ageMonths.trim(),
+        ageDays: patientForm.ageDays.trim(),
+        gender: patientForm.gender,
+        bloodGroup: patientForm.bloodGroup,
+        registeredAt: new Date().toISOString(),
+      });
+      localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(existing));
+    } catch {}
+    setPatientForm(emptyAppointmentForm);
+    setRegisterOpen(false);
+    setStatusMessage(`Patient "${patientName}" registered successfully.`);
   }
 
   return (
     <>
-      <div className="space-y-5 pb-10">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="space-y-2 pb-6">
+        {/* Header row */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-semibold">Appointments</h1>
-            <p className="text-sm text-muted-foreground">Personal/Remote Consultations</p>
+            <h1 className="text-lg font-semibold leading-tight">Appointments</h1>
+            <p className="text-xs text-muted-foreground">Personal/Remote Consultations</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <DateControl value={selectedDate} onChange={setSelectedDate} />
-            <Button type="button" onClick={() => setAppointmentOpen(true)}>
+          <div className="flex flex-wrap items-center gap-2">
+            <CustomDateControl value={selectedDate} onChange={setSelectedDate} />
+            <Button size="sm" type="button" variant="outline" onClick={() => setRegisterOpen(true)}>
+              <UserPlus className="h-3.5 w-3.5" />
+              Register New Patient
+            </Button>
+            <Button size="sm" type="button" onClick={() => setAppointmentOpen(true)}>
               Book Appointment
-              <PlusCircle className="h-4 w-4" />
+              <PlusCircle className="h-3.5 w-3.5" />
             </Button>
-            <Button type="button" variant="outline" onClick={refreshBoard}>
+            <Button size="sm" type="button" variant="outline" onClick={() => setStatusMessage("Board refreshed.")}>
               Refresh
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="h-3.5 w-3.5" />
             </Button>
-            <div className="relative">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setReportMenuOpen((current) => !current)}
-              >
-                Show Report
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-              {reportMenuOpen ? (
-                <div className="absolute right-0 z-20 mt-2 w-52 rounded-md border bg-card p-1 shadow-soft">
-                  {["Daily Summary", "Follow-up Report", "Patient Queue"].map((item) => (
-                    <button
-                      key={item}
-                      className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
-                      type="button"
-                      onClick={() => {
-                        setStatusMessage(`${item} selected.`);
-                        setReportMenuOpen(false);
-                      }}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <Button size="sm" type="button" variant="outline" onClick={() => setShowList(true)}>
+              <Printer className="h-3.5 w-3.5" />
+              Appointment List
+            </Button>
           </div>
         </div>
 
         {statusMessage ? (
-          <div className="rounded-md border border-primary/30 bg-primary/10 px-4 py-2 text-sm text-primary">
+          <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary">
             {statusMessage}
           </div>
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[365px_minmax(0,1fr)]">
-          <aside className="min-h-[46rem] rounded-md bg-[#dfe6ff] p-2">
-            <DateControl value={selectedDate} onChange={setSelectedDate} fullWidth />
-            <h2 className="mt-4 px-2 text-2xl font-semibold text-foreground">Follow-up</h2>
-            <div className="mt-5 space-y-3">
-              {appointments.length ? (
-                appointments.map((item) => (
+        {/* Full-width board */}
+        <div className="grid gap-3 xl:grid-cols-3">
+
+          {/* ── Pending ── */}
+          <div className="min-w-0">
+            <div className="rounded-md bg-muted px-4 py-2 text-sm font-semibold">
+              Pending
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                ({groupedAppointments["Pending"].length})
+              </span>
+            </div>
+            <div className="mt-2 overflow-hidden rounded-md border">
+              {groupedAppointments["Pending"].length ? (
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr className="border-b text-xs text-muted-foreground">
+                      <th className="w-7 py-1.5 pl-3 text-left font-medium">#</th>
+                      <th className="py-1.5 pr-2 text-left font-medium">Patient</th>
+                      <th className="py-1.5 pr-2 text-left font-medium">Phone</th>
+                      <th className="py-1.5 pr-2 text-left font-medium">Age</th>
+                      <th className="py-1.5 pr-3 text-right font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupedAppointments["Pending"].map((apt, i) => (
+                      <tr key={apt.id} className="border-b last:border-0 hover:bg-muted/30">
+                        <td className="py-2 pl-3 tabular-nums text-muted-foreground">{i + 1}</td>
+                        <td className="py-2 pr-2 font-medium">{apt.patientName}</td>
+                        <td className="py-2 pr-2 text-xs text-muted-foreground">{apt.phone || "—"}</td>
+                        <td className="py-2 pr-2 text-xs text-muted-foreground">
+                          {[apt.ageYears ? `${apt.ageYears}Y` : "", apt.ageMonths ? `${apt.ageMonths}M` : ""].filter(Boolean).join(" ") || "—"}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary hover:text-primary-foreground"
+                              type="button"
+                              onClick={() => moveAppointment(apt.id, "Confirmed")}
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                              type="button"
+                              onClick={() => moveAppointment(apt.id, "Cancelled")}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">No pending appointments</div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Confirmed ── */}
+          <div className="min-w-0">
+            <div className="rounded-md bg-muted px-4 py-2 text-sm font-semibold">
+              Confirmed
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                ({groupedAppointments["Confirmed"].length})
+              </span>
+            </div>
+            <div className="mt-2 overflow-hidden rounded-md border">
+              {groupedAppointments["Confirmed"].length ? (
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr className="border-b text-xs text-muted-foreground">
+                      <th className="w-7 py-1.5 pl-3 text-left font-medium">#</th>
+                      <th className="py-1.5 pr-2 text-left font-medium">Patient Name</th>
+                      <th className="py-1.5 pr-3 text-right font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupedAppointments["Confirmed"].map((apt, i) => (
+                      <tr key={apt.id} className="border-b last:border-0 hover:bg-muted/30">
+                        <td className="py-2 pl-3 tabular-nums text-muted-foreground">{i + 1}</td>
+                        <td className="py-2 pr-2 font-medium">{apt.patientName}</td>
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              className="rounded-md bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-500 hover:text-white"
+                              type="button"
+                              onClick={() => attendAppointment(apt)}
+                            >
+                              Attend
+                            </button>
+                            <button
+                              className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                              type="button"
+                              onClick={() => moveAppointment(apt.id, "Cancelled")}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">No confirmed appointments</div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Completed ── */}
+          <div className="min-w-0">
+            <div className="rounded-md bg-muted px-4 py-2 text-sm font-semibold">
+              Completed
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                ({groupedAppointments["Completed"].length})
+              </span>
+            </div>
+            <div className="mt-2 space-y-2">
+              {groupedAppointments["Completed"].length ? (
+                groupedAppointments["Completed"].map((apt) => (
                   <AppointmentCard
-                    key={item.id}
-                    appointment={item}
-                    compact
+                    key={apt.id}
+                    appointment={apt}
                     onMove={moveAppointment}
+                    onShowPrescription={(id) => setPreviewPrescriptionId(id)}
                   />
                 ))
               ) : (
-                <div className="px-2 text-sm text-muted-foreground">
-                  No follow-up appointments.
+                <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                  No records found
                 </div>
               )}
             </div>
-          </aside>
+          </div>
 
-          <section className="min-w-0">
-            <div className="border-b">
-              <button
-                className="border-b-2 border-primary px-5 py-4 text-lg font-semibold text-primary"
-                type="button"
-              >
-                09:00 AM - 11:59 PM
-              </button>
-            </div>
-
-            <div className="grid gap-6 pt-3 xl:grid-cols-3">
-              {statusColumns.map((status) => (
-                <div key={status} className="min-w-0">
-                  <div className="rounded-md bg-muted px-5 py-4 text-2xl font-semibold">
-                    {status}
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {groupedAppointments[status].length ? (
-                      groupedAppointments[status].map((appointment) => (
-                        <AppointmentCard
-                          key={appointment.id}
-                          appointment={appointment}
-                          onMove={moveAppointment}
-                        />
-                      ))
-                    ) : (
-                      <div className="rounded-md border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
-                        No records found
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
         </div>
       </div>
 
-      {appointmentOpen ? (
+      {registerOpen && (
+        <RegisterNewPatientDialog
+          appointments={appointments}
+          form={patientForm}
+          onClose={() => setRegisterOpen(false)}
+          onReset={() => setPatientForm(emptyAppointmentForm)}
+          onSubmit={handleRegisterPatient}
+          onUpdate={(patch) => setPatientForm((cur) => ({ ...cur, ...patch }))}
+        />
+      )}
+
+      {appointmentOpen && (
         <BookAppointmentDialog
+          appointments={appointments}
           date={selectedDate}
           form={form}
           onClose={() => setAppointmentOpen(false)}
           onDateChange={setSelectedDate}
           onReset={() => setForm(emptyAppointmentForm)}
-          onSearchPatient={(query) =>
-            setStatusMessage(query ? `Searching patient: ${query}` : "Type a patient number or phone first.")
-          }
           onSubmit={handleSubmit}
           onUpdate={updateForm}
         />
-      ) : null}
+      )}
+
+      {showList && (
+        <AppointmentListModal
+          date={selectedDate}
+          appointments={appointments}
+          doctorName={user?.fullName ?? ""}
+          chamberName="Personal/Remote Consultations"
+          onClose={() => setShowList(false)}
+        />
+      )}
+
+      {previewPrescriptionId && (
+        <PrescriptionPreviewModal
+          prescriptionId={previewPrescriptionId}
+          onClose={() => setPreviewPrescriptionId(null)}
+        />
+      )}
     </>
   );
 }
 
-function DateControl({
-  value,
-  fullWidth = false,
-  onChange
-}: {
-  value: string;
-  fullWidth?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex h-14 overflow-hidden rounded-md border border-primary/30 bg-card",
-        fullWidth ? "w-full" : "w-full sm:w-72"
-      )}
-    >
-      <span className="flex flex-1 items-center justify-center px-4 text-sm font-semibold sm:text-base">
-        {formatDisplayDate(value)}
-      </span>
-      <span className="relative flex w-12 items-center justify-center border-l bg-muted">
-        <CalendarDays className="pointer-events-none h-4 w-4" />
-        <input
-          aria-label="Appointment date"
-          className="absolute inset-0 cursor-pointer opacity-0"
-          type="date"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      </span>
-    </label>
-  );
-}
+// ── AppointmentCard ────────────────────────────────────────────────────────
 
 function AppointmentCard({
   appointment,
   compact = false,
-  onMove
+  onMove,
+  onShowPrescription,
 }: {
   appointment: Appointment;
   compact?: boolean;
   onMove: (id: string, status: AppointmentStatus) => void;
+  onShowPrescription?: (prescriptionId: string) => void;
 }) {
   return (
-    <article className="rounded-md border bg-card p-3 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+    <article className="rounded-md border bg-card px-3 py-2 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate font-semibold">{appointment.patientName}</div>
-          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
+          <div className="truncate text-sm font-semibold">{appointment.patientName}</div>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
             {appointment.time || "No time set"}
           </div>
-          {appointment.phone ? (
-            <div className="mt-1 text-xs text-muted-foreground">{appointment.phone}</div>
-          ) : null}
+          {appointment.phone && (
+            <div className="text-xs text-muted-foreground">{appointment.phone}</div>
+          )}
         </div>
-        <span className="rounded-md bg-muted px-2 py-1 text-xs font-medium">
-          {appointment.status}
-        </span>
+        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">{appointment.status}</span>
       </div>
 
-      {!compact && appointment.note ? (
-        <p className="mt-3 text-sm text-muted-foreground">{appointment.note}</p>
-      ) : null}
+      {!compact && appointment.note && (
+        <p className="mt-1.5 text-xs text-muted-foreground">{appointment.note}</p>
+      )}
 
-      {!compact ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {statusColumns
-            .filter((status) => status !== appointment.status)
-            .map((status) => (
+      {!compact && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {appointment.status === "Completed" ? (
+            appointment.prescriptionId ? (
               <Button
-                key={status}
                 size="sm"
                 type="button"
                 variant="outline"
-                onClick={() => onMove(appointment.id, status)}
+                onClick={() => onShowPrescription?.(appointment.prescriptionId!)}
               >
-                Move to {status}
+                <Eye className="h-3.5 w-3.5" />
+                Show Prescription
               </Button>
-            ))}
+            ) : (
+              <span className="text-xs text-muted-foreground italic">No prescription linked</span>
+            )
+          ) : appointment.status === "Pending" ? (
+            <Button size="sm" type="button" variant="outline" onClick={() => onMove(appointment.id, "Confirmed")}>
+              Confirm
+            </Button>
+          ) : (
+            statusColumns
+              .filter((s) => s !== appointment.status)
+              .map((s) => (
+                <Button key={s} size="sm" type="button" variant="outline" onClick={() => onMove(appointment.id, s)}>
+                  Move to {s}
+                </Button>
+              ))
+          )}
         </div>
-      ) : null}
+      )}
     </article>
   );
 }
 
-function BookAppointmentDialog({
-  date,
-  form,
+// ── PrescriptionPreviewModal ───────────────────────────────────────────────
+
+function PrescriptionPreviewModal({
+  prescriptionId,
   onClose,
-  onDateChange,
-  onReset,
-  onSearchPatient,
-  onSubmit,
-  onUpdate
 }: {
+  prescriptionId: string;
+  onClose: () => void;
+}) {
+  const accessToken = useSessionStore((s) => s.accessToken) ?? "";
+
+  const { data: rx, isLoading, isError } = useQuery({
+    queryKey: ["prescription-preview", prescriptionId],
+    queryFn: () => fetchPrescriptionById(prescriptionId, accessToken),
+    enabled: !!prescriptionId && !!accessToken,
+  });
+
+  function handlePrint() {
+    if (!rx) return;
+    const age = [
+      rx.patient.ageYears != null ? `${rx.patient.ageYears}Y` : null,
+      rx.patient.ageMonths != null ? `${rx.patient.ageMonths}M` : null,
+    ].filter(Boolean).join(" ") || "—";
+
+    const medicineRows = rx.medicines.map((m, i) =>
+      `<tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${i + 1}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee"><strong>${m.brandName}</strong>${m.genericName ? ` <small>(${m.genericName})</small>` : ""}${m.strength ? ` ${m.strength}` : ""}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.dose}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.duration}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.instruction ?? ""}</td>
+      </tr>`
+    ).join("");
+
+    const win = window.open("", "_blank", "width=860,height=700");
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head>
+      <title>Prescription ${rx.prescriptionNo}</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 13px; color: #111; margin: 0; padding: 20px 30px; }
+        h1 { font-size: 18px; margin: 0 0 4px; }
+        .meta { color: #555; font-size: 12px; margin-bottom: 16px; }
+        .section { margin-bottom: 14px; }
+        .section-title { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #888; margin-bottom: 4px; letter-spacing: .05em; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; font-size: 11px; color: #888; padding: 4px 8px; border-bottom: 2px solid #ddd; }
+        .divider { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+        @media print { body { padding: 10px; } }
+      </style>
+    </head><body>
+      <h1>${rx.chamber?.name ?? "Prescription"}</h1>
+      <div class="meta">
+        Dr. ${rx.doctor?.displayName ?? "—"} &nbsp;|&nbsp;
+        Rx# ${rx.prescriptionNo}${rx.followUpDate ? ` &nbsp;|&nbsp; Follow-up: ${new Date(rx.followUpDate).toLocaleDateString()}` : ""}
+      </div>
+      <div class="section">
+        <div class="section-title">Patient</div>
+        <strong>${rx.patient.name}</strong> &nbsp; ${age}${rx.patient.gender ? ` · ${rx.patient.gender.charAt(0).toUpperCase() + rx.patient.gender.slice(1).toLowerCase()}` : ""}${rx.patient.phone ? ` &nbsp;|&nbsp; ${rx.patient.phone}` : ""}
+      </div>
+      <hr class="divider" />
+      ${rx.chiefComplaints ? `<div class="section"><div class="section-title">Chief Complaints</div>${rx.chiefComplaints}</div>` : ""}
+      ${rx.examination ? `<div class="section"><div class="section-title">Examination</div>${rx.examination}</div>` : ""}
+      ${rx.diagnoses?.length ? `<div class="section"><div class="section-title">Diagnoses</div>${rx.diagnoses.map(d => d.name + (d.note ? ` (${d.note})` : "")).join(", ")}</div>` : ""}
+      ${rx.medicines?.length ? `<div class="section">
+        <div class="section-title">Medicines</div>
+        <table><thead><tr><th>#</th><th>Medicine</th><th>Dose</th><th>Duration</th><th>Instruction</th></tr></thead>
+        <tbody>${medicineRows}</tbody></table>
+      </div>` : ""}
+      ${rx.investigations?.length ? `<div class="section"><div class="section-title">Investigations</div>${rx.investigations.map(inv => inv.name + (inv.note ? ` (${inv.note})` : "")).join(", ")}</div>` : ""}
+      ${rx.advice ? `<div class="section"><div class="section-title">Advice</div>${rx.advice}</div>` : ""}
+      <script>window.onload = () => { window.print(); }</script>
+    </body></html>`);
+    win.document.close();
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-10">
+      <div className="w-full max-w-2xl rounded-xl border bg-card shadow-xl">
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b px-4 py-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Prescription Preview</p>
+            {rx && <p className="text-xs text-muted-foreground">{rx.prescriptionNo}</p>}
+          </div>
+          <Button size="sm" variant="outline" onClick={handlePrint} disabled={!rx}>
+            <Printer className="h-3.5 w-3.5" />
+            Print
+          </Button>
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-muted"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-4">
+          {isLoading && (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading prescription…
+            </div>
+          )}
+          {isError && (
+            <div className="py-12 text-center text-sm text-destructive">
+              Failed to load prescription.
+            </div>
+          )}
+          {rx && (
+            <div className="space-y-4 text-sm">
+              {/* Patient + Doctor row */}
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Patient</p>
+                  <p className="font-semibold">{rx.patient.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {[
+                      rx.patient.ageYears != null ? `${rx.patient.ageYears}Y` : null,
+                      rx.patient.ageMonths != null ? `${rx.patient.ageMonths}M` : null,
+                    ].filter(Boolean).join(" ") || null}
+                    {rx.patient.gender ? ` · ${rx.patient.gender.charAt(0).toUpperCase() + rx.patient.gender.slice(1).toLowerCase()}` : ""}
+                    {rx.patient.phone ? ` · ${rx.patient.phone}` : ""}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Doctor</p>
+                  <p className="font-medium">{rx.doctor?.displayName ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground">{rx.chamber?.name ?? "—"}</p>
+                </div>
+              </div>
+
+              <div className="border-t" />
+
+              {/* Complaints */}
+              {rx.chiefComplaints && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Chief Complaints</p>
+                  <p className="text-sm whitespace-pre-wrap">{rx.chiefComplaints}</p>
+                </div>
+              )}
+
+              {/* Examination */}
+              {rx.examination && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Examination</p>
+                  <p className="text-sm whitespace-pre-wrap">{rx.examination}</p>
+                </div>
+              )}
+
+              {/* Diagnoses */}
+              {rx.diagnoses?.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Diagnoses</p>
+                  <p className="text-sm">{rx.diagnoses.map((d) => d.name + (d.note ? ` (${d.note})` : "")).join(", ")}</p>
+                </div>
+              )}
+
+              {/* Medicines */}
+              {rx.medicines?.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Medicines</p>
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-2 py-1.5 text-left font-semibold">#</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Medicine</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Dose</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Duration</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Instruction</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {rx.medicines.map((m, i) => (
+                          <tr key={i}>
+                            <td className="px-2 py-1.5 text-muted-foreground">{i + 1}</td>
+                            <td className="px-2 py-1.5 font-medium">
+                              {m.brandName}
+                              {m.genericName && <span className="ml-1 font-normal text-muted-foreground">({m.genericName})</span>}
+                              {m.strength && <span className="ml-1 text-muted-foreground">{m.strength}</span>}
+                            </td>
+                            <td className="px-2 py-1.5">{m.dose}</td>
+                            <td className="px-2 py-1.5">{m.duration}</td>
+                            <td className="px-2 py-1.5 text-muted-foreground">{m.instruction ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Investigations */}
+              {rx.investigations?.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Investigations</p>
+                  <p className="text-sm">{rx.investigations.map((inv) => inv.name + (inv.note ? ` (${inv.note})` : "")).join(", ")}</p>
+                </div>
+              )}
+
+              {/* Advice */}
+              {rx.advice && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Advice</p>
+                  <p className="text-sm whitespace-pre-wrap">{rx.advice}</p>
+                </div>
+              )}
+
+              {/* Follow-up */}
+              {rx.followUpDate && (
+                <div className="rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
+                  <span className="text-xs font-semibold text-primary">Follow-up: </span>
+                  <span className="text-xs">{new Date(rx.followUpDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── BookAppointmentDialog ──────────────────────────────────────────────────
+
+function BookAppointmentDialog({
+  appointments, date, form, onClose, onDateChange, onReset, onSubmit, onUpdate,
+}: {
+  appointments: Appointment[];
   date: string;
   form: AppointmentFormState;
   onClose: () => void;
   onDateChange: (value: string) => void;
   onReset: () => void;
-  onSearchPatient: (query: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUpdate: (patch: Partial<AppointmentFormState>) => void;
 }) {
-  const [showAllSlots, setShowAllSlots] = useState(false);
-  const [patientSearch, setPatientSearch] = useState("");
-  const [commentOpen, setCommentOpen] = useState(false);
-  const visibleSlots = showAllSlots ? bookingSlots : bookingSlots.slice(0, 8);
+  const [commentOpen,    setCommentOpen]    = useState(false);
+  const [settingsOpen,   setSettingsOpen]   = useState(false);
+  const [phoneDismissed, setPhoneDismissed] = useState(false);
+  const [slotSettings, setSlotSettings] = useState<SlotSettings>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(SLOT_SETTINGS_KEY) : null;
+      return raw ? { ...DEFAULT_SLOT_SETTINGS, ...(JSON.parse(raw) as Partial<SlotSettings>) } : DEFAULT_SLOT_SETTINGS;
+    } catch { return DEFAULT_SLOT_SETTINGS; }
+  });
+  const [draft, setDraft] = useState<SlotSettings>(slotSettings);
+  const slots = generateTimeSlots(slotSettings);
 
-  function runSearch() {
-    onSearchPatient(patientSearch.trim());
+  // Slots already booked on this date (excludes Cancelled)
+  const bookedSlots = useMemo(() => {
+    const s = new Set<string>();
+    appointments.forEach((a) => {
+      if (a.date === date && a.status !== "Cancelled" && a.time) s.add(a.time);
+    });
+    return s;
+  }, [appointments, date]);
+
+  // All unique patients matching the current 11-digit phone (deduped by name+DOB)
+  const phoneMatches = useMemo(() => {
+    if (form.phone.length !== 11) return [];
+    const seen = new Set<string>();
+    return appointments.filter((a) => {
+      if (a.phone !== form.phone || !a.patientName) return false;
+      const key = `${a.patientName}|${a.dateOfBirth}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [form.phone, appointments]);
+
+  // Reset dismiss when phone number changes
+  const prevPhoneRef = useRef(form.phone);
+  if (form.phone !== prevPhoneRef.current) {
+    prevPhoneRef.current = form.phone;
+    if (phoneDismissed) setPhoneDismissed(false);
+  }
+
+  function applySlotSettings() {
+    setSlotSettings(draft);
+    try { localStorage.setItem(SLOT_SETTINGS_KEY, JSON.stringify(draft)); } catch {}
+    setSettingsOpen(false);
+  }
+
+  function handlePhoneChange(raw: string) {
+    // digits only, max 11
+    onUpdate({ phone: raw.replace(/\D/g, "").slice(0, 11) });
+  }
+
+  function handleDobChange(dob: string) {
+    onUpdate({ dateOfBirth: dob, ...calcAgeFromDOB(dob) });
+  }
+
+  function fillFromHistory(apt: Appointment) {
+    onUpdate({
+      patientName: apt.patientName,
+      phone:       apt.phone,
+      dateOfBirth: apt.dateOfBirth,
+      ageYears:    apt.ageYears,
+      ageMonths:   apt.ageMonths,
+      ageDays:     apt.ageDays,
+      gender:      apt.gender,
+      bloodGroup:  apt.bloodGroup,
+      bpSystolic:  apt.bpSystolic,
+      bpDiastolic: apt.bpDiastolic,
+    });
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f4f7ff]">
-      <form
-        className="min-h-screen"
-        onClick={(event) => event.stopPropagation()}
-        onSubmit={onSubmit}
-      >
-        <div className="sticky top-0 z-10 flex h-14 items-center justify-between bg-[#f4f7ff] px-3">
-          <h2 className="text-2xl font-semibold text-primary">Appointment Booking</h2>
-          <button
-            aria-label="Close appointment booking"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
-            title="Close appointment booking"
-            type="button"
-            onClick={onClose}
-          >
-            <X className="h-7 w-7" />
-          </button>
-        </div>
-
-        <div className="mx-2 mb-4 rounded-md bg-card px-10 py-6 shadow-sm">
-          <div className="space-y-3">
-            <label className="block text-sm font-medium">Select Date</label>
-            <DateControl value={date} onChange={onDateChange} fullWidth />
-          </div>
-
-          <div className="mt-7 border-b">
+    <div className="fixed inset-0 z-50 overflow-y-auto" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60" />
+      <div className="relative flex min-h-full items-start justify-center p-3 py-4">
+        <form
+          className="relative w-full max-w-5xl rounded-2xl bg-card shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+          onSubmit={onSubmit}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between rounded-t-2xl border-b bg-primary/5 px-5 py-2.5">
+            <h2 className="text-base font-semibold text-primary">Appointment Booking</h2>
             <button
-              className="border-b-2 border-primary px-5 py-3 text-xl font-semibold text-primary"
+              aria-label="Close"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive"
               type="button"
+              onClick={onClose}
             >
-              09:00 AM - 11:59 PM
+              <X className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            {visibleSlots.map((slot, index) => (
-              <button
-                key={slot}
-                className={cn(
-                  "inline-flex h-12 items-center gap-2 rounded-xl px-3 text-primary",
-                  form.time === slot ? "bg-primary text-primary-foreground" : "bg-primary/10"
-                )}
-                type="button"
-                onClick={() => onUpdate({ time: slot })}
-              >
-                <span
-                  className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold",
-                    form.time === slot ? "bg-primary-foreground text-primary" : "bg-card text-primary"
-                  )}
+          {/* Two-column body */}
+          <div className="grid md:grid-cols-2 md:divide-x">
+
+            {/* ── LEFT: Date & Slot selection ── */}
+            <div className="space-y-2 px-4 py-3">
+              {/* Date */}
+              <CustomDateControl compact value={date} onChange={onDateChange} fullWidth />
+
+              {/* Time range tab + settings gear */}
+              <div className="flex items-center justify-between border-b">
+                <button className="border-b-2 border-primary px-3 py-1.5 text-sm font-semibold text-primary" type="button">
+                  {slotRangeLabel(slots)}
+                </button>
+                <button
+                  aria-label="Slot settings"
+                  className="mr-1 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-primary"
+                  type="button"
+                  onClick={() => { setDraft(slotSettings); setSettingsOpen((o) => !o); }}
                 >
-                  {index + 1}
-                </span>
-                {slot}
-              </button>
-            ))}
-            {!showAllSlots ? (
-              <button
-                className="h-12 rounded-md px-4 text-primary hover:bg-muted"
-                type="button"
-                onClick={() => setShowAllSlots(true)}
-              >
-                See more
-              </button>
-            ) : null}
-          </div>
-
-          <div className="mt-6 flex justify-center gap-4 text-sm">
-            <LegendItem label="Available" tone="available" />
-            <LegendItem label="Selected" tone="selected" />
-            <LegendItem label="Booked" tone="booked" />
-          </div>
-
-          <div className="mt-6 flex overflow-hidden rounded-xl border">
-            <Input
-              className="h-12 rounded-none border-0"
-              placeholder="Type a patient number or phone number, then press Enter or click Search."
-              value={patientSearch}
-              onChange={(event) => setPatientSearch(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  runSearch();
-                }
-              }}
-            />
-            <button
-              aria-label="Search patient"
-              className="flex h-12 w-14 items-center justify-center bg-primary text-primary-foreground"
-              title="Search patient"
-              type="button"
-              onClick={runSearch}
-            >
-              <Search className="h-6 w-6" />
-            </button>
-          </div>
-
-          <div className="my-6 flex items-center justify-center gap-2">
-            <div className="h-px w-40 bg-border" />
-            <h3 className="text-lg font-semibold">Add information for appointment</h3>
-            <div className="h-px w-40 bg-border" />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-2">
-              <RequiredText>Phone Number</RequiredText>
-              <div className="flex">
-                <span className="inline-flex h-12 items-center rounded-l-xl border border-r-0 bg-muted px-4 text-sm">
-                  +88
-                </span>
-                <Input
-                  className="h-12 rounded-l-none rounded-r-xl"
-                  inputMode="tel"
-                  placeholder="Type patient's phone number"
-                  value={form.phone}
-                  onChange={(event) => onUpdate({ phone: event.target.value })}
-                />
+                  <Settings className="h-3.5 w-3.5" />
+                </button>
               </div>
-            </label>
 
-            <label className="space-y-2">
-              <RequiredText>Patient&apos;s Name</RequiredText>
-              <Input
-                className="h-12 rounded-xl"
-                value={form.patientName}
-                placeholder="Type patient's name here"
-                onChange={(event) => onUpdate({ patientName: event.target.value })}
-              />
-            </label>
+              {/* Slot settings panel */}
+              {settingsOpen && (
+                <div className="rounded-xl border bg-muted/30 p-3">
+                  <p className="mb-2 text-xs font-semibold">Slot Configuration</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium">Start Hour</span>
+                      <select className="h-8 w-full rounded-lg border bg-background px-2 text-xs"
+                        value={draft.startHour}
+                        onChange={(e) => setDraft((d) => ({ ...d, startHour: Number(e.target.value) }))}>
+                        {Array.from({ length: 18 }, (_, i) => i + 6).map((h) => {
+                          const h12 = h % 12 === 0 ? 12 : h % 12;
+                          return <option key={h} value={h}>{String(h12).padStart(2, "0")} {h < 12 ? "AM" : "PM"}</option>;
+                        })}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium">Start Minute</span>
+                      <select className="h-8 w-full rounded-lg border bg-background px-2 text-xs"
+                        value={draft.startMinute}
+                        onChange={(e) => setDraft((d) => ({ ...d, startMinute: Number(e.target.value) }))}>
+                        {MINUTE_OPTIONS.map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium">Interval (min)</span>
+                      <select className="h-8 w-full rounded-lg border bg-background px-2 text-xs"
+                        value={draft.intervalMinutes}
+                        onChange={(e) => setDraft((d) => ({ ...d, intervalMinutes: Number(e.target.value) }))}>
+                        {INTERVAL_OPTIONS.map((i) => <option key={i} value={i}>{i} min</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium">Total Serials</span>
+                      <Input className="h-8 rounded-lg text-xs" inputMode="numeric" max="100" min="1" type="number"
+                        value={draft.totalSlots}
+                        onChange={(e) => setDraft((d) => ({ ...d, totalSlots: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }))} />
+                    </div>
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <Button className="h-8 text-xs" type="button" onClick={applySlotSettings}>Apply</Button>
+                    <Button className="h-8 text-xs" type="button" variant="outline" onClick={() => setSettingsOpen(false)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
 
-            <label className="space-y-2">
-              <RequiredText>Date of Birth</RequiredText>
-              <div className="flex">
-                <Input
-                  className="h-12 rounded-l-xl rounded-r-none"
-                  inputMode="numeric"
-                  placeholder="dd/mm/yyyy"
-                  value={form.dateOfBirth}
-                  onChange={(event) => onUpdate({ dateOfBirth: event.target.value })}
-                />
-                <span className="flex h-12 w-12 items-center justify-center rounded-r-xl border border-l-0 bg-muted">
-                  <CalendarDays className="h-4 w-4" />
-                </span>
+              {/* Time slots — 5 per row */}
+              <div className="grid grid-cols-5 gap-1">
+                {slots.map((slot, index) => {
+                  const booked   = bookedSlots.has(slot);
+                  const selected = form.time === slot;
+                  return (
+                    <button
+                      key={slot}
+                      disabled={booked}
+                      className={cn(
+                        "flex flex-col items-center justify-center rounded-lg py-1 px-1 text-center leading-tight transition-colors",
+                        booked   ? "cursor-not-allowed bg-muted text-muted-foreground opacity-50" :
+                        selected ? "bg-primary text-primary-foreground" :
+                                   "bg-primary/10 text-primary hover:bg-primary/20",
+                      )}
+                      type="button"
+                      onClick={() => { if (!booked) onUpdate({ time: slot }); }}
+                    >
+                      <span className="text-[10px] font-semibold opacity-70">{index + 1}</span>
+                      <span className="text-xs font-medium">{slot}</span>
+                    </button>
+                  );
+                })}
+                {slots.length === 0 && (
+                  <p className="col-span-5 text-sm text-muted-foreground">No slots. Open settings to configure.</p>
+                )}
               </div>
-            </label>
 
-            <div className="space-y-2">
-              <span className="text-sm font-medium">Age</span>
-              <div className="grid grid-cols-3 gap-2">
-                <Input
-                  className="h-12 rounded-xl"
-                  inputMode="numeric"
-                  placeholder="Year"
-                  value={form.ageYears}
-                  onChange={(event) =>
-                    onUpdate({ ageYears: event.target.value.replace(/\D/g, "") })
-                  }
-                />
-                <Input
-                  className="h-12 rounded-xl"
-                  inputMode="numeric"
-                  placeholder="Month"
-                  value={form.ageMonths}
-                  onChange={(event) =>
-                    onUpdate({ ageMonths: event.target.value.replace(/\D/g, "") })
-                  }
-                />
-                <Input
-                  className="h-12 rounded-xl"
-                  inputMode="numeric"
-                  placeholder="Day"
-                  value={form.ageDays}
-                  onChange={(event) =>
-                    onUpdate({ ageDays: event.target.value.replace(/\D/g, "") })
-                  }
-                />
+              <div className="flex justify-center gap-3 text-[10px]">
+                <LegendItem label="Available" tone="available" />
+                <LegendItem label="Selected"  tone="selected"  />
+                <LegendItem label="Booked"    tone="booked"    />
               </div>
             </div>
 
-            <SegmentedBookingField
-              label="Gender"
-              options={["Male", "Female", "Other"]}
-              required
-              value={form.gender}
-              onChange={(value) => onUpdate({ gender: value as AppointmentFormState["gender"] })}
-            />
+            {/* ── RIGHT: Patient information ── */}
+            <div className="space-y-1.5 px-4 py-3">
+              <p className="text-xs font-semibold text-muted-foreground">Patient Information</p>
 
-            <SegmentedBookingField
-              label="Type"
-              options={["New", "Follow-up", "Report"]}
-              required
-              value={form.appointmentType}
-              onChange={(value) =>
-                onUpdate({ appointmentType: value as AppointmentFormState["appointmentType"] })
-              }
-            />
-
-            <div className="md:col-span-2">
-              <button
-                className="float-right text-primary underline-offset-2 hover:underline"
-                type="button"
-                onClick={() => setCommentOpen((current) => !current)}
-              >
-                +add comment
-              </button>
-            </div>
-
-            {commentOpen ? (
-              <label className="space-y-2 md:col-span-2">
-                <span className="text-sm font-medium">Comment</span>
-                <Textarea
-                  className="min-h-24 rounded-xl"
-                  value={form.note}
-                  onChange={(event) => onUpdate({ note: event.target.value })}
-                />
+              {/* Name */}
+              <label className="block space-y-0.5">
+                <RequiredText>Patient&apos;s Name</RequiredText>
+                <Input className="h-9 rounded-xl" placeholder="Type patient's name here"
+                  value={form.patientName} onChange={(e) => onUpdate({ patientName: e.target.value })} />
               </label>
-            ) : null}
-          </div>
 
-          <div className="mt-8 grid gap-3 sm:grid-cols-[88px_minmax(0,1fr)]">
-            <Button
-              className="h-14 rounded-xl"
-              type="button"
-              variant="outline"
-              onClick={() => {
-                onReset();
-                setPatientSearch("");
-                setCommentOpen(false);
-              }}
-            >
-              Reset
-            </Button>
-            <Button className="h-14 rounded-xl bg-emerald-600 text-base hover:bg-emerald-700" type="submit">
-              Book Appointment
-            </Button>
+              {/* Phone — 11-digit search */}
+              <div className="relative space-y-0.5">
+                <RequiredText>Phone Number</RequiredText>
+                <div className="flex overflow-hidden rounded-xl border focus-within:ring-1 focus-within:ring-primary">
+                  <span className="inline-flex items-center border-r bg-muted px-3 text-sm text-muted-foreground">
+                    +88
+                  </span>
+                  <input
+                    className="h-9 flex-1 bg-background px-3 text-sm outline-none"
+                    inputMode="tel"
+                    maxLength={11}
+                    placeholder="01XXXXXXXXX"
+                    value={form.phone}
+                    onChange={(e) => handlePhoneChange(e.target.value)}
+                  />
+                  <span className={cn(
+                    "flex items-center pr-3 text-xs tabular-nums",
+                    form.phone.length === 11 ? "text-primary font-medium" : "text-muted-foreground",
+                  )}>
+                    {form.phone.length}/11
+                  </span>
+                </div>
+
+                {/* Auto-search popup */}
+                {phoneMatches.length > 0 && !phoneDismissed && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border bg-card shadow-xl">
+                    <div className="flex items-center justify-between border-b px-3 py-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {phoneMatches.length} previous patient{phoneMatches.length > 1 ? "s" : ""} — select to fill, or register new below
+                      </span>
+                      <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setPhoneDismissed(true)}>✕</button>
+                    </div>
+                    {phoneMatches.map((apt) => (
+                      <button
+                        key={`${apt.patientName}|${apt.dateOfBirth}`}
+                        type="button"
+                        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted"
+                        onClick={() => { fillFromHistory(apt); setPhoneDismissed(true); }}
+                      >
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                          {apt.patientName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium">{apt.patientName}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {[apt.ageYears ? `${apt.ageYears}Y` : "", apt.ageMonths ? `${apt.ageMonths}M` : "", apt.gender].filter(Boolean).join(" · ")}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-xs font-medium text-primary hover:bg-muted"
+                      onClick={() => setPhoneDismissed(true)}
+                    >
+                      + Register as new patient with this number
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* DOB + Age in one row */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-0.5">
+                  <span className="text-sm font-medium">Date of Birth</span>
+                  <DatePickerInput value={form.dateOfBirth} onChange={handleDobChange} placeholder="dd/mm/yyyy" />
+                </div>
+                <div className="space-y-0.5">
+                  <RequiredText>Age</RequiredText>
+                  <div className="grid grid-cols-3 gap-1">
+                    <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Yr"
+                      value={form.ageYears} onChange={(e) => onUpdate({ ageYears: e.target.value.replace(/\D/g, "") })} />
+                    <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Mo"
+                      value={form.ageMonths} onChange={(e) => onUpdate({ ageMonths: e.target.value.replace(/\D/g, "") })} />
+                    <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Dy"
+                      value={form.ageDays} onChange={(e) => onUpdate({ ageDays: e.target.value.replace(/\D/g, "") })} />
+                  </div>
+                </div>
+              </div>
+
+              <SegmentedBookingField label="Gender" options={["Male", "Female", "Other"]} required
+                value={form.gender} onChange={(v) => onUpdate({ gender: v as AppointmentFormState["gender"] })} />
+
+              <SegmentedBookingField label="Type" options={["New", "Follow-up", "Report"]} required
+                value={form.appointmentType}
+                onChange={(v) => onUpdate({ appointmentType: v as AppointmentFormState["appointmentType"] })} />
+
+              <div className="flex items-center justify-between">
+                <button className="text-xs text-primary underline-offset-2 hover:underline"
+                  type="button" onClick={() => setCommentOpen((c) => !c)}>
+                  {commentOpen ? "− remove comment" : "+ add comment"}
+                </button>
+              </div>
+
+              {commentOpen && (
+                <label className="block space-y-0.5">
+                  <span className="text-sm font-medium">Comment</span>
+                  <Textarea className="min-h-16 rounded-xl" value={form.note}
+                    onChange={(e) => onUpdate({ note: e.target.value })} />
+                </label>
+              )}
+
+              {/* Actions */}
+              <div className="grid gap-2 sm:grid-cols-[72px_minmax(0,1fr)]">
+                <Button className="h-9 rounded-xl text-sm" type="button" variant="outline"
+                  onClick={() => { onReset(); setCommentOpen(false); }}>
+                  Reset
+                </Button>
+                <Button className="h-9 rounded-xl bg-emerald-600 text-sm hover:bg-emerald-700" type="submit">
+                  Book Appointment
+                </Button>
+              </div>
+            </div>
+
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
 
-function LegendItem({
-  label,
-  tone
+// ── RegisterNewPatientDialog ───────────────────────────────────────────────
+
+function RegisterNewPatientDialog({
+  appointments, form, onClose, onReset, onSubmit, onUpdate,
 }: {
-  label: string;
-  tone: "available" | "selected" | "booked";
+  appointments: Appointment[];
+  form: AppointmentFormState;
+  onClose: () => void;
+  onReset: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onUpdate: (patch: Partial<AppointmentFormState>) => void;
 }) {
+  const [commentOpen,    setCommentOpen]    = useState(false);
+  const [phoneDismissed, setPhoneDismissed] = useState(false);
+
+  const phoneMatches = useMemo(() => {
+    if (form.phone.length !== 11) return [];
+    const seen = new Set<string>();
+    return appointments.filter((a) => {
+      if (a.phone !== form.phone || !a.patientName) return false;
+      const key = `${a.patientName}|${a.dateOfBirth}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [form.phone, appointments]);
+
+  const prevPhoneRef = useRef(form.phone);
+  if (form.phone !== prevPhoneRef.current) {
+    prevPhoneRef.current = form.phone;
+    if (phoneDismissed) setPhoneDismissed(false);
+  }
+
+  function handlePhoneChange(raw: string) {
+    onUpdate({ phone: raw.replace(/\D/g, "").slice(0, 11) });
+  }
+
+  function handleDobChange(dob: string) {
+    onUpdate({ dateOfBirth: dob, ...calcAgeFromDOB(dob) });
+  }
+
+  function fillFromHistory(apt: Appointment) {
+    onUpdate({
+      patientName: apt.patientName,
+      phone:       apt.phone,
+      dateOfBirth: apt.dateOfBirth,
+      ageYears:    apt.ageYears,
+      ageMonths:   apt.ageMonths,
+      ageDays:     apt.ageDays,
+      gender:      apt.gender,
+      bloodGroup:  apt.bloodGroup,
+      bpSystolic:  apt.bpSystolic,
+      bpDiastolic: apt.bpDiastolic,
+    });
+  }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/60" onClick={onClose} />
+
+      {/* Left sidebar — 50% of screen */}
+      <form
+        className="fixed left-0 top-0 z-50 flex h-full w-1/2 flex-col bg-card shadow-2xl"
+        style={{ animation: "slideInFromLeft 0.25s ease-out" }}
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={onSubmit}
+      >
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between border-b bg-primary/5 px-5 py-3">
+          <h2 className="text-base font-semibold text-primary">Register New Patient</h2>
+          <button
+            aria-label="Close"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive"
+            type="button"
+            onClick={onClose}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
+          <p className="text-xs font-semibold text-muted-foreground">Patient Information</p>
+
+          {/* Name */}
+          <label className="block space-y-0.5">
+            <RequiredText>Patient&apos;s Name</RequiredText>
+            <Input className="h-9 rounded-xl" placeholder="Type patient's name here"
+              value={form.patientName} onChange={(e) => onUpdate({ patientName: e.target.value })} />
+          </label>
+
+          {/* Phone — 11-digit search */}
+          <div className="relative space-y-0.5">
+            <RequiredText>Phone Number</RequiredText>
+            <div className="flex overflow-hidden rounded-xl border focus-within:ring-1 focus-within:ring-primary">
+              <span className="inline-flex items-center border-r bg-muted px-3 text-sm text-muted-foreground">
+                +88
+              </span>
+              <input
+                className="h-9 flex-1 bg-background px-3 text-sm outline-none"
+                inputMode="tel"
+                maxLength={11}
+                placeholder="01XXXXXXXXX"
+                value={form.phone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+              />
+              <span className={cn(
+                "flex items-center pr-3 text-xs tabular-nums",
+                form.phone.length === 11 ? "text-primary font-medium" : "text-muted-foreground",
+              )}>
+                {form.phone.length}/11
+              </span>
+            </div>
+
+            {/* Auto-search popup */}
+            {phoneMatches.length > 0 && !phoneDismissed && (
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border bg-card shadow-xl">
+                <div className="flex items-center justify-between border-b px-3 py-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {phoneMatches.length} existing patient{phoneMatches.length > 1 ? "s" : ""} — select to fill, or register new below
+                  </span>
+                  <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setPhoneDismissed(true)}>✕</button>
+                </div>
+                {phoneMatches.map((apt) => (
+                  <button
+                    key={`${apt.patientName}|${apt.dateOfBirth}`}
+                    type="button"
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted"
+                    onClick={() => { fillFromHistory(apt); setPhoneDismissed(true); }}
+                  >
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      {apt.patientName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium">{apt.patientName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {[apt.ageYears ? `${apt.ageYears}Y` : "", apt.ageMonths ? `${apt.ageMonths}M` : "", apt.gender].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-xs font-medium text-primary hover:bg-muted"
+                  onClick={() => setPhoneDismissed(true)}
+                >
+                  + Register as new patient with this number
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* DOB + Age in one row */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium">Date of Birth</span>
+              <DatePickerInput value={form.dateOfBirth} onChange={handleDobChange} placeholder="dd/mm/yyyy" />
+            </div>
+            <div className="space-y-0.5">
+              <RequiredText>Age</RequiredText>
+              <div className="grid grid-cols-3 gap-1">
+                <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Yr"
+                  value={form.ageYears} onChange={(e) => onUpdate({ ageYears: e.target.value.replace(/\D/g, "") })} />
+                <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Mo"
+                  value={form.ageMonths} onChange={(e) => onUpdate({ ageMonths: e.target.value.replace(/\D/g, "") })} />
+                <Input className="h-9 rounded-lg px-2 text-xs" inputMode="numeric" placeholder="Dy"
+                  value={form.ageDays} onChange={(e) => onUpdate({ ageDays: e.target.value.replace(/\D/g, "") })} />
+              </div>
+              <p className="text-[10px] text-muted-foreground">At least one field required</p>
+            </div>
+          </div>
+
+          <SegmentedBookingField label="Gender" options={["Male", "Female", "Other"]} required
+            value={form.gender} onChange={(v) => onUpdate({ gender: v as AppointmentFormState["gender"] })} />
+
+          <SegmentedBookingField label="Type" options={["New", "Follow-up", "Report"]} required
+            value={form.appointmentType}
+            onChange={(v) => onUpdate({ appointmentType: v as AppointmentFormState["appointmentType"] })} />
+
+          <div className="flex items-center justify-between">
+            <button className="text-xs text-primary underline-offset-2 hover:underline"
+              type="button" onClick={() => setCommentOpen((c) => !c)}>
+              {commentOpen ? "− remove comment" : "+ add comment"}
+            </button>
+          </div>
+
+          {commentOpen && (
+            <label className="block space-y-0.5">
+              <span className="text-sm font-medium">Comment</span>
+              <Textarea className="min-h-16 rounded-xl" value={form.note}
+                onChange={(e) => onUpdate({ note: e.target.value })} />
+            </label>
+          )}
+        </div>
+
+        {/* Sticky footer actions */}
+        <div className="shrink-0 border-t bg-card px-5 py-3">
+          <div className="grid gap-2 sm:grid-cols-[72px_minmax(0,1fr)]">
+            <Button className="h-9 rounded-xl text-sm" type="button" variant="outline"
+              onClick={() => { onReset(); setCommentOpen(false); }}>
+              Reset
+            </Button>
+            <Button className="h-9 rounded-xl text-sm" type="submit">
+              Register Patient
+            </Button>
+          </div>
+        </div>
+      </form>
+
+      <style>{`
+        @keyframes slideInFromLeft {
+          from { transform: translateX(-100%); }
+          to   { transform: translateX(0); }
+        }
+      `}</style>
+    </>
+  );
+}
+
+// ── AppointmentListModal ───────────────────────────────────────────────────
+
+function AppointmentListModal({
+  date,
+  appointments,
+  doctorName,
+  chamberName,
+  onClose,
+}: {
+  date: string;
+  appointments: Appointment[];
+  doctorName: string;
+  chamberName: string;
+  onClose: () => void;
+}) {
+  const dateObj      = new Date(`${date}T00:00:00`);
+  const dayName      = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+  const formattedDate = dateObj.toLocaleDateString("en-GB", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+  });
+
+  function formatAge(apt: Appointment): string {
+    const parts = [
+      apt.ageYears  ? `${apt.ageYears}Y`  : "",
+      apt.ageMonths ? `${apt.ageMonths}M` : "",
+    ].filter(Boolean);
+    return parts.length ? parts.join(" ") : "—";
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60" />
+      <div className="relative flex min-h-full items-start justify-center p-4 py-10">
+        <div
+          className="relative w-full max-w-5xl rounded-xl bg-white shadow-2xl dark:bg-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Toolbar */}
+          <div className="flex items-center justify-between border-b px-6 py-3 print:hidden">
+            <span className="font-semibold text-foreground">Appointment List</span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" type="button" onClick={() => window.print()}>
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
+              <button
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
+                type="button"
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Printable content */}
+          <div className="px-8 py-6">
+            {/* Report header — matches screenshot layout */}
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="space-y-0.5">
+                <p className="text-base font-bold text-foreground">{doctorName || "Doctor"}</p>
+                <p className="text-sm text-muted-foreground">MBBS, BCS, FCPS, MCPS</p>
+                <p className="text-sm text-muted-foreground">Ophthalmology, General Physician</p>
+                <p className="text-sm text-muted-foreground">Chamber : {chamberName}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-base font-bold text-foreground">Appointment List</p>
+                <p className="text-sm text-muted-foreground">Date: {formattedDate}</p>
+                <p className="text-sm text-muted-foreground">Day: {dayName}</p>
+              </div>
+            </div>
+
+            {/* Appointments table */}
+            <table className="mt-4 w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs font-semibold uppercase text-muted-foreground">
+                  <th className="py-2 pr-3">#</th>
+                  <th className="py-2 pr-3">Patient Name</th>
+                  <th className="py-2 pr-3">Age</th>
+                  <th className="py-2 pr-3">Gender</th>
+                  <th className="py-2 pr-3">Phone</th>
+                  <th className="py-2 pr-3">Type</th>
+                  <th className="py-2 pr-3">Time</th>
+                  <th className="py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {appointments.length ? (
+                  appointments.map((apt, i) => (
+                    <tr key={apt.id} className="border-b last:border-0 hover:bg-muted/30">
+                      <td className="py-2.5 pr-3 text-muted-foreground">{i + 1}</td>
+                      <td className="py-2.5 pr-3 font-medium">{apt.patientName}</td>
+                      <td className="py-2.5 pr-3 text-muted-foreground">{formatAge(apt)}</td>
+                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.gender}</td>
+                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.phone || "—"}</td>
+                      <td className="py-2.5 pr-3">
+                        <span className={cn("rounded px-2 py-0.5 text-xs font-medium",
+                          apt.appointmentType === "New"       && "bg-emerald-100 text-emerald-700",
+                          apt.appointmentType === "Follow-up" && "bg-amber-100 text-amber-700",
+                          apt.appointmentType === "Report"    && "bg-sky-100 text-sky-700",
+                        )}>
+                          {apt.appointmentType}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.time}</td>
+                      <td className="py-2.5">
+                        <span className={cn("rounded px-2 py-0.5 text-xs font-medium",
+                          apt.status === "Pending"   && "bg-yellow-100 text-yellow-700",
+                          apt.status === "Confirmed" && "bg-blue-100 text-blue-700",
+                          apt.status === "Completed" && "bg-green-100 text-green-700",
+                        )}>
+                          {apt.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="py-10 text-center text-muted-foreground">
+                      No appointments booked.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+
+            {appointments.length > 0 && (
+              <p className="mt-4 text-right text-xs text-muted-foreground">
+                Total: {appointments.length} appointment{appointments.length !== 1 ? "s" : ""}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Small presentational components ───────────────────────────────────────
+
+function LegendItem({ label, tone }: { label: string; tone: "available" | "selected" | "booked" }) {
   return (
     <span className="inline-flex items-center gap-2">
-      <span
-        className={cn(
-          "h-2 w-2 rounded-full",
-          tone === "available" && "bg-primary/10",
-          tone === "selected" && "bg-primary",
-          tone === "booked" && "bg-muted-foreground"
-        )}
-      />
-      {label}
+      <span className={cn("h-2.5 w-2.5 rounded-full",
+        tone === "available" && "border border-primary/30 bg-primary/10",
+        tone === "selected"  && "bg-primary",
+        tone === "booked"    && "bg-muted-foreground",
+      )} />
+      <span className="text-sm">{label}</span>
     </span>
   );
 }
@@ -663,11 +1812,7 @@ function RequiredText({ children }: { children: ReactNode }) {
 }
 
 function SegmentedBookingField({
-  label,
-  options,
-  required = false,
-  value,
-  onChange
+  label, options, required = false, value, onChange,
 }: {
   label: string;
   options: string[];
@@ -676,20 +1821,18 @@ function SegmentedBookingField({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       <span className="text-sm font-medium">
         {label}
-        {required ? <span className="text-destructive">*</span> : null}
+        {required && <span className="text-destructive">*</span>}
       </span>
       <div className="grid overflow-hidden rounded-xl border sm:grid-cols-3">
         {options.map((option) => (
           <button
             key={option}
             className={cn(
-              "h-12 border-b border-r text-sm font-semibold last:border-r-0 sm:border-b-0",
-              value === option
-                ? "bg-blue-500 text-white"
-                : "bg-background text-muted-foreground hover:bg-muted"
+              "h-9 border-b border-r text-xs font-semibold last:border-r-0 sm:border-b-0",
+              value === option ? "bg-blue-500 text-white" : "bg-background text-muted-foreground hover:bg-muted",
             )}
             type="button"
             onClick={() => onChange(option)}
@@ -700,18 +1843,4 @@ function SegmentedBookingField({
       </div>
     </div>
   );
-}
-
-function formatDisplayDate(value: string) {
-  if (!value) return "Select date";
-
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "Select date";
-
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  });
 }
