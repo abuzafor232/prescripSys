@@ -2351,14 +2351,11 @@ export function PrescriptionBuilder() {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-40px)] -mt-2 -mb-3 flex-col xl:-ml-[38px]">
+      <div className="flex h-[calc(100vh-40px)] -mt-2 -mb-3 flex-col lg:-ml-[38px]">
         <div className="flex flex-1 min-h-0 gap-[5px]">
 
         {/* Left sidebar: Patient Queue only */}
-        <div className="no-print hidden xl:flex w-[230px] shrink-0 self-start flex-col gap-3 overflow-y-auto py-[5px]">
-
-          {/* Page title */}
-          <h1 className="text-2xl font-semibold leading-tight px-0.5">New Prescription</h1>
+        <div className="no-print hidden lg:flex w-[200px] xl:w-[230px] shrink-0 self-start flex-col gap-3 overflow-y-auto py-[5px]">
 
           {/* Patient Queue */}
           <div className="rounded-xl border bg-card shadow-soft overflow-hidden">
@@ -2444,7 +2441,7 @@ export function PrescriptionBuilder() {
                       ) : null;
                     })()}
                   </p>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
                     {/* Add Note — transforms into textbox on click */}
                     {noteEditing ? (
                       <textarea
@@ -2640,7 +2637,7 @@ export function PrescriptionBuilder() {
           ) : null}
 
           <div
-            className="flex-1 relative p-4 min-h-0 flex flex-col"
+            className="flex-1 relative p-4 min-h-0 flex flex-col overflow-y-auto"
             style={{
               backgroundImage:
                 "radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)",
@@ -2661,7 +2658,7 @@ export function PrescriptionBuilder() {
 
             <div
               className={cn(
-                "grid flex-1 min-h-0 gap-4 md:pl-16",
+                "grid md:flex-1 md:min-h-0 gap-4 md:pl-16",
                 leftPanelCollapsed
                   ? "md:grid-cols-[64px_minmax(0,1fr)]"
                   : "md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:pr-16"
@@ -2686,7 +2683,7 @@ export function PrescriptionBuilder() {
                     {leftPanels.map((panel) => (
                       <PrescriptionOptionTile
                         key={panel}
-                        className="flex-1 min-h-0"
+                        className="md:flex-1 md:min-h-0"
                         title={panelTitles[panel]}
                         hasContent={panelHasContent(panel)}
                         preview={renderPanelPreview(panel)}
@@ -2705,7 +2702,7 @@ export function PrescriptionBuilder() {
                 {rightPanels.map((panel) => (
                   <PrescriptionOptionTile
                     key={panel}
-                    className="flex-1 min-h-0"
+                    className="md:flex-1 md:min-h-0"
                     title={panelTitles[panel]}
                     hasContent={panelHasContent(panel)}
                     preview={renderPanelPreview(panel)}

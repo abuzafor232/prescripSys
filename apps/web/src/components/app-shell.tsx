@@ -234,7 +234,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className={cn("transition-all duration-200 lg:pl-[95px]", sidebarCollapsed && "lg:pl-0")}>
         <header className="no-print sticky top-0 z-30 flex h-10 items-center border-b bg-card px-3 shadow-sm lg:px-4">
           {/* Left: logo + system name */}
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             {sidebarCollapsed && (
               <button
                 type="button"
@@ -260,15 +260,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Menu className="h-4 w-4" />
               </Button>
             )}
-            <span className="text-sm font-semibold leading-none tracking-tight">Trust Prescription System</span>
+            <span className="truncate text-sm font-semibold leading-none tracking-tight">Trust Prescription System</span>
           </div>
 
           {/* Right: consultation type + settings + avatar — always pinned to right */}
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             {/* Consultation type pill */}
             <div className="hidden items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 md:flex">
               <Briefcase className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="text-[11px] font-medium text-muted-foreground">Personal/Remote Consultations</span>
+              <span className="text-[11px] font-medium text-muted-foreground">Dr. Abdullah Eye Care Center</span>
             </div>
 
             {/* Theme toggle */}

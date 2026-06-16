@@ -4,20 +4,23 @@ import { createPortal } from "react-dom";
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 const APPOINTMENTS_STORAGE_KEY = "rx-appointments";
-const PATIENTS_STORAGE_KEY = "rx-registered-patients";
+const CHAMBERS_STORAGE_KEY     = "rx-chambers";
+const SELECTED_CHAMBER_KEY     = "rx-selected-chamber";
 
 import {
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   Eye,
   Loader2,
+  Plus,
   Printer,
   PlusCircle,
   RefreshCw,
   Settings,
-  UserPlus,
+  Trash2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,10 +29,41 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { fetchPrescriptionById, type Prescription } from "@/lib/api";
+import { fetchPrescriptionById, loginWithPassword, type Prescription } from "@/lib/api";
 import { useSessionStore } from "@/stores/session-store";
 
 // ── Types ──────────────────────────────────────────────────────────────────
+
+type Chamber = { id: string; name: string };
+
+const DEFAULT_CHAMBERS: Chamber[] = [
+  { id: "default", name: "Dr. Abdullah Eye Care Center" },
+];
+
+function loadChambers(): Chamber[] {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(CHAMBERS_STORAGE_KEY) : null;
+    const parsed = raw ? (JSON.parse(raw) as Chamber[]) : null;
+    return parsed && parsed.length > 0 ? parsed : DEFAULT_CHAMBERS;
+  } catch { return DEFAULT_CHAMBERS; }
+}
+
+function saveChambers(chambers: Chamber[]) {
+  try { localStorage.setItem(CHAMBERS_STORAGE_KEY, JSON.stringify(chambers)); } catch {}
+}
+
+function loadSelectedChamber(chambers: Chamber[]): Chamber | null {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(SELECTED_CHAMBER_KEY) : null;
+    if (!raw) return chambers[0] ?? null;
+    const saved = JSON.parse(raw) as Chamber;
+    return chambers.find((c) => c.id === saved.id) ?? chambers[0] ?? null;
+  } catch { return chambers[0] ?? null; }
+}
+
+function saveSelectedChamber(chamber: Chamber) {
+  try { localStorage.setItem(SELECTED_CHAMBER_KEY, JSON.stringify(chamber)); } catch {}
+}
 
 type AppointmentStatus = "Pending" | "Confirmed" | "Completed" | "Cancelled";
 
@@ -368,8 +402,10 @@ function CustomDateControl({
         ref={btnRef}
         type="button"
         className={cn(
-          compact ? "flex h-10 cursor-pointer overflow-hidden rounded-md border border-primary/30 bg-card transition hover:border-primary focus:outline-none focus:ring-1 focus:ring-primary" : "flex h-14 cursor-pointer overflow-hidden rounded-md border border-primary/30 bg-card transition hover:border-primary focus:outline-none focus:ring-1 focus:ring-primary",
-          fullWidth ? "w-full" : "w-full sm:w-72",
+          compact
+            ? "flex h-full min-h-[28px] cursor-pointer overflow-hidden rounded-md border border-primary/30 bg-card transition hover:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            : "flex h-14 cursor-pointer overflow-hidden rounded-md border border-primary/30 bg-card transition hover:border-primary focus:outline-none focus:ring-1 focus:ring-primary",
+          fullWidth ? "w-full" : "w-full sm:w-auto",
         )}
         onClick={openPicker}
       >
@@ -469,8 +505,6 @@ export function AppointmentBoard() {
   const user = useSessionStore((s) => s.user);
   const [selectedDate, setSelectedDate] = useState(formatISODate(new Date()));
   const [appointmentOpen, setAppointmentOpen] = useState(false);
-  const [registerOpen, setRegisterOpen] = useState(false);
-  const [patientForm, setPatientForm] = useState<AppointmentFormState>(emptyAppointmentForm);
   const [showList, setShowList] = useState(false);
   const [previewPrescriptionId, setPreviewPrescriptionId] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
@@ -481,10 +515,33 @@ export function AppointmentBoard() {
   });
   const [form, setForm] = useState<AppointmentFormState>(emptyAppointmentForm);
   const [statusMessage, setStatusMessage] = useState("");
+  const [chambers, setChambers] = useState<Chamber[]>(() => loadChambers());
+  const [selectedChamber, setSelectedChamber] = useState<Chamber | null>(() => loadSelectedChamber(loadChambers()));
+  const [chamberDropdownOpen, setChamberDropdownOpen] = useState(false);
+  const [chamberSettingsOpen, setChamberSettingsOpen] = useState(false);
+  const chamberBtnRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try { localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(appointments)); } catch {}
   }, [appointments]);
+
+  // Auto-dismiss status messages after 4 seconds
+  useEffect(() => {
+    if (!statusMessage) return;
+    const timer = setTimeout(() => setStatusMessage(""), 4000);
+    return () => clearTimeout(timer);
+  }, [statusMessage]);
+
+  // Close chamber dropdown on outside click
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (chamberBtnRef.current && !chamberBtnRef.current.contains(e.target as Node)) {
+        setChamberDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
 
   const groupedAppointments = useMemo(
     () => ({
@@ -501,6 +558,10 @@ export function AppointmentBoard() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!selectedChamber) {
+      setStatusMessage("Please select a chamber before booking.");
+      return;
+    }
     const patientName = form.patientName.trim();
     if (!patientName) { setStatusMessage("Patient name is required."); return; }
     if (!form.ageYears.trim() && !form.ageMonths.trim() && !form.ageDays.trim()) {
@@ -542,64 +603,89 @@ export function AppointmentBoard() {
     router.push(`/prescriptions/new?attend=${encodeURIComponent(apt.id)}`);
   }
 
-  function handleRegisterPatient(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const patientName = patientForm.patientName.trim();
-    if (!patientName) { setStatusMessage("Patient name is required."); return; }
-    if (!patientForm.ageYears.trim() && !patientForm.ageMonths.trim() && !patientForm.ageDays.trim()) {
-      setStatusMessage("Age is required — enter at least years, months, or days.");
-      return;
+  function handleSelectChamber(chamber: Chamber) {
+    setSelectedChamber(chamber);
+    saveSelectedChamber(chamber);
+    setChamberDropdownOpen(false);
+  }
+
+  function handleUpdateChambers(updated: Chamber[]) {
+    const withDefault = updated.length === 0 ? DEFAULT_CHAMBERS : updated;
+    setChambers(withDefault);
+    saveChambers(withDefault);
+    if (!updated.find((c) => c.id === selectedChamber?.id)) {
+      const first = withDefault[0] ?? null;
+      setSelectedChamber(first);
+      if (first) saveSelectedChamber(first);
     }
-    try {
-      const existing = JSON.parse(localStorage.getItem(PATIENTS_STORAGE_KEY) ?? "[]") as object[];
-      existing.push({
-        id: `${Date.now()}`,
-        patientName,
-        phone: patientForm.phone.trim(),
-        dateOfBirth: patientForm.dateOfBirth,
-        ageYears: patientForm.ageYears.trim(),
-        ageMonths: patientForm.ageMonths.trim(),
-        ageDays: patientForm.ageDays.trim(),
-        gender: patientForm.gender,
-        bloodGroup: patientForm.bloodGroup,
-        registeredAt: new Date().toISOString(),
-      });
-      localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(existing));
-    } catch {}
-    setPatientForm(emptyAppointmentForm);
-    setRegisterOpen(false);
-    setStatusMessage(`Patient "${patientName}" registered successfully.`);
   }
 
   return (
     <>
       <div className="space-y-2 pb-6">
-        {/* Header row */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">Appointments</h1>
-            <p className="text-xs text-muted-foreground">Personal/Remote Consultations</p>
+        {/* Header row — all controls in one line */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Chamber selector — primary styled */}
+          <div ref={chamberBtnRef} className="relative">
+            <button
+              type="button"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+              onClick={() => setChamberDropdownOpen((o) => !o)}
+            >
+              {selectedChamber?.name ?? "Select Chamber"}
+              <ChevronDown className="h-3 w-3 opacity-70" />
+            </button>
+            {chamberDropdownOpen && (
+              <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-xl border bg-card shadow-xl">
+                <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Chambers
+                </div>
+                {chambers.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted",
+                      selectedChamber?.id === c.id && "text-primary font-semibold"
+                    )}
+                    onClick={() => handleSelectChamber(c)}
+                  >
+                    {c.name}
+                    {selectedChamber?.id === c.id && <span className="ml-auto text-[10px] bg-primary/10 text-primary rounded px-1">Active</span>}
+                  </button>
+                ))}
+                <div className="border-t" />
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
+                  onClick={() => { setChamberDropdownOpen(false); setChamberSettingsOpen(true); }}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  Chamber Settings
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <CustomDateControl value={selectedDate} onChange={setSelectedDate} />
-            <Button size="sm" type="button" variant="outline" onClick={() => setRegisterOpen(true)}>
-              <UserPlus className="h-3.5 w-3.5" />
-              Register New Patient
-            </Button>
-            <Button size="sm" type="button" onClick={() => setAppointmentOpen(true)}>
-              Book Appointment
-              <PlusCircle className="h-3.5 w-3.5" />
-            </Button>
-            <Button size="sm" type="button" variant="outline" onClick={() => setStatusMessage("Board refreshed.")}>
-              Refresh
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-            <Button size="sm" type="button" variant="outline" onClick={() => setShowList(true)}>
-              <Printer className="h-3.5 w-3.5" />
-              Appointment List
-            </Button>
+          {/* Date control — same height as sm buttons */}
+          <div className="h-7">
+            <CustomDateControl value={selectedDate} onChange={setSelectedDate} compact fullWidth={false} />
           </div>
+          <Button size="sm" type="button" onClick={() => {
+            if (!selectedChamber) { setStatusMessage("Please select a chamber first."); return; }
+            setAppointmentOpen(true);
+          }}>
+            Book Appointment
+            <PlusCircle className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="sm" type="button" variant="outline" onClick={() => setStatusMessage("Board refreshed.")}>
+            Refresh
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="sm" type="button" variant="outline" onClick={() => setShowList(true)}>
+            <Printer className="h-3.5 w-3.5" />
+            Appointment List
+          </Button>
         </div>
 
         {statusMessage ? (
@@ -609,7 +695,7 @@ export function AppointmentBoard() {
         ) : null}
 
         {/* Full-width board */}
-        <div className="grid gap-3 xl:grid-cols-3">
+        <div className="grid gap-3 lg:grid-cols-3">
 
           {/* ── Pending ── */}
           <div className="min-w-0">
@@ -619,9 +705,9 @@ export function AppointmentBoard() {
                 ({groupedAppointments["Pending"].length})
               </span>
             </div>
-            <div className="mt-2 overflow-hidden rounded-md border">
+            <div className="mt-2 overflow-x-auto rounded-md border">
               {groupedAppointments["Pending"].length ? (
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[320px] text-sm">
                   <thead className="bg-muted/50">
                     <tr className="border-b text-xs text-muted-foreground">
                       <th className="w-7 py-1.5 pl-3 text-left font-medium">#</th>
@@ -676,9 +762,9 @@ export function AppointmentBoard() {
                 ({groupedAppointments["Confirmed"].length})
               </span>
             </div>
-            <div className="mt-2 overflow-hidden rounded-md border">
+            <div className="mt-2 overflow-x-auto rounded-md border">
               {groupedAppointments["Confirmed"].length ? (
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[280px] text-sm">
                   <thead className="bg-muted/50">
                     <tr className="border-b text-xs text-muted-foreground">
                       <th className="w-7 py-1.5 pl-3 text-left font-medium">#</th>
@@ -748,14 +834,12 @@ export function AppointmentBoard() {
         </div>
       </div>
 
-      {registerOpen && (
-        <RegisterNewPatientDialog
-          appointments={appointments}
-          form={patientForm}
-          onClose={() => setRegisterOpen(false)}
-          onReset={() => setPatientForm(emptyAppointmentForm)}
-          onSubmit={handleRegisterPatient}
-          onUpdate={(patch) => setPatientForm((cur) => ({ ...cur, ...patch }))}
+      {chamberSettingsOpen && (
+        <ChamberSettingsDialog
+          chambers={chambers}
+          userEmail={user?.email ?? ""}
+          onClose={() => setChamberSettingsOpen(false)}
+          onUpdate={handleUpdateChambers}
         />
       )}
 
@@ -777,7 +861,7 @@ export function AppointmentBoard() {
           date={selectedDate}
           appointments={appointments}
           doctorName={user?.fullName ?? ""}
-          chamberName="Personal/Remote Consultations"
+          chamberName={selectedChamber?.name ?? "Dr. Abdullah Eye Care Center"}
           onClose={() => setShowList(false)}
         />
       )}
@@ -1429,6 +1513,157 @@ function BookAppointmentDialog({
   );
 }
 
+// ── ChamberSettingsDialog ──────────────────────────────────────────────────
+
+function ChamberSettingsDialog({
+  chambers,
+  userEmail,
+  onClose,
+  onUpdate,
+}: {
+  chambers: Chamber[];
+  userEmail: string;
+  onClose: () => void;
+  onUpdate: (chambers: Chamber[]) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [verified, setVerified] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [localChambers, setLocalChambers] = useState<Chamber[]>(chambers);
+  const [newName, setNewName] = useState("");
+  const [addError, setAddError] = useState("");
+
+  async function handleVerify() {
+    if (!password.trim()) { setAuthError("Enter your login password."); return; }
+    setVerifying(true);
+    setAuthError("");
+    try {
+      await loginWithPassword(userEmail, password);
+      setVerified(true);
+    } catch {
+      setAuthError("Incorrect password. Please try again.");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  function handleAdd() {
+    const name = newName.trim();
+    if (!name) { setAddError("Chamber name cannot be empty."); return; }
+    if (localChambers.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+      setAddError("A chamber with this name already exists.");
+      return;
+    }
+    setLocalChambers((cur) => [...cur, { id: `ch-${Date.now()}`, name }]);
+    setNewName("");
+    setAddError("");
+  }
+
+  function handleRemove(id: string) {
+    setLocalChambers((cur) => cur.filter((c) => c.id !== id));
+  }
+
+  function handleSave() {
+    onUpdate(localChambers);
+    onClose();
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-xl border bg-card shadow-2xl">
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <h2 className="text-base font-semibold">Chamber Settings</h2>
+          <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          {!verified ? (
+            /* Password verification step */
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Enter your login password to manage chambers.
+              </p>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Login Password</label>
+                <input
+                  autoFocus
+                  type="password"
+                  className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void handleVerify(); }}
+                />
+              </div>
+              {authError && <p className="text-xs text-destructive">{authError}</p>}
+              <Button className="w-full" disabled={verifying} onClick={() => void handleVerify()}>
+                {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Verify &amp; Continue
+              </Button>
+            </div>
+          ) : (
+            /* Chamber management step */
+            <div className="space-y-4">
+              {/* Existing chambers */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Active Chambers</p>
+                {localChambers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">No chambers. Add one below.</p>
+                ) : (
+                  <div className="divide-y rounded-md border">
+                    {localChambers.map((c) => (
+                      <div key={c.id} className="flex items-center justify-between px-3 py-2">
+                        <span className="text-sm font-medium">{c.name}</span>
+                        <button
+                          type="button"
+                          className="flex h-6 w-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
+                          onClick={() => handleRemove(c.id)}
+                          title="Remove chamber"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Add new chamber */}
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">Add Chamber</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="Chamber name"
+                    value={newName}
+                    onChange={(e) => { setNewName(e.target.value); setAddError(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+                  />
+                  <Button type="button" variant="outline" onClick={handleAdd}>
+                    <Plus className="h-4 w-4" />
+                    Add
+                  </Button>
+                </div>
+                {addError && <p className="text-xs text-destructive">{addError}</p>}
+              </div>
+
+              <div className="flex gap-2 border-t pt-3">
+                <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+                <Button className="flex-1" onClick={handleSave}>Save Changes</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── RegisterNewPatientDialog ───────────────────────────────────────────────
 
 function RegisterNewPatientDialog({
@@ -1490,9 +1725,9 @@ function RegisterNewPatientDialog({
       {/* Backdrop */}
       <div className="fixed inset-0 z-40 bg-black/60" onClick={onClose} />
 
-      {/* Left sidebar — 50% of screen */}
+      {/* Left sidebar — full screen on mobile, 50% on md+ */}
       <form
-        className="fixed left-0 top-0 z-50 flex h-full w-1/2 flex-col bg-card shadow-2xl"
+        className="fixed left-0 top-0 z-50 flex h-full w-full flex-col bg-card shadow-2xl sm:w-3/4 md:w-1/2"
         style={{ animation: "slideInFromLeft 0.25s ease-out" }}
         onClick={(e) => e.stopPropagation()}
         onSubmit={onSubmit}
@@ -1722,7 +1957,8 @@ function AppointmentListModal({
             </div>
 
             {/* Appointments table */}
-            <table className="mt-4 w-full border-collapse text-sm">
+            <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b text-left text-xs font-semibold uppercase text-muted-foreground">
                   <th className="py-2 pr-3">#</th>
@@ -1774,6 +2010,7 @@ function AppointmentListModal({
                 )}
               </tbody>
             </table>
+            </div>
 
             {appointments.length > 0 && (
               <p className="mt-4 text-right text-xs text-muted-foreground">

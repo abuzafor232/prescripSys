@@ -547,24 +547,9 @@ const defaultRange = getDefaultRange();
 const actionLinkClass =
   "inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition";
 
-const quickActions = [
-  {
-    href: "/appointments",
-    label: "Appointment",
-    icon: CalendarClock,
-    className: "bg-muted hover:bg-muted/80",
-  },
-  {
-    href: "/prescriptions/new",
-    label: "New Prescription",
-    icon: FileText,
-    className: "bg-primary text-primary-foreground hover:bg-primary/90",
-  },
-] as const;
-
-// Demo chamber data — in production this comes from the selected chamber in the header
+// Demo chamber data
 const chamberData = {
-  name: "Personal/Remote Consultations",
+  name: "Dr. Abdullah Eye Care Center",
   timePerPatient: 5 as number | null,
   newPatientFee:  null as number | null,
   followUpFee:    null as number | null,
@@ -577,6 +562,14 @@ const chamberRows: { label: string; value: number | null; unit: string }[] = [
   { label: "Report",      value: chamberData.reportFee,     unit: "৳" },
 ];
 
+// All-time demo totals (sum from 2022-01-01 to today)
+function getAllTimeSummary(): { patients: number; prescriptions: number } {
+  const start = "2022-01-01";
+  const end   = getDateInputValue(new Date());
+  const s     = getRangeSummary(start, end);
+  return { patients: s.patients, prescriptions: s.prescriptions };
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
@@ -584,8 +577,13 @@ export function Dashboard() {
   const [endDate,   setEndDate]   = useState(defaultRange.end);
   const [chartTab,  setChartTab]  = useState<ChartTab>("Daily");
 
+  const today        = getDateInputValue(new Date());
+  const isDefaultRange = startDate === today && endDate === today;
   const selectedDays = getDaysInRange(startDate, endDate);
   const summary      = useMemo(() => getRangeSummary(startDate, endDate), [startDate, endDate]);
+  const allTime      = useMemo(() => getAllTimeSummary(), []);
+  const totalPatients     = isDefaultRange ? allTime.patients      : summary.patients;
+  const totalPrescriptions = isDefaultRange ? allTime.prescriptions : summary.prescriptions;
   const rangeLabel   = `${formatDisplayDate(startDate)} — ${formatDisplayDate(endDate)}`;
 
   const chartData = useMemo<ChartPoint[]>(() => {
@@ -612,17 +610,10 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-5">
-      {/* ── Header + date range pickers ── */}
-      <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            {rangeLabel} · {formatDayCount(selectedDays.length)}
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+    <div className="space-y-4">
+      {/* ── Top controls: date pickers left, appointment button right ── */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="grid gap-3 sm:grid-cols-2">
             <DatePickerCard
               label="Start Date"
@@ -636,27 +627,22 @@ export function Dashboard() {
               onChange={handleEndDateChange}
             />
           </div>
-
-          <div className="flex gap-2">
-            {quickActions.map((action) => {
-              const Icon = action.icon;
-              return (
-                <Link
-                  key={action.href}
-                  href={action.href}
-                  className={`${actionLinkClass} ${action.className}`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {action.label}
-                </Link>
-              );
-            })}
-          </div>
+          <p className="pb-1 text-xs text-muted-foreground">
+            {rangeLabel} · {formatDayCount(selectedDays.length)}
+          </p>
         </div>
+
+        <Link
+          href="/appointments"
+          className={`${actionLinkClass} bg-muted hover:bg-muted/80`}
+        >
+          <CalendarClock className="h-4 w-4" />
+          Appointment
+        </Link>
       </div>
 
       {/* ── Stat cards ── */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((stat) => {
           const Icon  = stat.icon;
           const value = summary[stat.key];
@@ -679,8 +665,8 @@ export function Dashboard() {
         })}
       </div>
 
-      {/* ── Report chart + Chamber card side by side ── */}
-      <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
+      {/* ── Report chart + Chamber card + Total stats side by side ── */}
+      <div className="grid gap-5 lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px]">
 
         {/* Report bar chart */}
         <Card>
@@ -704,37 +690,64 @@ export function Dashboard() {
           </CardHeader>
           <CardContent className="pt-5">
             <ReportBarChart
-            data={chartData}
-            label={chartLabel}
-            yFixed={chartTab === "Daily" ? 80 : undefined}
-            maxColW={chartTab === "Daily" ? 55 : undefined}
-          />
+              data={chartData}
+              label={chartLabel}
+              maxColW={chartTab === "Monthly" ? undefined : 55}
+            />
           </CardContent>
         </Card>
 
-        {/* Chamber info card */}
-        <Card className="xl:self-start">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">{chamberData.name}</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {chamberRows.map(({ label, value, unit }) => (
-              <div
-                key={label}
-                className="flex items-center justify-between border-b px-6 py-3 last:border-b-0"
-              >
-                <span className="text-sm font-medium text-amber-600">{label}</span>
-                <span className="text-sm text-foreground">
-                  {value != null
-                    ? unit === "min"
-                      ? value
-                      : `${unit}${value.toLocaleString("en-US")}`
-                    : ""}
-                </span>
+        {/* Right column: Chamber info + Total stats */}
+        <div className="flex flex-col gap-5">
+          {/* Chamber info card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-semibold">{chamberData.name}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {chamberRows.map(({ label, value, unit }) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between border-b px-6 py-3 last:border-b-0"
+                >
+                  <span className="text-sm font-medium text-amber-600">{label}</span>
+                  <span className="text-sm text-foreground">
+                    {value != null
+                      ? unit === "min"
+                        ? value
+                        : `${unit}${value.toLocaleString("en-US")}`
+                      : ""}
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Total stats card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-semibold">
+                {isDefaultRange ? "All Time" : "Selected Period"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between border-b px-6 py-3">
+                <div className="flex items-center gap-2">
+                  <UsersRound className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-muted-foreground">Total Patients</span>
+                </div>
+                <span className="text-sm font-semibold">{totalPatients.toLocaleString("en-US")}</span>
               </div>
-            ))}
-          </CardContent>
-        </Card>
+              <div className="flex items-center justify-between px-6 py-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-rose-600" />
+                  <span className="text-sm font-medium text-muted-foreground">Total Prescriptions</span>
+                </div>
+                <span className="text-sm font-semibold">{totalPrescriptions.toLocaleString("en-US")}</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
       </div>
     </div>
