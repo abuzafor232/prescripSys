@@ -3154,6 +3154,80 @@ export function PrescriptionBuilder() {
   );
 }
 
+// ── RxGlassBlock ──────────────────────────────────────────────────────────
+
+function RxGlassBlock({ p, title }: { p: GlassPrescriptionState; title?: string }) {
+  const hasEyeData = (["right", "left"] as const).some(
+    (side) => p[side].sphere || p[side].cyl || p[side].axis || p[side].va
+  );
+  return (
+    <div className="space-y-1 text-sm">
+      {title && <p className="text-xs font-semibold text-muted-foreground">{title}</p>}
+      {hasEyeData && (
+        <div className="overflow-hidden rounded border text-xs">
+          <div className="grid grid-cols-[36px_1fr_1fr_1fr_1fr] border-b bg-muted/60 text-center font-semibold text-muted-foreground">
+            <div className="border-r py-1" />
+            <div className="border-r py-1">Sph</div>
+            <div className="border-r py-1">CYL</div>
+            <div className="border-r py-1">Axis</div>
+            <div className="py-1">VA</div>
+          </div>
+          {(["right", "left"] as const).map((side) => (
+            <div key={side} className="grid grid-cols-[36px_1fr_1fr_1fr_1fr] border-b last:border-b-0 text-center">
+              <div className="border-r py-1 font-semibold text-muted-foreground">{side === "right" ? "RE" : "LE"}</div>
+              {(["sphere", "cyl", "axis", "va"] as const).map((f) => (
+                <div key={f} className="border-r py-1 last:border-r-0">
+                  {p[side][f] || <span className="text-muted-foreground/30">—</span>}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {(p.add || p.ipd || p.glassFeatures.length > 0 || p.lensType || p.note) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+          {p.add && <span><span className="text-muted-foreground">Near Add </span>{p.add} DS</span>}
+          {p.ipd && <span><span className="text-muted-foreground">IPD </span>{p.ipd} mm</span>}
+          {p.glassFeatures.length > 0 && <span><span className="text-muted-foreground">Coating </span>{p.glassFeatures.join(" + ")}</span>}
+          {p.lensType && <span><span className="text-muted-foreground">Lens </span>{p.lensType}</span>}
+          {p.note && <span><span className="text-muted-foreground">Remarks </span>{p.note}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function glassBlockHtml(p: GlassPrescriptionState, label?: string): string {
+  const hasEyeData = (["right", "left"] as const).some(
+    (side) => p[side].sphere || p[side].cyl || p[side].axis || p[side].va
+  );
+  const eyeTable = hasEyeData ? `
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px">
+      <thead><tr style="background:#f5f5f5">
+        <th style="width:36px;border:1px solid #ddd;padding:2px 4px"></th>
+        <th style="border:1px solid #ddd;padding:2px 4px;text-align:center">Sph</th>
+        <th style="border:1px solid #ddd;padding:2px 4px;text-align:center">CYL</th>
+        <th style="border:1px solid #ddd;padding:2px 4px;text-align:center">Axis</th>
+        <th style="border:1px solid #ddd;padding:2px 4px;text-align:center">VA</th>
+      </tr></thead>
+      <tbody>
+        ${(["right", "left"] as const).map((side) => `
+        <tr>
+          <td style="border:1px solid #ddd;padding:2px 4px;font-weight:600;text-align:center">${side === "right" ? "RE" : "LE"}</td>
+          ${(["sphere", "cyl", "axis", "va"] as const).map((f) => `<td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${p[side][f] || "—"}</td>`).join("")}
+        </tr>`).join("")}
+      </tbody>
+    </table>` : "";
+  const extras = [
+    p.add ? `Near Add: ${p.add} DS` : "",
+    p.ipd ? `IPD: ${p.ipd} mm` : "",
+    p.glassFeatures.length ? `Coating: ${p.glassFeatures.join(" + ")}` : "",
+    p.lensType ? `Lens: ${p.lensType}` : "",
+    p.note ? `Remarks: ${p.note}` : "",
+  ].filter(Boolean).join(" &nbsp;|&nbsp; ");
+  return `${label ? `<p style="font-weight:600;font-size:11px;margin:0 0 4px">${label}</p>` : ""}${eyeTable}${extras ? `<p style="font-size:11px;margin:2px 0 0">${extras}</p>` : ""}`;
+}
+
 // ── RxPreviewModal ─────────────────────────────────────────────────────────
 
 function RxPreviewModal({ prescriptionId, onClose }: { prescriptionId: string; onClose: () => void }) {
@@ -3208,6 +3282,15 @@ function RxPreviewModal({ prescriptionId, onClose }: { prescriptionId: string; o
       ${rx.diagnoses?.length ? `<div class="section"><div class="section-title">Diagnoses</div><ol style="margin:4px 0 0;padding-left:18px">${rx.diagnoses.map(d => `<li>${d.name}${d.note ? ` (${d.note})` : ""}</li>`).join("")}</ol></div>` : ""}
       ${rx.medicines?.length ? `<div class="section"><div class="section-title">Medicines</div><table><thead><tr><th>#</th><th>Medicine</th><th>Dose</th><th>Duration</th><th>Instruction</th></tr></thead><tbody>${medicineRows}</tbody></table></div>` : ""}
       ${rx.investigations?.length ? `<div class="section"><div class="section-title">Investigations</div><ol style="margin:4px 0 0;padding-left:18px">${rx.investigations.map(inv => `<li>${inv.name}${inv.note ? ` (${inv.note})` : ""}</li>`).join("")}</ol></div>` : ""}
+      ${(() => {
+        const v = rx.metadata?.vision as VisionState | undefined;
+        if (!v || !glassPrescriptionHasContent(v)) return "";
+        const primary = glassBlockHtml(v);
+        const secondary = v.secondaryGlass && glassPrescriptionHasContent(v.secondaryGlass)
+          ? glassBlockHtml(v.secondaryGlass, "Secondary Glass")
+          : "";
+        return `<div class="section"><div class="section-title">Glass Prescription</div>${primary}${secondary ? `<div style="margin-top:8px">${secondary}</div>` : ""}</div>`;
+      })()}
       ${rx.advice ? `<div class="section"><div class="section-title">Advice</div>${rx.advice}</div>` : ""}
       <script>window.onload=()=>window.print()</script>
     </body></html>`);
@@ -3298,6 +3381,21 @@ function RxPreviewModal({ prescriptionId, onClose }: { prescriptionId: string; o
                 </div>
               )}
               {rx.investigations?.length > 0 && <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Investigations</p><ol className="ml-4 space-y-0.5 list-decimal">{rx.investigations.map((inv, i) => <li key={i}>{inv.name}{inv.note ? ` (${inv.note})` : ""}</li>)}</ol></div>}
+              {(() => {
+                const v = rx.metadata?.vision as VisionState | undefined;
+                if (!v || !glassPrescriptionHasContent(v)) return null;
+                return (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2">Glass Prescription</p>
+                    <div className="space-y-3">
+                      <RxGlassBlock p={v} />
+                      {v.secondaryGlass && glassPrescriptionHasContent(v.secondaryGlass) && (
+                        <RxGlassBlock p={v.secondaryGlass} title="Secondary Glass" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               {rx.advice && <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Advice</p><p className="whitespace-pre-wrap">{rx.advice}</p></div>}
               {rx.followUpDate && (
                 <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
