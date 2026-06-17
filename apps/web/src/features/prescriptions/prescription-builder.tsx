@@ -2695,13 +2695,13 @@ export function PrescriptionBuilder() {
 
             <div
               className={cn(
-                "grid gap-4 md:pl-16",
+                "grid gap-4 md:pl-16 min-h-full",
                 leftPanelCollapsed
                   ? "md:grid-cols-[64px_minmax(0,1fr)]"
                   : "md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:pr-16"
               )}
             >
-              <div className={cn("flex flex-col md:border-r", leftPanelCollapsed ? "md:pr-2" : "md:pr-4")}>
+              <div className={cn("flex flex-col h-full md:border-r", leftPanelCollapsed ? "md:pr-2" : "md:pr-4")}>
 
                 {leftPanelCollapsed ? (
                   <div className="grid grid-cols-5 gap-1 md:grid-cols-1">
@@ -2720,7 +2720,7 @@ export function PrescriptionBuilder() {
                     {leftPanels.map((panel) => (
                       <PrescriptionOptionTile
                         key={panel}
-                        className=""
+                        className="md:flex-1"
                         title={panelTitles[panel]}
                         hasContent={panelHasContent(panel)}
                         preview={renderPanelPreview(panel)}
@@ -2735,11 +2735,11 @@ export function PrescriptionBuilder() {
                 )}
               </div>
 
-              <div className="flex flex-col">
+              <div className="flex flex-col h-full">
                 {rightPanels.map((panel) => (
                   <PrescriptionOptionTile
                     key={panel}
-                    className="md:flex-1 md:min-h-0"
+                    className="md:flex-1"
                     title={panelTitles[panel]}
                     hasContent={panelHasContent(panel)}
                     preview={renderPanelPreview(panel)}
