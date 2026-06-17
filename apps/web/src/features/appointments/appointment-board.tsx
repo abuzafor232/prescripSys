@@ -1901,16 +1901,16 @@ function AppointmentListModal({
 
           {/* Printable content */}
           <div className="px-8 py-6">
-            {/* Report header — matches screenshot layout */}
+            {/* Report header */}
             <div className="flex items-start justify-between border-b pb-4">
               <div className="space-y-0.5">
                 <p className="text-base font-bold text-foreground">{doctorName || "Doctor"}</p>
                 <p className="text-sm text-muted-foreground">MBBS, BCS, FCPS, MCPS</p>
                 <p className="text-sm text-muted-foreground">Ophthalmology, General Physician</p>
-                <p className="text-sm text-muted-foreground">Chamber : {chamberName}</p>
               </div>
-              <div className="text-right">
-                <p className="text-base font-bold text-foreground">Appointment List</p>
+              <div className="text-right space-y-0.5">
+                <p className="text-base font-bold text-foreground">{chamberName}</p>
+                <p className="text-sm text-muted-foreground">Appointment List</p>
                 <p className="text-sm text-muted-foreground">Date: {formattedDate}</p>
                 <p className="text-sm text-muted-foreground">Day: {dayName}</p>
               </div>
