@@ -1933,34 +1933,42 @@ function AppointmentListModal({
               </thead>
               <tbody>
                 {appointments.length ? (
-                  appointments.map((apt, i) => (
-                    <tr key={apt.id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="py-2.5 pr-3 text-muted-foreground">{i + 1}</td>
-                      <td className="py-2.5 pr-3 font-medium">{apt.patientName}</td>
-                      <td className="py-2.5 pr-3 text-muted-foreground">{formatAge(apt)}</td>
-                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.gender}</td>
-                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.phone || "—"}</td>
+                  appointments.map((apt, i) => {
+                    const cancelled = apt.status === "Cancelled";
+                    return (
+                    <tr key={apt.id} className={cn(
+                      "border-b last:border-0",
+                      cancelled ? "bg-red-50 dark:bg-red-950/20" : "hover:bg-muted/30",
+                    )}>
+                      <td className={cn("py-2.5 pr-3", cancelled ? "text-red-400 line-through" : "text-muted-foreground")}>{i + 1}</td>
+                      <td className={cn("py-2.5 pr-3 font-medium", cancelled && "text-red-500/70 line-through")}>{apt.patientName}</td>
+                      <td className={cn("py-2.5 pr-3", cancelled ? "text-red-400/70 line-through" : "text-muted-foreground")}>{formatAge(apt)}</td>
+                      <td className={cn("py-2.5 pr-3", cancelled ? "text-red-400/70 line-through" : "text-muted-foreground")}>{apt.gender}</td>
+                      <td className={cn("py-2.5 pr-3", cancelled ? "text-red-400/70 line-through" : "text-muted-foreground")}>{apt.phone || "—"}</td>
                       <td className="py-2.5 pr-3">
                         <span className={cn("rounded px-2 py-0.5 text-xs font-medium",
-                          apt.appointmentType === "New"       && "bg-emerald-100 text-emerald-700",
-                          apt.appointmentType === "Follow-up" && "bg-amber-100 text-amber-700",
-                          apt.appointmentType === "Report"    && "bg-sky-100 text-sky-700",
+                          cancelled                              ? "bg-red-100 text-red-400 line-through dark:bg-red-900/30" :
+                          apt.appointmentType === "New"         ? "bg-emerald-100 text-emerald-700" :
+                          apt.appointmentType === "Follow-up"   ? "bg-amber-100 text-amber-700" :
+                          apt.appointmentType === "Report"      ? "bg-sky-100 text-sky-700" : "",
                         )}>
                           {apt.appointmentType}
                         </span>
                       </td>
-                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.time}</td>
+                      <td className={cn("py-2.5 pr-3", cancelled ? "text-red-400/70 line-through" : "text-muted-foreground")}>{apt.time}</td>
                       <td className="py-2.5">
                         <span className={cn("rounded px-2 py-0.5 text-xs font-medium",
                           apt.status === "Pending"   && "bg-yellow-100 text-yellow-700",
                           apt.status === "Confirmed" && "bg-blue-100 text-blue-700",
                           apt.status === "Completed" && "bg-green-100 text-green-700",
+                          apt.status === "Cancelled" && "bg-red-100 text-red-600 dark:bg-red-900/30",
                         )}>
                           {apt.status}
                         </span>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan={8} className="py-10 text-center text-muted-foreground">
