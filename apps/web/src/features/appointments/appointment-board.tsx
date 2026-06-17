@@ -1235,19 +1235,14 @@ function BookAppointmentDialog({
           {/* Two-column body */}
           <div className="grid md:grid-cols-2 md:divide-x">
 
-            {/* ── LEFT: Date & Slot selection ── */}
+            {/* ── LEFT: Slot selection ── */}
             <div className="space-y-2 px-4 py-3">
-              {/* Date */}
-              <CustomDateControl compact value={date} onChange={onDateChange} fullWidth />
-
-              {/* Time range tab + settings gear */}
-              <div className="flex items-center justify-between border-b">
-                <button className="border-b-2 border-primary px-3 py-1.5 text-sm font-semibold text-primary" type="button">
-                  {slotRangeLabel(slots)}
-                </button>
+              {/* Slots header with gear */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground">Select a Time Slot</span>
                 <button
                   aria-label="Slot settings"
-                  className="mr-1 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-primary"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-primary"
                   type="button"
                   onClick={() => { setDraft(slotSettings); setSettingsOpen((o) => !o); }}
                 >
