@@ -1313,7 +1313,7 @@ function BookAppointmentDialog({
                                    "bg-primary/10 text-primary hover:bg-primary/25",
                       )}
                       type="button"
-                      onClick={() => { if (!booked) onUpdate({ time: slot }); }}
+                      onClick={() => { if (!booked) onUpdate({ time: selected ? "" : slot }); }}
                     >
                       <span className="tabular-nums text-[10px] font-semibold leading-none">
                         {slot.replace(/ (AM|PM)$/i, "")}
