@@ -6204,7 +6204,7 @@ function ReferralSidebar({
             No doctors match &quot;{searchQuery}&quot;.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {filteredDoctors.map((doc) => {
               const selected = isDoctorSelected(doc);
               return (
