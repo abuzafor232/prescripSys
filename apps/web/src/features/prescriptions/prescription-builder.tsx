@@ -1994,7 +1994,7 @@ export function PrescriptionBuilder() {
           <div className="space-y-1">
             {hasEyeData && (
               <div className="overflow-hidden rounded border text-[10px]">
-                <div className="grid grid-cols-[28px_1fr_1fr_1fr_1fr] border-b bg-muted/60 text-center font-semibold text-muted-foreground">
+                <div className="grid grid-cols-[60px_1fr_1fr_1fr_1fr] border-b bg-muted/60 text-center font-semibold text-muted-foreground">
                   <div className="border-r py-0.5" />
                   <div className="border-r py-0.5">Sph</div>
                   <div className="border-r py-0.5">CYL</div>
@@ -2002,9 +2002,9 @@ export function PrescriptionBuilder() {
                   <div className="py-0.5">VA</div>
                 </div>
                 {(["right", "left"] as const).map((side) => (
-                  <div key={side} className="grid grid-cols-[28px_1fr_1fr_1fr_1fr] border-b last:border-b-0 text-center">
+                  <div key={side} className="grid grid-cols-[60px_1fr_1fr_1fr_1fr] border-b last:border-b-0 text-center">
                     <div className="border-r py-0.5 font-semibold text-muted-foreground">
-                      {side === "right" ? "RE" : "LE"}
+                      {side === "right" ? "Right Eye" : "Left Eye"}
                     </div>
                     {(["sphere", "cyl", "axis", "va"] as const).map((f) => (
                       <div key={f} className="border-r py-0.5 last:border-r-0 text-slate-700">
@@ -3165,7 +3165,7 @@ function RxGlassBlock({ p, title }: { p: GlassPrescriptionState; title?: string 
       {title && <p className="text-xs font-semibold text-muted-foreground">{title}</p>}
       {hasEyeData && (
         <div className="overflow-hidden rounded border text-xs">
-          <div className="grid grid-cols-[36px_1fr_1fr_1fr_1fr] border-b bg-muted/60 text-center font-semibold text-muted-foreground">
+          <div className="grid grid-cols-[56px_1fr_1fr_1fr_1fr] border-b bg-muted/60 text-center font-semibold text-muted-foreground">
             <div className="border-r py-1" />
             <div className="border-r py-1">Sph</div>
             <div className="border-r py-1">CYL</div>
@@ -3173,8 +3173,8 @@ function RxGlassBlock({ p, title }: { p: GlassPrescriptionState; title?: string 
             <div className="py-1">VA</div>
           </div>
           {(["right", "left"] as const).map((side) => (
-            <div key={side} className="grid grid-cols-[36px_1fr_1fr_1fr_1fr] border-b last:border-b-0 text-center">
-              <div className="border-r py-1 font-semibold text-muted-foreground">{side === "right" ? "RE" : "LE"}</div>
+            <div key={side} className="grid grid-cols-[56px_1fr_1fr_1fr_1fr] border-b last:border-b-0 text-center">
+              <div className="border-r py-1 font-semibold text-muted-foreground">{side === "right" ? "Right Eye" : "Left Eye"}</div>
               {(["sphere", "cyl", "axis", "va"] as const).map((f) => (
                 <div key={f} className="border-r py-1 last:border-r-0">
                   {p[side][f] || <span className="text-muted-foreground/30">—</span>}
@@ -3213,7 +3213,7 @@ function glassBlockHtml(p: GlassPrescriptionState, label?: string): string {
       <tbody>
         ${(["right", "left"] as const).map((side) => `
         <tr>
-          <td style="border:1px solid #ddd;padding:2px 4px;font-weight:600;text-align:center">${side === "right" ? "RE" : "LE"}</td>
+          <td style="border:1px solid #ddd;padding:2px 4px;font-weight:600;text-align:center">${side === "right" ? "Right Eye" : "Left Eye"}</td>
           ${(["sphere", "cyl", "axis", "va"] as const).map((f) => `<td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${p[side][f] || "—"}</td>`).join("")}
         </tr>`).join("")}
       </tbody>
