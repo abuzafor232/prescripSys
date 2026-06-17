@@ -5827,6 +5827,39 @@ function AdviceSidebar({
             </div>
           )}
 
+          {selected && !editing && (
+            <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+              <span className="shrink-0 pt-1.5 text-sm font-semibold">{selected.name}</span>
+              <textarea
+                className="min-h-0 flex-1 resize-none overflow-hidden rounded-md border bg-background px-2 py-1.5 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                rows={1}
+                value={localText}
+                onChange={(e) => {
+                  setLocalText(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = `${e.target.scrollHeight}px`;
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => { setEditingId(selected.id); setEditName(selected.name); setEditText(selected.text); }}
+              >
+                Edit
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="shrink-0"
+                onClick={() => setSelectedId(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
 
           {editing && (
             <div className="space-y-2 rounded-md border border-primary/30 bg-background p-3">
