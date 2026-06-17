@@ -5803,6 +5803,7 @@ function AdviceSidebar({
   const [editName, setEditName] = useState("");
   const [editText, setEditText] = useState("");
   const valueTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const insertedTextRef = useRef("");
 
   useEffect(() => {
     const el = valueTextareaRef.current;
@@ -5898,7 +5899,7 @@ function AdviceSidebar({
                     <div
                       key={item.id}
                       className="cursor-pointer rounded-full border border-border bg-muted px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-                      onMouseDown={(e) => { e.preventDefault(); insertAdvice(item.text); setSelectedId(item.id); setLocalText(item.text); setQuery(""); setDropdownOpen(false); }}
+                      onMouseDown={(e) => { e.preventDefault(); insertAdvice(item.text); setSelectedId(item.id); setLocalText(item.text); insertedTextRef.current = item.text; setQuery(""); setDropdownOpen(false); }}
                     >
                       {item.name}
                     </div>
@@ -5946,7 +5947,11 @@ function AdviceSidebar({
                 rows={1}
                 value={localText}
                 onChange={(e) => {
-                  setLocalText(e.target.value);
+                  const newText = e.target.value;
+                  setLocalText(newText);
+                  const prev = insertedTextRef.current;
+                  insertedTextRef.current = newText;
+                  onChange(value.includes(prev) ? value.replace(prev, newText) : newText);
                 }}
               />
               <Button
