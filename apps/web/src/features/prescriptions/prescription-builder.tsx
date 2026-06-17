@@ -6208,23 +6208,23 @@ function ReferralSidebar({
             {filteredDoctors.map((doc) => {
               const selected = isDoctorSelected(doc);
               return (
-                <div
+                <button
                   key={doc.id}
+                  type="button"
                   className={cn(
-                    "flex items-start gap-2 rounded-xl border p-3 transition",
+                    "flex w-full cursor-pointer items-start gap-2 rounded-xl border p-3 text-left transition hover:border-primary/40",
                     selected ? "border-primary/50 bg-primary/5" : "border-border bg-card"
                   )}
+                  onClick={() => onToggleDoctor(doc)}
                 >
-                  <button
-                    type="button"
+                  <span
                     className={cn(
                       "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition",
-                      selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40 hover:border-primary/60"
+                      selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
                     )}
-                    onClick={() => onToggleDoctor(doc)}
                   >
                     {selected ? <Check className="h-3.5 w-3.5" /> : null}
-                  </button>
+                  </span>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-sm leading-tight">{doc.name}</p>
                     {doc.specialty && <p className="text-xs text-muted-foreground mt-0.5">{doc.specialty}</p>}
@@ -6232,22 +6232,22 @@ function ReferralSidebar({
                     {doc.contact && <p className="text-xs text-muted-foreground">{doc.contact}</p>}
                   </div>
                   <div className="flex shrink-0 gap-1">
-                    <button
-                      type="button"
+                    <span
+                      role="button"
                       className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={() => openEditDialog(doc)}
+                      onClick={(e) => { e.stopPropagation(); openEditDialog(doc); }}
                     >
                       <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
+                    </span>
+                    <span
+                      role="button"
                       className="flex h-7 w-7 items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
-                      onClick={() => onDeleteDoctor(doc.id)}
+                      onClick={(e) => { e.stopPropagation(); onDeleteDoctor(doc.id); }}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    </span>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
