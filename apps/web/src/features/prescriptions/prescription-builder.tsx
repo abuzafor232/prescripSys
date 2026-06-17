@@ -5797,9 +5797,19 @@ function AdviceSidebar({
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [newText, setNewText] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [localText, setLocalText] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editText, setEditText] = useState("");
+  const valueTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = valueTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [localText]);
 
   const trimmedQuery = query.trim();
   const filtered = trimmedQuery.length > 0
@@ -5825,6 +5835,7 @@ function AdviceSidebar({
     const updated = library.filter((a) => a.id !== id);
     setLibrary(updated);
     saveAdviceLibrary(updated);
+    if (selectedId === id) setSelectedId(null);
     onStatus("success", "Advice deleted.");
   }
 
@@ -5844,6 +5855,8 @@ function AdviceSidebar({
     onChange(value ? `${value}\n${text}` : text);
   }
 
+  const selected = selectedId ? library.find((a) => a.id === selectedId) ?? null : null;
+  const editing = editingId ? library.find((a) => a.id === editingId) ?? null : null;
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
@@ -5861,25 +5874,15 @@ function AdviceSidebar({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
-          {/* Main advice textarea — always bound to value so preview updates instantly */}
-          <textarea
-            autoFocus
-            className="w-full min-h-[120px] resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-            placeholder="Type advice here, or insert from library below..."
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-          />
-
-          {/* Library search */}
-          <div className="relative">
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-4 relative">
             <div className="flex gap-2">
               <Input
+                autoFocus
                 className="h-10 border-primary/50 focus-visible:ring-primary"
-                placeholder="Search advice library..."
+                placeholder="Search advice by name..."
                 value={query}
-                onChange={(e) => { setQuery(e.target.value); setDropdownOpen(true); setEditingId(null); }}
+                onChange={(e) => { setQuery(e.target.value); setDropdownOpen(true); setSelectedId(null); setEditingId(null); }}
                 onFocus={() => setDropdownOpen(true)}
                 onBlur={() => window.setTimeout(() => setDropdownOpen(false), 150)}
               />
@@ -5895,7 +5898,7 @@ function AdviceSidebar({
                     <div
                       key={item.id}
                       className="cursor-pointer rounded-full border border-border bg-muted px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-                      onMouseDown={(e) => { e.preventDefault(); insertAdvice(item.text); setQuery(""); setDropdownOpen(false); }}
+                      onMouseDown={(e) => { e.preventDefault(); insertAdvice(item.text); setSelectedId(item.id); setLocalText(item.text); setQuery(""); setDropdownOpen(false); }}
                     >
                       {item.name}
                     </div>
@@ -5911,7 +5914,7 @@ function AdviceSidebar({
           </div>
 
           {adding && (
-            <div className="space-y-2 rounded-md border bg-background p-3">
+            <div className="mb-4 space-y-2 rounded-md border bg-background p-3">
               <Input
                 autoFocus
                 placeholder="Advice name (e.g. Post-Op Care)"
@@ -5934,9 +5937,41 @@ function AdviceSidebar({
             </div>
           )}
 
-          {editingId && (
+          {selected && !editing && (
+            <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+              <span className="shrink-0 pt-1.5 text-sm font-semibold">{selected.name}</span>
+              <textarea
+                ref={valueTextareaRef}
+                className="min-h-0 flex-1 resize-none overflow-hidden rounded-md border bg-background px-2 py-1.5 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                rows={1}
+                value={localText}
+                onChange={(e) => {
+                  setLocalText(e.target.value);
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => { setEditingId(selected.id); setEditName(selected.name); setEditText(selected.text); }}
+              >
+                Edit
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="shrink-0"
+                onClick={() => setSelectedId(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {editing && (
             <div className="space-y-2 rounded-md border border-primary/30 bg-background p-3">
-              <p className="text-xs font-medium text-muted-foreground">Edit library item</p>
               <Input autoFocus placeholder="Advice name" value={editName} onChange={(e) => setEditName(e.target.value)} />
               <textarea
                 className="w-full resize-none overflow-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
