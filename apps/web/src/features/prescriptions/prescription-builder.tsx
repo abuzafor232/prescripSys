@@ -4839,7 +4839,6 @@ function GlassFeaturesMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const [portalStyle, setPortalStyle] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
   const valueRef = useRef(value);
   valueRef.current = value;
 
@@ -4851,13 +4850,6 @@ function GlassFeaturesMultiSelect({
     document.addEventListener("pointerdown", handleOutside);
     return () => document.removeEventListener("pointerdown", handleOutside);
   }, [open]);
-
-  function handleToggleOpen() {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    setPortalStyle({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-    setOpen((o) => !o);
-  }
 
   function toggle(option: string) {
     const current = valueRef.current;
@@ -4875,16 +4867,13 @@ function GlassFeaturesMultiSelect({
       <button
         type="button"
         className="flex h-8 w-full items-center justify-between rounded-md border bg-background px-2 text-xs outline-none transition hover:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary"
-        onClick={handleToggleOpen}
+        onClick={() => setOpen((o) => !o)}
       >
         <span className="truncate text-left">{label}</span>
         <ChevronDown className={cn("ml-1 h-3 w-3 shrink-0 text-muted-foreground transition", open && "rotate-180")} />
       </button>
-      {open && createPortal(
-        <div
-          style={{ position: "fixed", top: portalStyle.top, left: portalStyle.left, width: portalStyle.width, zIndex: 9999 }}
-          className="rounded-md border bg-popover shadow-md"
-        >
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-full rounded-md border bg-popover shadow-md">
           {glassFeatureOptions.map((option) => {
             const checked = value.includes(option);
             return (
@@ -4902,8 +4891,7 @@ function GlassFeaturesMultiSelect({
               </label>
             );
           })}
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   );
