@@ -2025,9 +2025,9 @@ export function PrescriptionBuilder() {
                 )}
                 {(p.glassFeatures.length > 0 || p.lensType) && (
                   <div>
-                    <span className="font-medium text-muted-foreground">Glass </span>
+                    <span className="font-medium text-muted-foreground">Glass Type: </span>
                     <span className="text-slate-700">
-                      {[p.glassFeatures.join(" + "), p.lensType].filter(Boolean).join(" / ")}
+                      {[...p.glassFeatures, p.lensType].filter(Boolean).join(" - ")}
                     </span>
                   </div>
                 )}
