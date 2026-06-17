@@ -3476,7 +3476,7 @@ function ComplaintSidebar({
                     <th className="px-3 py-2">Value</th>
                     <th className="px-3 py-2">Duration</th>
                     <th className="px-3 py-2 w-10 text-center">Edit</th>
-                    <th className="px-3 py-2 w-10 text-center">Delete</th>
+                    <th className="px-3 py-2 text-center"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3583,12 +3583,12 @@ function ComplaintSidebar({
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <button
-                          className="rounded p-1.5 font-bold text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          title="Delete"
+                          className="inline-flex items-center gap-1 rounded bg-destructive px-2 py-1 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90"
                           type="button"
                           onClick={() => deleteComplaint(c.id)}
                         >
-                          <X className="h-6 w-6" />
+                          <Trash2 className="h-3 w-3" />
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -3814,11 +3814,12 @@ function HistorySidebar({
 
                       <td className="px-2 py-1.5 text-center">
                         <button
-                          className="rounded p-1.5 font-bold text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          className="inline-flex items-center gap-1 rounded bg-destructive px-2 py-1 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90"
                           type="button"
                           onClick={() => deleteEntry(h.id)}
                         >
-                          <X className="h-6 w-6" />
+                          <Trash2 className="h-3 w-3" />
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -5662,7 +5663,7 @@ function InvestigationSidebar({
                   <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
                     <th className="px-3 py-2">Name</th>
                     <th className="px-3 py-2">Result / Value</th>
-                    <th className="px-3 py-2 w-10 text-center">Del</th>
+                    <th className="px-3 py-2 text-center"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5677,8 +5678,8 @@ function InvestigationSidebar({
                           placeholder="Result" value={inv.value} onChange={(e) => updateEntry(inv.id, { value: e.target.value })} />
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        <button type="button" className="rounded p-1 text-destructive hover:bg-destructive/10"
-                          onClick={() => deleteEntry(inv.id)}><X className="h-4 w-4" /></button>
+                        <button type="button" className="inline-flex items-center gap-1 rounded bg-destructive px-2 py-1 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => deleteEntry(inv.id)}><Trash2 className="h-3 w-3" />Delete</button>
                       </td>
                     </tr>
                   ))}
@@ -5737,7 +5738,7 @@ function DiagnosisSidebar({
                   <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
                     <th className="px-3 py-2">Diagnosis Name</th>
                     <th className="px-3 py-2">Value</th>
-                    <th className="px-3 py-2 w-10 text-center">Del</th>
+                    <th className="px-3 py-2 text-center"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5752,8 +5753,8 @@ function DiagnosisSidebar({
                           placeholder="Value" value={d.value ?? ""} onChange={(e) => updateEntry(d.id, { value: e.target.value })} />
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        <button type="button" className="rounded p-1 text-destructive hover:bg-destructive/10"
-                          onClick={() => deleteEntry(d.id)}><X className="h-4 w-4" /></button>
+                        <button type="button" className="inline-flex items-center gap-1 rounded bg-destructive px-2 py-1 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => deleteEntry(d.id)}><Trash2 className="h-3 w-3" />Delete</button>
                       </td>
                     </tr>
                   ))}
