@@ -2695,7 +2695,7 @@ export function PrescriptionBuilder() {
 
             <div
               className={cn(
-                "grid md:flex-1 md:min-h-0 gap-4 md:pl-16",
+                "grid gap-4 md:pl-16",
                 leftPanelCollapsed
                   ? "md:grid-cols-[64px_minmax(0,1fr)]"
                   : "md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:pr-16"
@@ -2720,7 +2720,7 @@ export function PrescriptionBuilder() {
                     {leftPanels.map((panel) => (
                       <PrescriptionOptionTile
                         key={panel}
-                        className="md:flex-1 md:min-h-0"
+                        className=""
                         title={panelTitles[panel]}
                         hasContent={panelHasContent(panel)}
                         preview={renderPanelPreview(panel)}
@@ -6859,7 +6859,7 @@ function PrescriptionOptionTile({
   return (
     <section
       aria-label={`Open ${title}`}
-      className={cn("cursor-pointer border-b border-border/70 px-4 py-2 outline-none last:border-b-0 hover:bg-background/45 focus-visible:ring-2 focus-visible:ring-primary overflow-hidden", className)}
+      className={cn("cursor-pointer border-b border-border/70 px-4 py-2 outline-none last:border-b-0 hover:bg-background/45 focus-visible:ring-2 focus-visible:ring-primary", className)}
       role="button"
       tabIndex={0}
       onClick={onOpen}
