@@ -5834,6 +5834,9 @@ function AdviceSidebar({
                 className="min-h-0 flex-1 resize-none overflow-hidden rounded-md border bg-background px-2 py-1.5 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
                 rows={1}
                 value={localText}
+                ref={(el) => {
+                  if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }
+                }}
                 onChange={(e) => {
                   setLocalText(e.target.value);
                   e.target.style.height = "auto";
