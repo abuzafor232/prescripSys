@@ -4419,7 +4419,7 @@ function GlassPrescriptionForm({
   }
 
   return (
-    <div className="relative space-y-2 rounded-xl border-2 border-border/70 bg-card p-3 shadow-sm">
+    <div className="relative space-y-3 rounded-xl border-2 border-border/70 bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         {onRemove ? (
@@ -4452,7 +4452,7 @@ function GlassPrescriptionForm({
                   <Input
                     aria-label={`${side === "right" ? "Right Eye" : "Left Eye"} ${field}`}
                     className={cn(
-                      "h-7 bg-background text-center text-xs",
+                      "h-8 bg-background text-center text-xs",
                       isActivePickerTarget(side, field) ? "ring-2 ring-primary" : ""
                     )}
                     value={prescription[side][field]}
@@ -4495,12 +4495,10 @@ function GlassPrescriptionForm({
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">Glass Coating</span>
-          <div className="min-w-0 flex-1">
-            <GlassFeaturesMultiSelect
-              value={prescription.glassFeatures}
-              onChange={(value) => onChange({ glassFeatures: value })}
-            />
-          </div>
+          <GlassFeaturesMultiSelect
+            value={prescription.glassFeatures}
+            onChange={(value) => onChange({ glassFeatures: value })}
+          />
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">Lens Type</span>
@@ -4745,7 +4743,19 @@ function GlassFeaturesMultiSelect({
   value: string[];
   onChange: (value: string[]) => void;
 }) {
-  function toggleOption(option: string) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: PointerEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", handleOutside);
+    return () => document.removeEventListener("pointerdown", handleOutside);
+  }, [open]);
+
+  function toggle(option: string) {
     onChange(
       value.includes(option)
         ? value.filter((item) => item !== option)
@@ -4753,26 +4763,39 @@ function GlassFeaturesMultiSelect({
     );
   }
 
+  const label = value.length === 0 ? "Select..." : value.join(", ");
+
   return (
-    <div className="flex flex-wrap gap-1">
-      {glassFeatureOptions.map((option) => {
-        const selected = value.includes(option);
-        return (
-          <button
-            key={option}
-            type="button"
-            className={cn(
-              "rounded-md border px-2 py-1 text-xs font-medium transition",
-              selected
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background text-foreground hover:border-primary/50 hover:bg-muted"
-            )}
-            onClick={() => toggleOption(option)}
-          >
-            {option}
-          </button>
-        );
-      })}
+    <div ref={ref} className="relative min-w-0 flex-1">
+      <button
+        type="button"
+        className="flex h-8 w-full items-center justify-between rounded-md border bg-background px-2 text-xs outline-none transition hover:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="truncate text-left">{label}</span>
+        <ChevronDown className={cn("ml-1 h-3 w-3 shrink-0 text-muted-foreground transition", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-full rounded-md border bg-popover shadow-md">
+          {glassFeatureOptions.map((option) => {
+            const checked = value.includes(option);
+            return (
+              <label
+                key={option}
+                className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted"
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-primary"
+                  checked={checked}
+                  onChange={() => toggle(option)}
+                />
+                {option}
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -6299,7 +6322,7 @@ function VisionSidebar({
   onRemoveSecondary: () => void;
 }) {
   return (
-    <RightDrawer title="Glass Prescription" onClose={onClose} widthClass="md:w-[68%]">
+    <RightDrawer title="Glass Prescription" onClose={onClose} widthClass="md:w-1/2">
       <div className="space-y-4 py-3">
         <GlassPrescriptionForm
           prescription={vision}

@@ -431,6 +431,94 @@ function CustomDateControl({
   );
 }
 
+// ── InlineCalendar — always-visible month grid for left-column date picking ──
+
+function InlineCalendar({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (iso: string) => void;
+}) {
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const base = value ? new Date(`${value}T00:00:00`) : new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+
+  useEffect(() => {
+    if (!value) return;
+    const d = new Date(`${value}T00:00:00`);
+    if (!isNaN(d.getTime())) setVisibleMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+  }, [value]);
+
+  const calendarDays = buildCalendarDays(visibleMonth);
+  const monthLabel   = visibleMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const todayIso     = formatISODate(new Date());
+
+  return (
+    <div className="rounded-xl border bg-background">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between px-3 py-2">
+        <button
+          className="rounded p-1 text-muted-foreground hover:bg-muted"
+          type="button"
+          onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="text-sm font-semibold">{monthLabel}</span>
+        <button
+          className="rounded p-1 text-muted-foreground hover:bg-muted"
+          type="button"
+          onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Day-of-week header */}
+      <div className="grid grid-cols-7 border-t px-2 text-center text-[10px] font-semibold text-muted-foreground">
+        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+          <div key={d} className="py-1">{d}</div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 px-2 pb-2 text-center">
+        {calendarDays.map((item) => {
+          const iso       = formatISODate(item.date);
+          const isSel     = iso === value;
+          const isOutside = item.date.getMonth() !== visibleMonth.getMonth();
+          const isToday   = iso === todayIso;
+          return (
+            <button
+              key={iso}
+              type="button"
+              className={cn(
+                "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs transition-colors",
+                isSel      ? "bg-primary font-bold text-primary-foreground"
+                : isOutside ? "text-muted-foreground/30"
+                : isToday   ? "font-semibold text-primary ring-1 ring-primary/40"
+                            : "hover:bg-muted",
+              )}
+              onClick={() => onChange(iso)}
+            >
+              {item.date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected date label */}
+      {value && (
+        <div className="border-t px-3 py-1.5 text-center text-xs font-medium text-primary">
+          {formatDisplayDate(value)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── DatePickerInput — compact trigger + same calendar popup ────────────────
 
 function DatePickerInput({
@@ -1237,8 +1325,8 @@ function BookAppointmentDialog({
 
             {/* ── LEFT: Date & Slot selection ── */}
             <div className="space-y-2 px-4 py-3">
-              {/* Date */}
-              <CustomDateControl compact value={date} onChange={onDateChange} fullWidth />
+              {/* Inline calendar for date picking */}
+              <InlineCalendar value={date} onChange={onDateChange} />
 
               {/* Time range tab + settings gear */}
               <div className="flex items-center justify-between border-b">
