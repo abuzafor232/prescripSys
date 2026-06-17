@@ -625,56 +625,11 @@ export function AppointmentBoard() {
       <div className="space-y-2 pb-6">
         {/* Header row — all controls in one line */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Chamber selector — primary styled */}
-          <div ref={chamberBtnRef} className="relative">
-            <button
-              type="button"
-              className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
-              onClick={() => setChamberDropdownOpen((o) => !o)}
-            >
-              {selectedChamber?.name ?? "Select Chamber"}
-              <ChevronDown className="h-3 w-3 opacity-70" />
-            </button>
-            {chamberDropdownOpen && (
-              <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-xl border bg-card shadow-xl">
-                <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                  Chambers
-                </div>
-                {chambers.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted",
-                      selectedChamber?.id === c.id && "text-primary font-semibold"
-                    )}
-                    onClick={() => handleSelectChamber(c)}
-                  >
-                    {c.name}
-                    {selectedChamber?.id === c.id && <span className="ml-auto text-[10px] bg-primary/10 text-primary rounded px-1">Active</span>}
-                  </button>
-                ))}
-                <div className="border-t" />
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
-                  onClick={() => { setChamberDropdownOpen(false); setChamberSettingsOpen(true); }}
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                  Chamber Settings
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Date control — same height as sm buttons */}
+          {/* Date control */}
           <div className="h-7">
             <CustomDateControl value={selectedDate} onChange={setSelectedDate} compact fullWidth={false} />
           </div>
-          <Button size="sm" type="button" onClick={() => {
-            if (!selectedChamber) { setStatusMessage("Please select a chamber first."); return; }
-            setAppointmentOpen(true);
-          }}>
+          <Button size="sm" type="button" onClick={() => setAppointmentOpen(true)}>
             Book Appointment
             <PlusCircle className="h-3.5 w-3.5" />
           </Button>
@@ -1346,26 +1301,31 @@ function BookAppointmentDialog({
                 </div>
               )}
 
-              {/* Time slots — 5 per row */}
-              <div className="grid grid-cols-5 gap-1">
-                {slots.map((slot, index) => {
+              {/* Time slots — calendar-number style, 5 per row */}
+              <div className="grid grid-cols-5 gap-1.5">
+                {slots.map((slot) => {
                   const booked   = bookedSlots.has(slot);
                   const selected = form.time === slot;
                   return (
                     <button
                       key={slot}
                       disabled={booked}
+                      title={slot}
                       className={cn(
-                        "flex flex-col items-center justify-center rounded-lg py-1 px-1 text-center leading-tight transition-colors",
-                        booked   ? "cursor-not-allowed bg-muted text-muted-foreground opacity-50" :
-                        selected ? "bg-primary text-primary-foreground" :
-                                   "bg-primary/10 text-primary hover:bg-primary/20",
+                        "flex h-12 w-full flex-col items-center justify-center rounded-lg transition-colors",
+                        booked   ? "cursor-not-allowed bg-muted text-muted-foreground opacity-40" :
+                        selected ? "bg-primary text-primary-foreground shadow" :
+                                   "bg-primary/10 text-primary hover:bg-primary/25",
                       )}
                       type="button"
                       onClick={() => { if (!booked) onUpdate({ time: slot }); }}
                     >
-                      <span className="text-[10px] font-semibold opacity-70">{index + 1}</span>
-                      <span className="text-xs font-medium">{slot}</span>
+                      <span className="tabular-nums text-sm font-bold leading-tight">
+                        {slot.replace(/ (AM|PM)$/i, "")}
+                      </span>
+                      <span className="text-[9px] leading-none opacity-70">
+                        {/AM$/i.test(slot) ? "AM" : "PM"}
+                      </span>
                     </button>
                   );
                 })}
@@ -1374,7 +1334,12 @@ function BookAppointmentDialog({
                 )}
               </div>
 
-              <div className="flex justify-center gap-3 text-[10px]">
+              {form.time && (
+                <p className="text-center text-xs font-semibold text-primary">
+                  Selected: {form.time}
+                </p>
+              )}
+              <div className="flex justify-center gap-4 text-xs text-muted-foreground">
                 <LegendItem label="Available" tone="available" />
                 <LegendItem label="Selected"  tone="selected"  />
                 <LegendItem label="Booked"    tone="booked"    />

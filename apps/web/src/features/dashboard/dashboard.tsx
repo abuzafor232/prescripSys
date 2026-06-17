@@ -545,7 +545,7 @@ function getDefaultRange() {
 const defaultRange = getDefaultRange();
 
 const actionLinkClass =
-  "inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition";
+  "inline-flex h-10 items-center justify-center gap-2 rounded-md px-5 text-sm font-semibold transition";
 
 // Demo chamber data
 const chamberData = {
@@ -634,10 +634,10 @@ export function Dashboard() {
 
         <Link
           href="/appointments"
-          className={`${actionLinkClass} bg-muted hover:bg-muted/80`}
+          className={`${actionLinkClass} bg-emerald-600 text-white shadow-sm hover:bg-emerald-700`}
         >
           <CalendarClock className="h-4 w-4" />
-          Appointment
+          Appointments
         </Link>
       </div>
 

@@ -234,6 +234,14 @@ type ReferralEntry = {
   direction: "to" | "from";
 };
 
+type SavedReferralDoctor = {
+  id: string;
+  name: string;
+  specialty: string;
+  chamberAddress: string;
+  contact: string;
+};
+
 type QueueAppointment = {
   id: string;
   date?: string;
@@ -317,6 +325,7 @@ const DRAFTS_STORAGE_KEY = "rx-drafts";
 const TEMPLATES_STORAGE_KEY = "rx-templates";
 const APPOINTMENTS_STORAGE_KEY = "rx-appointments";
 const PATIENT_NOTES_STORAGE_KEY = "rx-patient-notes";
+const REFERRAL_DOCTORS_STORAGE_KEY = "rx-referral-doctors";
 const LAST_VISIT_KEY = "rx-last-visit";
 const ADVICE_LIBRARY_KEY = "rx-advice-library";
 const SUGG_COMPLAINT = "rx-sugg-complaint";
@@ -879,6 +888,12 @@ export function PrescriptionBuilder() {
   const [findings, setFindings] = useState<FindingsState>(initialFindings);
   const [vision, setVision] = useState<VisionState>(() => createInitialVision());
   const [referrals, setReferrals] = useState<ReferralEntry[]>([]);
+  const [savedReferralDoctors, setSavedReferralDoctors] = useState<SavedReferralDoctor[]>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(REFERRAL_DOCTORS_STORAGE_KEY) : null;
+      return raw ? (JSON.parse(raw) as SavedReferralDoctor[]) : [];
+    } catch { return []; }
+  });
   const [followUpDate, setFollowUpDate] = useState("");
   const [fees, setFees] = useState("");
   const [activePanel, setActivePanel] = useState<PanelKey | null>(null);
@@ -1252,25 +1267,47 @@ export function PrescriptionBuilder() {
     setFindings((current) => ({ ...current, ...patch }));
   }
 
-  function addReferralRow(direction: "to" | "from") {
-    setReferrals((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-${current.length}`,
-        name: "",
-        phone: "",
-        specialty: "",
-        additionalInfo: "",
-        direction
-      }
-    ]);
-    showStatus("success", "Referral row added.");
+  function addSavedDoctor(doc: Omit<SavedReferralDoctor, "id">) {
+    const newDoc: SavedReferralDoctor = { ...doc, id: `rd-${Date.now()}` };
+    const updated = [...savedReferralDoctors, newDoc];
+    setSavedReferralDoctors(updated);
+    try { localStorage.setItem(REFERRAL_DOCTORS_STORAGE_KEY, JSON.stringify(updated)); } catch {}
   }
 
-  function updateReferral(id: string, patch: Partial<Omit<ReferralEntry, "id">>) {
-    setReferrals((current) =>
-      current.map((item) => (item.id === id ? { ...item, ...patch } : item))
-    );
+  function updateSavedDoctor(id: string, patch: Partial<Omit<SavedReferralDoctor, "id">>) {
+    const updated = savedReferralDoctors.map((d) => d.id === id ? { ...d, ...patch } : d);
+    setSavedReferralDoctors(updated);
+    try { localStorage.setItem(REFERRAL_DOCTORS_STORAGE_KEY, JSON.stringify(updated)); } catch {}
+    const oldDoc = savedReferralDoctors.find((d) => d.id === id);
+    if (oldDoc) {
+      setReferrals((prev) =>
+        prev.map((r) =>
+          r.name === oldDoc.name && r.specialty === oldDoc.specialty
+            ? { ...r, name: patch.name ?? r.name, specialty: patch.specialty ?? r.specialty, additionalInfo: patch.chamberAddress ?? r.additionalInfo, phone: patch.contact ?? r.phone }
+            : r
+        )
+      );
+    }
+  }
+
+  function deleteSavedDoctor(id: string) {
+    const doc = savedReferralDoctors.find((d) => d.id === id);
+    const updated = savedReferralDoctors.filter((d) => d.id !== id);
+    setSavedReferralDoctors(updated);
+    try { localStorage.setItem(REFERRAL_DOCTORS_STORAGE_KEY, JSON.stringify(updated)); } catch {}
+    if (doc) setReferrals((prev) => prev.filter((r) => !(r.name === doc.name && r.specialty === doc.specialty)));
+  }
+
+  function toggleReferralDoctor(doc: SavedReferralDoctor) {
+    const isSelected = referrals.some((r) => r.name === doc.name && r.specialty === doc.specialty);
+    if (isSelected) {
+      setReferrals((prev) => prev.filter((r) => !(r.name === doc.name && r.specialty === doc.specialty)));
+    } else {
+      setReferrals((prev) => [
+        ...prev,
+        { id: `ref-${Date.now()}`, name: doc.name, phone: doc.contact, specialty: doc.specialty, additionalInfo: doc.chamberAddress, direction: "to" as const }
+      ]);
+    }
   }
 
   function clearPanel(panel: PanelKey) {
@@ -2884,16 +2921,27 @@ export function PrescriptionBuilder() {
       ) : activePanel === "referral" ? (
         <ReferralSidebar
           referrals={referrals}
-          onAddReferralRow={addReferralRow}
+          savedDoctors={savedReferralDoctors}
           onClose={() => setActivePanel(null)}
-          onRemoveReferral={(id) =>
-            setReferrals((current) => current.filter((item) => item.id !== id))
-          }
-          onUpdateReferral={updateReferral}
+          onAddDoctor={addSavedDoctor}
+          onUpdateDoctor={updateSavedDoctor}
+          onDeleteDoctor={deleteSavedDoctor}
+          onToggleDoctor={toggleReferralDoctor}
+        />
+      ) : activePanel === "vision" ? (
+        <VisionSidebar
+          vision={vision}
+          onClose={() => setActivePanel(null)}
+          onPrimaryChange={(patch) => updateGlassPrescription("primary", patch)}
+          onPrimaryEyeChange={(side, field, value) => updateGlassEye("primary", side, field, value)}
+          onSecondaryChange={(patch) => updateGlassPrescription("secondary", patch)}
+          onSecondaryEyeChange={(side, field, value) => updateGlassEye("secondary", side, field, value)}
+          onAddSecondary={addSecondaryGlassPrescription}
+          onRemoveSecondary={removeSecondaryGlassPrescription}
         />
       ) : activePanel ? (
         <PanelDialog
-          size={activePanel === "vision" ? "wide" : "default"}
+          size="default"
           title={panelTitles[activePanel]}
           onClose={() => setActivePanel(null)}
         >
@@ -3724,7 +3772,7 @@ function FindingsSidebar({
         </div>
 
         {tab === "Basic" ? (
-          <div className="overflow-hidden rounded-md border bg-card shadow-sm">
+          <div className="overflow-hidden rounded-xl border-2 border-border/70 bg-card shadow-md">
             <section className="border-b p-2 last:border-b-0">
               <div className="grid gap-4 grid-cols-[1.2fr_0.85fr_0.95fr_1.8fr_0.85fr]">
                 <div className="space-y-1">
@@ -3795,7 +3843,7 @@ function FindingsSidebar({
         ) : tab === "Gynae & Obs" ? (
           <GynaeObsForm findings={findings} onChange={onChange} />
         ) : (
-          <div className="overflow-hidden rounded-md border bg-card shadow-sm">
+          <div className="overflow-hidden rounded-xl border-2 border-border/70 bg-card shadow-md">
             <FindingsSection title="Other">
               <div className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-3">
@@ -4371,7 +4419,7 @@ function GlassPrescriptionForm({
   }
 
   return (
-    <div className="relative space-y-2 rounded-md border bg-background p-2">
+    <div className="relative space-y-2 rounded-xl border-2 border-border/70 bg-card p-3 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         {onRemove ? (
@@ -4383,7 +4431,7 @@ function GlassPrescriptionForm({
       </div>
 
       <div className="overflow-x-auto">
-        <div className="min-w-[340px] rounded-md border bg-background">
+        <div className="min-w-[340px] rounded-md border-2 border-border/50 bg-background">
           <div className="grid grid-cols-[90px_repeat(4,minmax(0,1fr))] border-b text-center text-xs font-semibold">
             <div className="border-r px-1 py-1">##</div>
             <div className="border-r px-1 py-1">Sphere</div>
@@ -4697,26 +4745,6 @@ function GlassFeaturesMultiSelect({
   value: string[];
   onChange: (value: string[]) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredOptions = glassFeatureOptions.filter((option) =>
-    normalizedQuery ? option.toLowerCase().includes(normalizedQuery) : true
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
   function toggleOption(option: string) {
     onChange(
       value.includes(option)
@@ -4726,79 +4754,25 @@ function GlassFeaturesMultiSelect({
   }
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        aria-expanded={open}
-        className="flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-background px-2 py-1 text-left text-xs outline-none transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="min-w-0 flex-1 truncate">
-          {value.length ? value.join(", ") : "Select Glass Coating"}
-        </span>
-        <ChevronDown
-          className={cn("h-4 w-4 shrink-0 transition", open ? "rotate-180" : "")}
-        />
-      </button>
-
-      {open ? (
-        <div className="absolute left-0 right-0 z-30 mt-2 rounded-md border bg-card p-2 shadow-soft">
-          <Input
-            className="h-9 border-border/70 bg-background"
-            placeholder="Search glass coating..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-
-          {value.length ? (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {value.map((item) => (
-                <span
-                  key={item}
-                  className="inline-flex items-center gap-1 rounded-sm bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
-                >
-                  {item}
-                  <button
-                    aria-label={`Remove ${item}`}
-                    className="rounded-sm hover:bg-primary-foreground/20"
-                    type="button"
-                    onClick={() => toggleOption(item)}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="mt-2 grid max-h-48 gap-1 overflow-y-auto">
-            {filteredOptions.length ? (
-              filteredOptions.map((option) => {
-                const selected = value.includes(option);
-
-                return (
-                  <button
-                    key={option}
-                    className={cn(
-                      "flex min-h-9 items-center justify-between rounded-md px-3 text-left text-sm transition",
-                      selected
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-muted"
-                    )}
-                    type="button"
-                    onClick={() => toggleOption(option)}
-                  >
-                    {option}
-                    {selected ? <Check className="h-4 w-4" /> : null}
-                  </button>
-                );
-              })
-            ) : (
-              <div className="px-3 py-2 text-sm text-muted-foreground">No glass coating found</div>
+    <div className="flex flex-wrap gap-1">
+      {glassFeatureOptions.map((option) => {
+        const selected = value.includes(option);
+        return (
+          <button
+            key={option}
+            type="button"
+            className={cn(
+              "rounded-md border px-2 py-1 text-xs font-medium transition",
+              selected
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-background text-foreground hover:border-primary/50 hover:bg-muted"
             )}
-          </div>
-        </div>
-      ) : null}
+            onClick={() => toggleOption(option)}
+          >
+            {option}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -6110,118 +6084,245 @@ function FollowUpSidebar({
 
 type ReferralSidebarProps = {
   referrals: ReferralEntry[];
-  onAddReferralRow: (direction: "to" | "from") => void;
+  savedDoctors: SavedReferralDoctor[];
   onClose: () => void;
-  onRemoveReferral: (id: string) => void;
-  onUpdateReferral: (id: string, patch: Partial<Omit<ReferralEntry, "id">>) => void;
+  onAddDoctor: (doc: Omit<SavedReferralDoctor, "id">) => void;
+  onUpdateDoctor: (id: string, patch: Partial<Omit<SavedReferralDoctor, "id">>) => void;
+  onDeleteDoctor: (id: string) => void;
+  onToggleDoctor: (doc: SavedReferralDoctor) => void;
 };
 
 function ReferralSidebar({
   referrals,
-  onAddReferralRow,
+  savedDoctors,
   onClose,
-  onRemoveReferral,
-  onUpdateReferral
+  onAddDoctor,
+  onUpdateDoctor,
+  onDeleteDoctor,
+  onToggleDoctor,
 }: ReferralSidebarProps) {
-  const [tab, setTab] = useState<"to" | "from">("to");
-  const visibleReferrals = referrals.filter((item) => item.direction === tab);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingDoctor, setEditingDoctor] = useState<SavedReferralDoctor | null>(null);
+  const [formName, setFormName] = useState("");
+  const [formSpecialty, setFormSpecialty] = useState("");
+  const [formChamberAddress, setFormChamberAddress] = useState("");
+  const [formContact, setFormContact] = useState("");
+
+  function openAddDialog() {
+    setEditingDoctor(null);
+    setFormName(""); setFormSpecialty(""); setFormChamberAddress(""); setFormContact("");
+    setDialogOpen(true);
+  }
+
+  function openEditDialog(doc: SavedReferralDoctor) {
+    setEditingDoctor(doc);
+    setFormName(doc.name); setFormSpecialty(doc.specialty);
+    setFormChamberAddress(doc.chamberAddress); setFormContact(doc.contact);
+    setDialogOpen(true);
+  }
+
+  function handleSubmit() {
+    if (!formName.trim()) return;
+    if (editingDoctor) {
+      onUpdateDoctor(editingDoctor.id, {
+        name: formName.trim(), specialty: formSpecialty.trim(),
+        chamberAddress: formChamberAddress.trim(), contact: formContact.trim(),
+      });
+    } else {
+      onAddDoctor({
+        name: formName.trim(), specialty: formSpecialty.trim(),
+        chamberAddress: formChamberAddress.trim(), contact: formContact.trim(),
+      });
+    }
+    setDialogOpen(false);
+  }
+
+  function isDoctorSelected(doc: SavedReferralDoctor) {
+    return referrals.some((r) => r.name === doc.name && r.specialty === doc.specialty);
+  }
 
   return (
     <RightDrawer title="Referral" onClose={onClose}>
-      <div className="space-y-5">
-        <div className="border-b">
-          <div className="flex min-w-0 overflow-x-auto">
-            <TabButton active={tab === "to"} onClick={() => setTab("to")}>
-              Refer To
-            </TabButton>
-            <TabButton active={tab === "from"} onClick={() => setTab("from")}>
-              Referred From
-            </TabButton>
-          </div>
-        </div>
+      <div className="space-y-4 pt-3">
+        <Button type="button" className="w-full" onClick={openAddDialog}>
+          <Plus className="h-4 w-4" />
+          Add Referral Doctor
+        </Button>
 
-        <div className="overflow-x-auto rounded-md border">
-          <div className="min-w-[820px]">
-            <div className="border-b bg-muted px-3 py-2 text-center text-sm font-medium">
-              {tab === "to" ? "Refer To" : "Referred From"} - Editable Table
-            </div>
-            <div className="grid grid-cols-[44px_1fr_150px_170px_1.2fr_112px_56px] border-b text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <div className="border-r px-2 py-2">#</div>
-              <div className="border-r px-2 py-2">Name</div>
-              <div className="border-r px-2 py-2">Phone Number</div>
-              <div className="border-r px-2 py-2">Specialty</div>
-              <div className="border-r px-2 py-2">Additional Info</div>
-              <div className="border-r px-2 py-2">Direction</div>
-              <div className="px-2 py-2">Delete</div>
-            </div>
-            {visibleReferrals.length ? (
-              visibleReferrals.map((item, index) => (
+        {savedDoctors.length === 0 ? (
+          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No referral doctors saved. Click "Add Referral Doctor" to add one.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {savedDoctors.map((doc) => {
+              const selected = isDoctorSelected(doc);
+              return (
                 <div
-                  key={item.id}
-                  className="grid grid-cols-[44px_1fr_150px_170px_1.2fr_112px_56px] border-b text-sm last:border-b-0"
+                  key={doc.id}
+                  className={cn(
+                    "flex items-start gap-2 rounded-xl border p-3 transition",
+                    selected ? "border-primary/50 bg-primary/5" : "border-border bg-card"
+                  )}
                 >
-                  <div className="flex items-center justify-center border-r bg-muted/30 px-2 py-1 text-muted-foreground">
-                    {index + 1}
-                  </div>
-                  <ReferralTableInput
-                    ariaLabel="Referral name"
-                    value={item.name}
-                    onChange={(value) => onUpdateReferral(item.id, { name: value })}
-                  />
-                  <ReferralTableInput
-                    ariaLabel="Referral phone number"
-                    value={item.phone}
-                    onChange={(value) => onUpdateReferral(item.id, { phone: value })}
-                  />
-                  <ReferralTableInput
-                    ariaLabel="Referral specialty"
-                    value={item.specialty}
-                    onChange={(value) => onUpdateReferral(item.id, { specialty: value })}
-                  />
-                  <ReferralTableInput
-                    ariaLabel="Referral additional info"
-                    value={item.additionalInfo}
-                    onChange={(value) => onUpdateReferral(item.id, { additionalInfo: value })}
-                  />
-                  <div className="border-r p-1">
-                    <select
-                      aria-label="Referral direction"
-                      className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-primary"
-                      value={item.direction}
-                      onChange={(event) =>
-                        onUpdateReferral(item.id, {
-                          direction: event.target.value as ReferralEntry["direction"]
-                        })
-                      }
-                    >
-                      <option value="to">Refer To</option>
-                      <option value="from">From</option>
-                    </select>
-                  </div>
                   <button
-                    aria-label="Delete referral"
-                    className="flex items-center justify-center px-2 py-2 text-destructive hover:bg-muted"
                     type="button"
-                    onClick={() => onRemoveReferral(item.id)}
+                    className={cn(
+                      "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition",
+                      selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40 hover:border-primary/60"
+                    )}
+                    onClick={() => onToggleDoctor(doc)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    {selected ? <Check className="h-3.5 w-3.5" /> : null}
                   </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm leading-tight">{doc.name}</p>
+                    {doc.specialty && <p className="text-xs text-muted-foreground mt-0.5">{doc.specialty}</p>}
+                    {doc.chamberAddress && <p className="text-xs text-muted-foreground">{doc.chamberAddress}</p>}
+                    {doc.contact && <p className="text-xs text-muted-foreground">{doc.contact}</p>}
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => openEditDialog(doc)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
+                      onClick={() => onDeleteDoctor(doc.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
-              ))
-            ) : (
-              <div className="border-b px-3 py-6 text-center text-sm text-muted-foreground">
-                No rows. Add a row to start editing.
-              </div>
-            )}
+              );
+            })}
           </div>
-        </div>
+        )}
+      </div>
 
-        <div className="flex justify-end">
-          <Button type="button" onClick={() => onAddReferralRow(tab)}>
+      {dialogOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setDialogOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border bg-card shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <h2 className="text-base font-semibold">
+                {editingDoctor ? "Edit Referral Doctor" : "Add Referral Doctor"}
+              </h2>
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted"
+                onClick={() => setDialogOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">
+                  Doctor&apos;s Name <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  autoFocus
+                  placeholder="e.g. Dr. John Doe"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Speciality</label>
+                <Input
+                  placeholder="e.g. Cardiologist"
+                  value={formSpecialty}
+                  onChange={(e) => setFormSpecialty(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Chamber Address</label>
+                <Input
+                  placeholder="Chamber / clinic address"
+                  value={formChamberAddress}
+                  onChange={(e) => setFormChamberAddress(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Contact</label>
+                <Input
+                  placeholder="Phone or contact info"
+                  value={formContact}
+                  onChange={(e) => setFormContact(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2 border-t pt-3">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" className="flex-1" disabled={!formName.trim()} onClick={handleSubmit}>
+                  {editingDoctor ? "Save Changes" : "Add Doctor"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </RightDrawer>
+  );
+}
+
+function VisionSidebar({
+  vision,
+  onClose,
+  onPrimaryChange,
+  onPrimaryEyeChange,
+  onSecondaryChange,
+  onSecondaryEyeChange,
+  onAddSecondary,
+  onRemoveSecondary,
+}: {
+  vision: VisionState;
+  onClose: () => void;
+  onPrimaryChange: (patch: Partial<Omit<GlassPrescriptionState, "right" | "left">>) => void;
+  onPrimaryEyeChange: (side: "right" | "left", field: keyof EyePower, value: string) => void;
+  onSecondaryChange: (patch: Partial<Omit<GlassPrescriptionState, "right" | "left">>) => void;
+  onSecondaryEyeChange: (side: "right" | "left", field: keyof EyePower, value: string) => void;
+  onAddSecondary: () => void;
+  onRemoveSecondary: () => void;
+}) {
+  return (
+    <RightDrawer title="Glass Prescription" onClose={onClose} widthClass="md:w-[68%]">
+      <div className="space-y-4 py-3">
+        <GlassPrescriptionForm
+          prescription={vision}
+          title="Primary Glass Prescription"
+          onChange={onPrimaryChange}
+          onEyeChange={onPrimaryEyeChange}
+        />
+        {!vision.secondaryGlass ? (
+          <Button type="button" variant="outline" onClick={onAddSecondary}>
             <Plus className="h-4 w-4" />
-            Add Row
+            Add Secondary Glass
           </Button>
-        </div>
+        ) : null}
+        {vision.secondaryGlass ? (
+          <GlassPrescriptionForm
+            prescription={vision.secondaryGlass}
+            title="Secondary Glass Prescription"
+            onChange={onSecondaryChange}
+            onEyeChange={onSecondaryEyeChange}
+            onRemove={onRemoveSecondary}
+            sphereExtraOptions={["Frosted Glass"]}
+          />
+        ) : null}
       </div>
     </RightDrawer>
   );
@@ -6323,9 +6424,9 @@ function FindingsSection({
   children: ReactNode;
 }) {
   return (
-    <section className="border-b p-2 last:border-b-0">
-      <h3 className="mb-4 border-b pb-3 text-lg font-semibold">{title}</h3>
-      {children}
+    <section className="border-b last:border-b-0">
+      <h3 className="border-b-2 border-border/60 bg-muted/60 px-3 py-2.5 text-sm font-bold uppercase tracking-wide text-foreground dark:bg-muted/40">{title}</h3>
+      <div className="p-3">{children}</div>
     </section>
   );
 }
