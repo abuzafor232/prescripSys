@@ -6532,13 +6532,12 @@ function RightDrawer({
             </Button>
             <Button
               aria-label={`Close ${title}`}
-              size="icon"
-              title={`Close ${title}`}
               type="button"
-              variant="ghost"
+              variant="destructive"
               onClick={onClose}
             >
-              <X className="h-5 w-5 text-destructive" />
+              <X className="h-4 w-4" />
+              Cancel
             </Button>
           </div>
         </div>
