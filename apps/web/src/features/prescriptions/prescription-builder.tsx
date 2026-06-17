@@ -6134,6 +6134,7 @@ function ReferralSidebar({
   const [formSpecialty, setFormSpecialty] = useState("");
   const [formChamberAddress, setFormChamberAddress] = useState("");
   const [formContact, setFormContact] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   function openAddDialog() {
     setEditingDoctor(null);
@@ -6168,21 +6169,43 @@ function ReferralSidebar({
     return referrals.some((r) => r.name === doc.name && r.specialty === doc.specialty);
   }
 
+  const filteredDoctors = searchQuery.trim()
+    ? savedDoctors.filter((doc) =>
+        doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.specialty.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : savedDoctors;
+
   return (
     <RightDrawer title="Referral" onClose={onClose}>
       <div className="space-y-4 pt-3">
-        <Button type="button" className="w-full" onClick={openAddDialog}>
-          <Plus className="h-4 w-4" />
-          Add Referral Doctor
-        </Button>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="h-9 pl-8 text-sm"
+              placeholder="Search doctors..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <Button type="button" onClick={openAddDialog}>
+            <Plus className="h-4 w-4" />
+            Add
+          </Button>
+        </div>
 
         {savedDoctors.length === 0 ? (
           <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No referral doctors saved. Click "Add Referral Doctor" to add one.
+            No referral doctors saved. Click "Add" to add one.
+          </div>
+        ) : filteredDoctors.length === 0 ? (
+          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No doctors match &quot;{searchQuery}&quot;.
           </div>
         ) : (
           <div className="space-y-2">
-            {savedDoctors.map((doc) => {
+            {filteredDoctors.map((doc) => {
               const selected = isDoctorSelected(doc);
               return (
                 <div
