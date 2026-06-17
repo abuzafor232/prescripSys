@@ -1296,8 +1296,8 @@ function BookAppointmentDialog({
                 </div>
               )}
 
-              {/* Time slots — calendar-number style, 5 per row */}
-              <div className="grid grid-cols-5 gap-1.5">
+              {/* Time slots */}
+              <div className="grid grid-cols-6 gap-1">
                 {slots.map((slot) => {
                   const booked   = bookedSlots.has(slot);
                   const selected = form.time === slot;
@@ -1307,7 +1307,7 @@ function BookAppointmentDialog({
                       disabled={booked}
                       title={slot}
                       className={cn(
-                        "flex h-12 w-full flex-col items-center justify-center rounded-lg transition-colors",
+                        "flex h-8 w-full flex-col items-center justify-center rounded-md transition-colors",
                         booked   ? "cursor-not-allowed bg-muted text-muted-foreground opacity-40" :
                         selected ? "bg-primary text-primary-foreground shadow" :
                                    "bg-primary/10 text-primary hover:bg-primary/25",
@@ -1315,10 +1315,10 @@ function BookAppointmentDialog({
                       type="button"
                       onClick={() => { if (!booked) onUpdate({ time: slot }); }}
                     >
-                      <span className="tabular-nums text-sm font-bold leading-tight">
+                      <span className="tabular-nums text-[10px] font-semibold leading-none">
                         {slot.replace(/ (AM|PM)$/i, "")}
                       </span>
-                      <span className="text-[9px] leading-none opacity-70">
+                      <span className="text-[8px] leading-none opacity-70">
                         {/AM$/i.test(slot) ? "AM" : "PM"}
                       </span>
                     </button>
