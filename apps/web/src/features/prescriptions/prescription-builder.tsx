@@ -3047,9 +3047,7 @@ export function PrescriptionBuilder() {
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t px-5 py-3">
-              <Button type="button" variant="outline" onClick={() => { setDraftPopupOpen(false); setDraftPopupEditId(null); }}>
-                Cancel
-              </Button>
+              <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => { setDraftPopupOpen(false); setDraftPopupEditId(null); }}>Cancel</button>
               <Button type="button" onClick={handleDraftPopupSave}>
                 <FileText className="h-4 w-4" />
                 {draftPopupEditId ? "Update Draft" : "Save to Draft"}
@@ -3095,9 +3093,7 @@ export function PrescriptionBuilder() {
                 }}>
                 Discard &amp; Load
               </Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => setLoadConflict(null)}>
-                Cancel
-              </Button>
+              <button className="w-full rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => setLoadConflict(null)}>Cancel</button>
             </div>
           </div>
         </div>
@@ -3125,7 +3121,7 @@ export function PrescriptionBuilder() {
               />
             </div>
             <div className="flex justify-end gap-2 border-t px-5 py-3">
-              <Button type="button" variant="outline" onClick={() => setTemplateNamePopupOpen(false)}>Cancel</Button>
+              <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => setTemplateNamePopupOpen(false)}>Cancel</button>
               <Button type="button" onClick={() => { saveTemplate(templateNameInput); setTemplateNamePopupOpen(false); }}>
                 <LayoutGrid className="h-4 w-4" />
                 Save Template
@@ -5825,7 +5821,7 @@ function AdviceSidebar({
                 onChange={(e) => { setNewText(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${e.target.scrollHeight}px`; }}
               />
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="ghost" onClick={() => { setAdding(false); setNewName(""); setNewText(""); }}>Cancel</Button>
+                <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => { setAdding(false); setNewName(""); setNewText(""); }}>Cancel</button>
                 <Button type="button" onClick={saveNew}>Save</Button>
               </div>
             </div>
@@ -5874,7 +5870,7 @@ function AdviceSidebar({
                 onChange={(e) => { setEditText(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${e.target.scrollHeight}px`; }}
               />
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+                <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => setEditingId(null)}>Cancel</button>
                 <Button type="button" onClick={() => saveEdit(editingId!)}>Save</Button>
               </div>
             </div>
@@ -6286,9 +6282,7 @@ function ReferralSidebar({
                 />
               </div>
               <div className="flex gap-2 border-t pt-3">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setDialogOpen(false)}>
-                  Cancel
-                </Button>
+                <button className="flex-1 rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => setDialogOpen(false)}>Cancel</button>
                 <Button type="button" className="flex-1" disabled={!formName.trim()} onClick={handleSubmit}>
                   {editingDoctor ? "Save Changes" : "Add Doctor"}
                 </Button>

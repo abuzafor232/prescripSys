@@ -1291,7 +1291,7 @@ function BookAppointmentDialog({
                   </div>
                   <div className="mt-2 flex gap-2">
                     <Button className="h-8 text-xs" type="button" onClick={applySlotSettings}>Apply</Button>
-                    <Button className="h-8 text-xs" type="button" variant="outline" onClick={() => setSettingsOpen(false)}>Cancel</Button>
+                    <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => setSettingsOpen(false)}>Cancel</button>
                   </div>
                 </div>
               )}
@@ -1612,7 +1612,7 @@ function ChamberSettingsDialog({
               </div>
 
               <div className="flex gap-2 border-t pt-3">
-                <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+                <button className="flex-1 rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={onClose}>Cancel</button>
                 <Button className="flex-1" onClick={handleSave}>Save Changes</Button>
               </div>
             </div>

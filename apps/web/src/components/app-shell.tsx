@@ -146,7 +146,7 @@ function AppShellChamberSettingsDialog({
                 {addError && <p className="text-xs text-destructive">{addError}</p>}
               </div>
               <div className="flex gap-2 border-t pt-3">
-                <button type="button" className="flex-1 h-9 rounded-md border text-sm font-medium hover:bg-muted" onClick={onClose}>Cancel</button>
+                <button type="button" className="flex-1 rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={onClose}>Cancel</button>
                 <button type="button"
                   className="flex-1 h-9 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
                   onClick={() => { onUpdate(localChambers); onClose(); }}>Save Changes</button>
