@@ -1325,7 +1325,7 @@ function BookAppointmentDialog({
                   );
                 })}
                 {slots.length === 0 && (
-                  <p className="col-span-5 text-sm text-muted-foreground">No slots. Open settings to configure.</p>
+                  <p className="col-span-6 text-sm text-muted-foreground">No slots. Open settings to configure.</p>
                 )}
               </div>
 
@@ -1864,6 +1864,7 @@ function AppointmentListModal({
   const formattedDate = dateObj.toLocaleDateString("en-GB", {
     day: "2-digit", month: "2-digit", year: "numeric",
   });
+  const filteredAppointments = appointments.filter((a) => a.date === date);
 
   function formatAge(apt: Appointment): string {
     const parts = [
@@ -1932,8 +1933,8 @@ function AppointmentListModal({
                 </tr>
               </thead>
               <tbody>
-                {appointments.length ? (
-                  appointments.map((apt, i) => (
+                {filteredAppointments.length ? (
+                  filteredAppointments.map((apt, i) => (
                     <tr key={apt.id} className="border-b last:border-0 hover:bg-muted/30">
                       <td className="py-2.5 pr-3 text-muted-foreground">{i + 1}</td>
                       <td className="py-2.5 pr-3 font-medium">{apt.patientName}</td>

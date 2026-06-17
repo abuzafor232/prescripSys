@@ -4741,6 +4741,8 @@ function GlassFeaturesMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   useEffect(() => {
     if (!open) return;
@@ -4752,10 +4754,11 @@ function GlassFeaturesMultiSelect({
   }, [open]);
 
   function toggle(option: string) {
+    const current = valueRef.current;
     onChange(
-      value.includes(option)
-        ? value.filter((item) => item !== option)
-        : [...value, option]
+      current.includes(option)
+        ? current.filter((item) => item !== option)
+        : [...current, option]
     );
   }
 
@@ -5993,6 +5996,11 @@ function FollowUpSidebar({
     year: "numeric"
   });
   const todayIso = formatInputDate(new Date());
+
+  useEffect(() => {
+    if (date && date < todayIso) onDateChange("");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function setDateFromDays(days: number) {
     const next = new Date();
