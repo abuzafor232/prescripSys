@@ -5877,25 +5877,22 @@ function AdviceSidebar({
           )}
 
           {/* Current advice value — auto-resizes with content */}
-          <div className="mt-4 space-y-1">
-            <span className="text-xs font-medium text-muted-foreground">Advice Text</span>
-            <textarea
-              className="w-full resize-none overflow-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-              placeholder="Type advice here, or insert from library above..."
-              rows={3}
-              value={value}
-              onChange={(e) => {
-                onChange(e.target.value);
-                e.target.style.height = "auto";
-                e.target.style.height = `${e.target.scrollHeight}px`;
-              }}
-              onInput={(e) => {
-                const el = e.currentTarget;
-                el.style.height = "auto";
-                el.style.height = `${el.scrollHeight}px`;
-              }}
-            />
-          </div>
+          <textarea
+            className="mt-4 w-full resize-none overflow-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+            placeholder="Type advice here, or insert from library above..."
+            rows={3}
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = `${el.scrollHeight}px`;
+            }}
+          />
         </div>
       </aside>
     </div>
