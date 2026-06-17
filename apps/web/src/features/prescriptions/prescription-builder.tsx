@@ -5992,6 +5992,7 @@ function FollowUpSidebar({
     month: "long",
     year: "numeric"
   });
+  const todayIso = formatInputDate(new Date());
 
   function setDateFromDays(days: number) {
     const next = new Date();
@@ -6051,17 +6052,21 @@ function FollowUpSidebar({
               const inputDate = formatInputDate(item.date);
               const isSelected = inputDate === date;
               const isOutside = item.date.getMonth() !== visibleMonth.getMonth();
+              const isPast = inputDate < todayIso;
 
               return (
                 <div key={inputDate} className="flex items-center justify-center p-0.5">
                   <button
+                    disabled={isPast}
                     className={cn(
                       "flex h-full w-full items-center justify-center rounded text-sm",
-                      isSelected
-                        ? "bg-muted-foreground text-background"
-                        : isOutside
-                          ? "text-muted-foreground/25 hover:bg-muted"
-                          : "text-foreground hover:bg-muted"
+                      isPast
+                        ? "cursor-not-allowed text-muted-foreground/30 line-through"
+                        : isSelected
+                          ? "bg-muted-foreground text-background"
+                          : isOutside
+                            ? "text-muted-foreground/25 hover:bg-muted"
+                            : "text-foreground hover:bg-muted"
                     )}
                     type="button"
                     onClick={() => onDateChange(inputDate)}
