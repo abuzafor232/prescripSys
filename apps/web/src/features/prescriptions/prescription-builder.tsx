@@ -6212,39 +6212,37 @@ function ReferralSidebar({
                   key={doc.id}
                   type="button"
                   className={cn(
-                    "flex w-full cursor-pointer items-start gap-2 rounded-xl border p-3 text-left transition hover:border-primary/40",
+                    "flex w-full cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition hover:border-primary/40",
                     selected ? "border-primary/50 bg-primary/5" : "border-border bg-card"
                   )}
                   onClick={() => onToggleDoctor(doc)}
                 >
                   <span
                     className={cn(
-                      "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition",
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition",
                       selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
                     )}
                   >
-                    {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                    {selected ? <Check className="h-3 w-3" /> : null}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm leading-tight">{doc.name}</p>
-                    {doc.specialty && <p className="text-xs text-muted-foreground mt-0.5">{doc.specialty}</p>}
-                    {doc.chamberAddress && <p className="text-xs text-muted-foreground">{doc.chamberAddress}</p>}
-                    {doc.contact && <p className="text-xs text-muted-foreground">{doc.contact}</p>}
+                    <p className="truncate text-xs font-semibold leading-tight">{doc.name}</p>
+                    {doc.specialty && <p className="truncate text-[10px] text-muted-foreground">{doc.specialty}</p>}
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 gap-0.5">
                     <span
                       role="button"
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                       onClick={(e) => { e.stopPropagation(); openEditDialog(doc); }}
                     >
-                      <Pencil className="h-3.5 w-3.5" />
+                      <Pencil className="h-3 w-3" />
                     </span>
                     <span
                       role="button"
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
                       onClick={(e) => { e.stopPropagation(); onDeleteDoctor(doc.id); }}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3 w-3" />
                     </span>
                   </div>
                 </button>
