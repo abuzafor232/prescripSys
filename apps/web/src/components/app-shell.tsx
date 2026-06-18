@@ -92,7 +92,7 @@ const DEFAULT_PAD: PadSettings = {
   headerEnLines: "", headerLogo: "", headerMidLines: "", headerBnLines: "",
   footerText: "", footerAlignment: "center", footerShowDivider: true,
   marginTop: "0.6", marginBottom: "0.6", marginLeft: "0.6", marginRight: "0.6",
-  headerHeight: "1.5", footerHeight: "0.8", bodyLeftPct: "35",
+  headerHeight: "1.7", footerHeight: "0.8", bodyLeftPct: "35",
 };
 
 function loadPadSettings(): PadSettings {
@@ -162,10 +162,12 @@ function FreeformEditor({
   initialValue,
   onChange,
   placeholder = "Type here…",
+  editorHeight,
 }: {
   initialValue: string;
   onChange: (html: string) => void;
   placeholder?: string;
+  editorHeight?: number;   // content area height in px — matches the printed header height
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
@@ -355,9 +357,15 @@ function FreeformEditor({
         ref={ref}
         contentEditable
         suppressContentEditableWarning
-        className="min-h-[80px] p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-gray-300 empty:before:content-[attr(data-placeholder)]"
+        className="p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-gray-300 empty:before:content-[attr(data-placeholder)]"
         data-placeholder={placeholder}
-        style={{ cursor: "text", wordBreak: "break-word", color: "#111", userSelect: "text", WebkitUserSelect: "text" }}
+        style={{
+          cursor: "text", wordBreak: "break-word", color: "#111",
+          userSelect: "text", WebkitUserSelect: "text",
+          ...(editorHeight
+            ? { height: editorHeight, overflowY: "auto", minHeight: "unset" }
+            : { minHeight: 80 }),
+        }}
         onKeyUp={saveRange}
         onClick={saveRange}
         onSelect={saveRange}
@@ -407,7 +415,7 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
   const mBottom = inToPx(pad.marginBottom, 0.6);
   const mLeft   = inToPx(pad.marginLeft,   0.6);
   const mRight  = inToPx(pad.marginRight,  0.6);
-  const hdrH    = inToPx(pad.headerHeight, 1.5);
+  const hdrH    = inToPx(pad.headerHeight, 1.7);
   const ftrH    = inToPx(pad.footerHeight, 0.8);
   const bodyLeft = parseInt(pad.bodyLeftPct) || 35;
 
@@ -766,39 +774,47 @@ function PadSettingsPanel({
           <div className="border-b bg-primary/5 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide text-primary">
             Header
           </div>
-          {/* 3-column header editor */}
-          <div className="grid grid-cols-3 divide-x bg-card">
-            {/* English column */}
-            <div className="p-3">
-              <p className="mb-2 text-xs font-semibold text-primary/70">Doctor's Info (English)</p>
-              <FreeformEditor
-                initialValue={pad.headerEnLines}
-                onChange={(json) => updatePad({ headerEnLines: json })}
-                placeholder="Dr. Name, MBBS…"
-              />
-            </div>
+          {/* 3-column header editor — height locked to headerHeight inches */}
+          {(() => {
+            const hdrPx = Math.round((parseFloat(pad.headerHeight) || 1.7) * 96);
+            return (
+              <div className="grid grid-cols-3 divide-x bg-card">
+                {/* English column */}
+                <div className="p-3">
+                  <p className="mb-2 text-xs font-semibold text-primary/70">Doctor's Info (English)</p>
+                  <FreeformEditor
+                    initialValue={pad.headerEnLines}
+                    onChange={(json) => updatePad({ headerEnLines: json })}
+                    placeholder="Dr. Name, MBBS…"
+                    editorHeight={hdrPx}
+                  />
+                </div>
 
-            {/* Logo + Middle column */}
-            <div className="flex flex-col gap-2 p-3">
-              <p className="text-xs font-semibold text-primary/70">Logo / Specialty</p>
-              <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
-              <FreeformEditor
-                initialValue={pad.headerMidLines}
-                onChange={(json) => updatePad({ headerMidLines: json })}
-                placeholder="Specialty, clinic name…"
-              />
-            </div>
+                {/* Logo + Middle column */}
+                <div className="flex flex-col gap-2 p-3">
+                  <p className="text-xs font-semibold text-primary/70">Logo / Specialty</p>
+                  <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
+                  <FreeformEditor
+                    initialValue={pad.headerMidLines}
+                    onChange={(json) => updatePad({ headerMidLines: json })}
+                    placeholder="Specialty, clinic name…"
+                    editorHeight={hdrPx}
+                  />
+                </div>
 
-            {/* Bengali column */}
-            <div className="p-3">
-              <p className="mb-2 text-xs font-semibold text-primary/70">ডাক্তারের তথ্য (বাংলা)</p>
-              <FreeformEditor
-                initialValue={pad.headerBnLines}
-                onChange={(json) => updatePad({ headerBnLines: json })}
-                placeholder="ডাঃ নাম, এমবিবিএস…"
-              />
-            </div>
-          </div>
+                {/* Bengali column */}
+                <div className="p-3">
+                  <p className="mb-2 text-xs font-semibold text-primary/70">ডাক্তারের তথ্য (বাংলা)</p>
+                  <FreeformEditor
+                    initialValue={pad.headerBnLines}
+                    onChange={(json) => updatePad({ headerBnLines: json })}
+                    placeholder="ডাঃ নাম, এমবিবিএস…"
+                    editorHeight={hdrPx}
+                  />
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Prescription body area — shows column split */}
