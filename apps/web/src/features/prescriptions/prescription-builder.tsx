@@ -2064,7 +2064,21 @@ export function PrescriptionBuilder() {
           const year = banglaDigits(d.getFullYear());
           const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
           const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000);
-          const daysText = diffDays > 0 ? ` (${banglaDigits(diffDays)} দিন পর)` : diffDays === 0 ? " (আজ)" : "";
+          let periodText = "";
+          if (diffDays > 0) {
+            if (diffDays >= 365) {
+              const years = Math.floor(diffDays / 365);
+              periodText = ` (${banglaDigits(years)} বছর পর)`;
+            } else if (diffDays >= 30) {
+              const months = Math.floor(diffDays / 30);
+              periodText = ` (${banglaDigits(months)} মাস পর)`;
+            } else {
+              periodText = ` (${banglaDigits(diffDays)} দিন পর)`;
+            }
+          } else if (diffDays === 0) {
+            periodText = " (আজ)";
+          }
+          const daysText = periodText;
           dateLabel = `${day} ${month} ${year}${daysText}`;
         }
       }
