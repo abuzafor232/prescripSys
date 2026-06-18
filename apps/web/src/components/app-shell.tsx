@@ -595,7 +595,21 @@ function PadSettingsPanel({
       </div>
 
       {/* ── Right: Header + Body + Footer ─────────── */}
-      <div className="flex flex-1 flex-col overflow-y-auto bg-card">
+      {/* Force permanently-white / light-mode rendering regardless of theme */}
+      <div
+        className="flex flex-1 flex-col overflow-y-auto"
+        style={{
+          "--background":        "0 0% 100%",
+          "--foreground":        "220 18% 14%",
+          "--card":              "0 0% 100%",
+          "--card-foreground":   "220 18% 14%",
+          "--muted":             "42 16% 91%",
+          "--muted-foreground":  "222 9% 42%",
+          "--border":            "42 12% 86%",
+          background:            "white",
+          colorScheme:           "light",
+        } as React.CSSProperties}
+      >
 
         {/* Header section */}
         <div className="shrink-0 border-b">
