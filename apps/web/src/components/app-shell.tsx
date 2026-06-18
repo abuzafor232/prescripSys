@@ -141,135 +141,96 @@ function LogoUpload({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
-// ─── Line Editor ─────────────────────────────────────────────────────────────
+// ─── Freeform Editor ─────────────────────────────────────────────────────────
 
-type DocLine = {
-  id: string;
-  text: string;
-  size: number;
-  color: string;
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
-  align: "left" | "center" | "right";
-};
-
-let _lid = 0;
-function newDocLine(defaults?: Partial<DocLine>): DocLine {
-  return { id: `dl-${++_lid}`, text: "", size: 13, color: "#000000", bold: false, italic: false, underline: false, align: "left", ...defaults };
-}
-
-function parseLines(raw: string): DocLine[] {
-  try {
-    const p = JSON.parse(raw) as DocLine[];
-    return Array.isArray(p) && p.length > 0 ? p : [newDocLine()];
-  } catch { return [newDocLine()]; }
-}
-
-function LineEditor({
+function FreeformEditor({
   initialValue,
   onChange,
   placeholder = "Type here…",
 }: {
   initialValue: string;
-  onChange: (json: string) => void;
+  onChange: (html: string) => void;
   placeholder?: string;
 }) {
-  const [lines, setLines] = useState<DocLine[]>(() => parseLines(initialValue));
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const refs = useRef<Record<string, HTMLInputElement | null>>({});
+  const ref = useRef<HTMLDivElement>(null);
+  const savedRange = useRef<Range | null>(null);
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, align: "left" as "left" | "center" | "right" });
 
-  const active = lines.find((l) => l.id === activeId) ?? null;
+  useEffect(() => {
+    if (ref.current) ref.current.innerHTML = initialValue;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function emit(next: DocLine[]) { onChange(JSON.stringify(next)); }
-
-  function upd(id: string, patch: Partial<DocLine>) {
-    setLines((prev) => { const n = prev.map((l) => l.id === id ? { ...l, ...patch } : l); emit(n); return n; });
+  function syncFmt() {
+    try {
+      setFmt({
+        bold: document.queryCommandState("bold"),
+        italic: document.queryCommandState("italic"),
+        underline: document.queryCommandState("underline"),
+        align: document.queryCommandState("justifyCenter") ? "center" : document.queryCommandState("justifyRight") ? "right" : "left",
+      });
+    } catch {}
   }
 
-  function addAfter(id: string) {
-    const cur = lines.find((l) => l.id === id);
-    const nl = newDocLine(cur ? { size: cur.size, color: cur.color, align: cur.align } : undefined);
-    setLines((prev) => {
-      const idx = prev.findIndex((l) => l.id === id);
-      const n = [...prev.slice(0, idx + 1), nl, ...prev.slice(idx + 1)];
-      emit(n); return n;
-    });
-    setActiveId(nl.id);
-    setTimeout(() => refs.current[nl.id]?.focus(), 0);
+  function saveRange() {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && ref.current?.contains(sel.anchorNode ?? null)) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+    syncFmt();
   }
 
-  function removeLine(id: string) {
-    if (lines.length <= 1) return;
-    setLines((prev) => {
-      const idx = prev.findIndex((l) => l.id === id);
-      const n = prev.filter((l) => l.id !== id);
-      emit(n);
-      const focus = n[Math.max(0, idx - 1)];
-      if (focus) { setActiveId(focus.id); setTimeout(() => refs.current[focus.id]?.focus(), 0); }
-      return n;
-    });
+  function exec(cmd: string, val?: string) {
+    if (savedRange.current) {
+      ref.current?.focus();
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(savedRange.current);
+    }
+    document.execCommand(cmd, false, val ?? undefined);
+    if (ref.current) onChange(ref.current.innerHTML);
+    syncFmt();
   }
 
-  function tbBtn(on: boolean) {
-    return cn("flex h-6 w-6 items-center justify-center rounded hover:bg-muted", on && "bg-primary/15 text-primary");
+  function tbBtn(active: boolean) {
+    return cn("flex h-6 w-6 items-center justify-center rounded transition hover:bg-primary/10", active && "bg-primary/15 text-primary");
   }
 
   return (
     <div className="flex flex-col overflow-hidden rounded-md border bg-background">
-      {/* Toolbar — shows active line's formatting */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b bg-primary/5 px-1.5 py-1 min-h-[30px]">
-        {active ? (
-          <>
-            <select
-              className="h-6 rounded border bg-background px-1 text-[10px] mr-1"
-              value={String(active.size)}
-              onChange={(e) => upd(active.id, { size: parseInt(e.target.value) })}
-            >
-              {[8,9,10,11,12,13,14,16,18,20,24,28,32].map((s) => <option key={s} value={s}>{s}px</option>)}
-            </select>
-            <input type="color" title="Color" className="h-6 w-6 cursor-pointer rounded border p-0.5 mr-1" value={active.color} onChange={(e) => upd(active.id, { color: e.target.value })} />
-            <button type="button" className={tbBtn(active.bold)} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { bold: !active.bold }); refs.current[active.id]?.focus(); }}><Bold className="h-3 w-3" /></button>
-            <button type="button" className={tbBtn(active.italic)} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { italic: !active.italic }); refs.current[active.id]?.focus(); }}><Italic className="h-3 w-3" /></button>
-            <button type="button" className={cn(tbBtn(active.underline), "mr-1")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { underline: !active.underline }); refs.current[active.id]?.focus(); }}><Underline className="h-3 w-3" /></button>
-            <button type="button" className={tbBtn(active.align === "left")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { align: "left" }); refs.current[active.id]?.focus(); }}><AlignLeft className="h-3 w-3" /></button>
-            <button type="button" className={tbBtn(active.align === "center")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { align: "center" }); refs.current[active.id]?.focus(); }}><AlignCenter className="h-3 w-3" /></button>
-            <button type="button" className={tbBtn(active.align === "right")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { align: "right" }); refs.current[active.id]?.focus(); }}><AlignRight className="h-3 w-3" /></button>
-          </>
-        ) : (
-          <span className="px-1 text-[10px] text-primary/40">Click a line to format</span>
-        )}
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-0.5 border-b bg-primary/5 px-1.5 py-1">
+        <select
+          className="h-6 rounded border bg-background px-1 text-[10px] mr-1"
+          defaultValue="3"
+          onChange={(e) => exec("fontSize", e.target.value)}
+        >
+          {[["1","8pt"],["2","10pt"],["3","12pt"],["4","14pt"],["5","18pt"],["6","24pt"],["7","36pt"]].map(([v,l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
+        <input type="color" title="Text color" className="h-6 w-6 cursor-pointer rounded border p-0.5 mr-1" defaultValue="#000000" onChange={(e) => exec("foreColor", e.target.value)} />
+        <button type="button" className={tbBtn(fmt.bold)}      onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}><Bold className="h-3 w-3" /></button>
+        <button type="button" className={tbBtn(fmt.italic)}    onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}><Italic className="h-3 w-3" /></button>
+        <button type="button" className={cn(tbBtn(fmt.underline), "mr-1")} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
+        <button type="button" className={tbBtn(fmt.align === "left")}   onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}><AlignLeft className="h-3 w-3" /></button>
+        <button type="button" className={tbBtn(fmt.align === "center")} onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}><AlignCenter className="h-3 w-3" /></button>
+        <button type="button" className={tbBtn(fmt.align === "right")}  onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}><AlignRight className="h-3 w-3" /></button>
       </div>
-
-      {/* Lines */}
-      <div className="flex flex-col p-1.5 gap-0.5">
-        {lines.map((line, idx) => (
-          <div key={line.id} className={cn("flex items-center gap-1 rounded px-1 py-0.5", activeId === line.id && "bg-primary/5 ring-1 ring-inset ring-primary/20")}>
-            <input
-              ref={(el) => { refs.current[line.id] = el; }}
-              type="text"
-              className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground/25"
-              style={{ fontSize: `${line.size}px`, color: line.color, fontWeight: line.bold ? "bold" : "normal", fontStyle: line.italic ? "italic" : "normal", textDecoration: line.underline ? "underline" : "none", textAlign: line.align }}
-              placeholder={idx === 0 ? placeholder : ""}
-              value={line.text}
-              onChange={(e) => upd(line.id, { text: e.target.value })}
-              onFocus={() => setActiveId(line.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); addAfter(line.id); }
-                if (e.key === "Backspace" && line.text === "") { e.preventDefault(); removeLine(line.id); }
-              }}
-            />
-            {activeId === line.id && lines.length > 1 && (
-              <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground/30 hover:text-destructive" onMouseDown={(e) => { e.preventDefault(); removeLine(line.id); }}>
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-        ))}
-        <button type="button" className="mt-0.5 flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-primary/40 hover:text-primary hover:bg-primary/8 transition" onClick={() => addAfter(lines[lines.length - 1]?.id ?? "")}>
-          <Plus className="h-3 w-3" /> Add line
-        </button>
-      </div>
+      {/* Freeform content area — auto-fits to content */}
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        className="min-h-[72px] p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-muted-foreground/35 empty:before:content-[attr(data-placeholder)]"
+        data-placeholder={placeholder}
+        style={{ cursor: "text", wordBreak: "break-word" }}
+        onKeyUp={saveRange}
+        onClick={saveRange}
+        onSelect={saveRange}
+        onFocus={syncFmt}
+        onInput={() => { if (ref.current) onChange(ref.current.innerHTML); }}
+      />
     </div>
   );
 }
@@ -452,7 +413,7 @@ function PadSettingsPanel({
             {/* English column */}
             <div className="p-3">
               <p className="mb-2 text-xs font-semibold text-primary/70">Doctor's Info (English)</p>
-              <LineEditor
+              <FreeformEditor
                 initialValue={pad.headerEnLines}
                 onChange={(json) => updatePad({ headerEnLines: json })}
                 placeholder="Dr. Name, MBBS…"
@@ -463,7 +424,7 @@ function PadSettingsPanel({
             <div className="flex flex-col gap-2 p-3">
               <p className="text-xs font-semibold text-primary/70">Logo / Specialty</p>
               <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
-              <LineEditor
+              <FreeformEditor
                 initialValue={pad.headerMidLines}
                 onChange={(json) => updatePad({ headerMidLines: json })}
                 placeholder="Specialty, clinic name…"
@@ -473,7 +434,7 @@ function PadSettingsPanel({
             {/* Bengali column */}
             <div className="p-3">
               <p className="mb-2 text-xs font-semibold text-primary/70">ডাক্তারের তথ্য (বাংলা)</p>
-              <LineEditor
+              <FreeformEditor
                 initialValue={pad.headerBnLines}
                 onChange={(json) => updatePad({ headerBnLines: json })}
                 placeholder="ডাঃ নাম, এমবিবিএস…"
