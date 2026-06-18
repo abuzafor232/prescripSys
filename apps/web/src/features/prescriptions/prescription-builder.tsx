@@ -6135,6 +6135,25 @@ function FollowUpSidebar({
   onNoteChange,
   onFeesChange
 }: FollowUpSidebarProps) {
+  const [noteChipsOpen, setNoteChipsOpen] = useState(false);
+  const noteChips = [
+    "Bring previous reports",
+    "Come fasting (empty stomach)",
+    "CBC required",
+    "Blood sugar test required",
+    "Bring old prescriptions",
+    "Take medicines regularly",
+    "Review required",
+    "Bring X-ray / scan reports",
+    "Come with attendant",
+    "Urine test required",
+  ];
+
+  function appendNoteChip(chip: string) {
+    onNoteChange(note ? `${note}\n${chip}` : chip);
+    setNoteChipsOpen(false);
+  }
+
   const selectedDate = date ? new Date(`${date}T00:00:00`) : new Date();
   const [visibleMonth, setVisibleMonth] = useState(
     new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1)
@@ -6261,12 +6280,39 @@ function FollowUpSidebar({
           ))}
         </div>
 
-        <Textarea
-          className="shrink-0 min-h-16 bg-background"
-          placeholder="Follow-up note"
-          value={note}
-          onChange={(event) => onNoteChange(event.target.value)}
-        />
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            title="Add quick note"
+            className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary hover:bg-primary/20"
+            onClick={() => setNoteChipsOpen((o) => !o)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+          {noteChipsOpen && (
+            <div className="absolute bottom-full right-0 z-20 mb-1 w-64 rounded-md border bg-card p-2 shadow-lg">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Quick Notes</p>
+              <div className="flex flex-wrap gap-1">
+                {noteChips.map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                    onClick={() => appendNoteChip(chip)}
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <Textarea
+            className="min-h-16 bg-background pr-9"
+            placeholder="Follow-up note"
+            value={note}
+            onChange={(event) => onNoteChange(event.target.value)}
+          />
+        </div>
       </div>
     </RightDrawer>
   );
