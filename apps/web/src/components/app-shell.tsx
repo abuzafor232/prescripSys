@@ -49,34 +49,40 @@ type PadSettings = {
   pageSize: "A4" | "A5" | "Letter" | "Custom";
   customWidth: string;
   customHeight: string;
-  marginTop: string;
-  marginBottom: string;
-  marginLeft: string;
-  marginRight: string;
-  headerLogoUrl: string;
-  headerClinicName: string;
-  headerSubtitle: string;
-  headerDoctorName: string;
-  headerDegrees: string;
+  newPatientFees: string;
+  followUpFees: string;
+  reportFees: string;
+  // Header – English (left column)
+  headerEnDoctorName: string;
+  headerEnDegrees: string;
+  headerEnDesignation: string;
+  headerEnInstitute: string;
+  headerEnContact: string;
+  // Header – Middle (logo + specialty)
+  headerLogo: string;       // base64 or URL
   headerSpecialty: string;
-  headerAddress: string;
-  headerPhone: string;
-  headerEmail: string;
-  footerLine1: string;
-  footerLine2: string;
-  footerLine3: string;
+  // Header – Bengali (right column)
+  headerBnDoctorName: string;
+  headerBnDegrees: string;
+  headerBnDesignation: string;
+  headerBnInstitute: string;
+  headerBnContact: string;
+  // Footer
+  footerText: string;
+  footerAlignment: "left" | "center" | "right";
   footerShowDivider: boolean;
 };
 
 const DEFAULT_PAD: PadSettings = {
   pageSize: "A4",
   customWidth: "210", customHeight: "297",
-  marginTop: "20", marginBottom: "20", marginLeft: "20", marginRight: "20",
-  headerLogoUrl: "", headerClinicName: "", headerSubtitle: "",
-  headerDoctorName: "", headerDegrees: "", headerSpecialty: "",
-  headerAddress: "", headerPhone: "", headerEmail: "",
-  footerLine1: "", footerLine2: "", footerLine3: "",
-  footerShowDivider: true,
+  newPatientFees: "", followUpFees: "", reportFees: "",
+  headerEnDoctorName: "", headerEnDegrees: "", headerEnDesignation: "",
+  headerEnInstitute: "", headerEnContact: "",
+  headerLogo: "", headerSpecialty: "",
+  headerBnDoctorName: "", headerBnDegrees: "", headerBnDesignation: "",
+  headerBnInstitute: "", headerBnContact: "",
+  footerText: "", footerAlignment: "center", footerShowDivider: true,
 };
 
 function loadPadSettings(): PadSettings {
@@ -90,234 +96,229 @@ function savePadSettings(s: PadSettings) {
   try { localStorage.setItem(PAD_SETTINGS_KEY, JSON.stringify(s)); } catch {}
 }
 
-// ─── Pad Preview ────────────────────────────────────────────────────────────
+// ─── Logo Upload ─────────────────────────────────────────────────────────────
 
-const PAGE_MM: Record<string, { w: number; h: number }> = {
-  A4: { w: 210, h: 297 },
-  A5: { w: 148, h: 210 },
-  Letter: { w: 216, h: 279 },
-};
+function LogoUpload({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
-function PadPreview({ pad }: { pad: PadSettings }) {
-  const { w, h } = pad.pageSize === "Custom"
-    ? { w: Number(pad.customWidth) || 210, h: Number(pad.customHeight) || 297 }
-    : PAGE_MM[pad.pageSize];
-
-  const PREVIEW_W = 260;
-  const px = PREVIEW_W / w;
-  const PREVIEW_H = Math.round(h * px);
-
-  const ml = (Number(pad.marginLeft) || 20) * px;
-  const mr = (Number(pad.marginRight) || 20) * px;
-  const mt = (Number(pad.marginTop) || 20) * px;
-  const mb = (Number(pad.marginBottom) || 20) * px;
-
-  const hasHeader = pad.headerClinicName || pad.headerDoctorName || pad.headerAddress || pad.headerPhone || pad.headerLogoUrl;
-  const hasFooter = pad.footerLine1 || pad.footerLine2 || pad.footerLine3;
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(reader.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
 
   return (
-    <div style={{ width: PREVIEW_W, height: PREVIEW_H, background: "white", boxShadow: "0 2px 12px rgba(0,0,0,.18)", borderRadius: 4, position: "relative", overflow: "hidden", flexShrink: 0 }}>
-      {/* Margin box */}
-      <div style={{ position: "absolute", top: mt, left: ml, right: mr, bottom: mb, border: "1px dashed #d1d5db", pointerEvents: "none" }} />
-
-      {/* Header */}
-      <div style={{ position: "absolute", top: mt, left: ml, right: mr }}>
-        {pad.headerLogoUrl && (
-          <img src={pad.headerLogoUrl} alt="logo" style={{ maxHeight: 28, maxWidth: "100%", display: "block", margin: "0 auto 3px" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-        )}
-        {pad.headerClinicName && (
-          <div style={{ fontSize: 9, fontWeight: 700, textAlign: "center", lineHeight: 1.3 }}>{pad.headerClinicName}</div>
-        )}
-        {pad.headerSubtitle && (
-          <div style={{ fontSize: 7, textAlign: "center", color: "#555", lineHeight: 1.3 }}>{pad.headerSubtitle}</div>
-        )}
-        {pad.headerDoctorName && (
-          <div style={{ fontSize: 8, fontWeight: 600, textAlign: "center", marginTop: 2, lineHeight: 1.3 }}>{pad.headerDoctorName}</div>
-        )}
-        {(pad.headerDegrees || pad.headerSpecialty) && (
-          <div style={{ fontSize: 7, textAlign: "center", color: "#666", lineHeight: 1.3 }}>
-            {[pad.headerDegrees, pad.headerSpecialty].filter(Boolean).join(" · ")}
-          </div>
-        )}
-        {(pad.headerAddress || pad.headerPhone || pad.headerEmail) && (
-          <div style={{ fontSize: 6.5, textAlign: "center", color: "#888", marginTop: 2, lineHeight: 1.3 }}>
-            {[pad.headerAddress, pad.headerPhone, pad.headerEmail].filter(Boolean).join("  |  ")}
-          </div>
-        )}
-        {hasHeader && <div style={{ borderBottom: "1px solid #ccc", marginTop: 4 }} />}
-        {!hasHeader && (
-          <div style={{ fontSize: 7, color: "#aaa", textAlign: "center", padding: "6px 0" }}>Header content will appear here</div>
-        )}
-      </div>
-
-      {/* Dotted content lines */}
-      <div style={{ position: "absolute", top: mt + (hasHeader ? 52 : 18), left: ml, right: mr, bottom: mb + (hasFooter ? 28 : 8) }}>
-        {Array.from({ length: 12 }).map((_, i) => (
-          <div key={i} style={{ borderBottom: "1px dotted #e5e7eb", marginBottom: 7, height: 8 }} />
-        ))}
-      </div>
-
-      {/* Footer */}
-      {(hasFooter || pad.footerShowDivider) && (
-        <div style={{ position: "absolute", bottom: mb, left: ml, right: mr, fontSize: 6.5, textAlign: "center", color: "#777", lineHeight: 1.5 }}>
-          {pad.footerShowDivider && <div style={{ borderTop: "1px solid #ccc", marginBottom: 3 }} />}
-          {pad.footerLine1 && <div>{pad.footerLine1}</div>}
-          {pad.footerLine2 && <div>{pad.footerLine2}</div>}
-          {pad.footerLine3 && <div>{pad.footerLine3}</div>}
-          {!hasFooter && <div style={{ color: "#aaa" }}>Footer content will appear here</div>}
+    <div className="flex flex-col items-center gap-1.5">
+      {value ? (
+        <div className="relative">
+          <img src={value} alt="Logo" className="max-h-14 max-w-full rounded border object-contain" />
+          <button
+            type="button"
+            className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow"
+            onClick={() => onChange("")}
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </div>
+      ) : (
+        <div className="flex h-12 w-full items-center justify-center rounded-md border-2 border-dashed border-muted-foreground/25 bg-muted/20 text-[10px] text-muted-foreground">
+          No logo
         </div>
       )}
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <button
+        type="button"
+        className="flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+        onClick={() => inputRef.current?.click()}
+      >
+        <Plus className="h-3 w-3" />
+        {value ? "Change" : "Add Logo"}
+      </button>
     </div>
   );
 }
 
-// ─── Settings field helper ───────────────────────────────────────────────────
+// ─── Inline pad input ────────────────────────────────────────────────────────
 
-function SettingField({ label, children }: { label: string; children: React.ReactNode }) {
+function PadInput({ label, value, onChange, placeholder, font }: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; font?: "bangla";
+}) {
   return (
-    <div className="space-y-1">
-      <label className="block text-xs font-medium text-foreground">{label}</label>
-      {children}
+    <div className="flex items-center gap-1 border-b border-border/40 py-1 last:border-b-0">
+      <span className="w-20 shrink-0 text-[10px] text-muted-foreground">{label}</span>
+      <input
+        type="text"
+        className={cn(
+          "flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/40 focus:bg-primary/5 rounded px-1",
+          font === "bangla" && "font-[inherit]"
+        )}
+        value={value}
+        placeholder={placeholder ?? label}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
-  );
-}
-
-function SettingInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return (
-    <input
-      type="text"
-      className="h-8 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-    />
   );
 }
 
 // ─── Pad Settings Panel ──────────────────────────────────────────────────────
 
 function PadSettingsPanel({ pad, updatePad }: { pad: PadSettings; updatePad: (p: Partial<PadSettings>) => void }) {
-  const [section, setSection] = useState<"page" | "header" | "footer">("header");
-
   return (
     <div className="flex flex-1 overflow-hidden">
-      {/* Settings column */}
-      <div className="flex w-72 shrink-0 flex-col border-r overflow-hidden">
-        <div className="flex shrink-0 border-b">
-          {(["header", "footer", "page"] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={cn("flex-1 py-2 text-xs font-medium capitalize transition", section === s ? "border-b-2 border-primary bg-background text-primary" : "text-muted-foreground hover:bg-muted/50")}
-              onClick={() => setSection(s)}
-            >{s}</button>
+      {/* ── Left: Select Chamber sidebar ─────────── */}
+      <div className="flex w-44 shrink-0 flex-col border-r">
+        <div className="border-b bg-muted/50 px-3 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide">
+          Select Chamber
+        </div>
+
+        {/* Fees */}
+        <div className="border-b p-3 space-y-2">
+          {(
+            [
+              ["New Patient Fees", "newPatientFees"],
+              ["Follow-Up Fees", "followUpFees"],
+              ["Report Fees", "reportFees"],
+            ] as [string, keyof PadSettings][]
+          ).map(([label, key]) => (
+            <div key={key} className="flex items-center gap-2">
+              <span className="w-24 shrink-0 text-right text-[10px] text-muted-foreground">{label}:</span>
+              <input
+                type="text"
+                className="h-6 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                value={pad[key] as string}
+                onChange={(e) => updatePad({ [key]: e.target.value })}
+              />
+            </div>
           ))}
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          {section === "page" && (
-            <>
-              <SettingField label="Page Size">
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(["A4", "A5", "Letter", "Custom"] as const).map((sz) => (
-                    <button
-                      key={sz}
-                      type="button"
-                      className={cn("rounded-md border px-3 py-1.5 text-xs font-medium transition", pad.pageSize === sz ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
-                      onClick={() => updatePad({ pageSize: sz })}
-                    >{sz}</button>
-                  ))}
-                </div>
-              </SettingField>
-              {pad.pageSize === "Custom" && (
-                <div className="grid grid-cols-2 gap-2">
-                  <SettingField label="Width (mm)">
-                    <SettingInput value={pad.customWidth} onChange={(v) => updatePad({ customWidth: v })} placeholder="210" />
-                  </SettingField>
-                  <SettingField label="Height (mm)">
-                    <SettingInput value={pad.customHeight} onChange={(v) => updatePad({ customHeight: v })} placeholder="297" />
-                  </SettingField>
-                </div>
-              )}
-              <div className="pt-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Margins (mm)</div>
-              <div className="grid grid-cols-2 gap-2">
-                {(["marginTop", "marginRight", "marginBottom", "marginLeft"] as const).map((k) => (
-                  <SettingField key={k} label={k.replace("margin", "")}>
-                    <SettingInput value={pad[k]} onChange={(v) => updatePad({ [k]: v })} placeholder="20" />
-                  </SettingField>
-                ))}
-              </div>
-            </>
-          )}
-
-          {section === "header" && (
-            <>
-              <SettingField label="Logo URL">
-                <SettingInput value={pad.headerLogoUrl} onChange={(v) => updatePad({ headerLogoUrl: v })} placeholder="https://..." />
-              </SettingField>
-              <SettingField label="Clinic / Chamber Name">
-                <SettingInput value={pad.headerClinicName} onChange={(v) => updatePad({ headerClinicName: v })} placeholder="Eye Care Center" />
-              </SettingField>
-              <SettingField label="Subtitle / Tagline">
-                <SettingInput value={pad.headerSubtitle} onChange={(v) => updatePad({ headerSubtitle: v })} placeholder="A Complete Eye Care Solution" />
-              </SettingField>
-              <SettingField label="Doctor Name">
-                <SettingInput value={pad.headerDoctorName} onChange={(v) => updatePad({ headerDoctorName: v })} placeholder="Dr. Mohammad Abdullah" />
-              </SettingField>
-              <SettingField label="Degrees / Qualifications">
-                <SettingInput value={pad.headerDegrees} onChange={(v) => updatePad({ headerDegrees: v })} placeholder="MBBS, MS (Ophthalmology)" />
-              </SettingField>
-              <SettingField label="Specialty">
-                <SettingInput value={pad.headerSpecialty} onChange={(v) => updatePad({ headerSpecialty: v })} placeholder="Consultant Ophthalmologist" />
-              </SettingField>
-              <SettingField label="Address">
-                <SettingInput value={pad.headerAddress} onChange={(v) => updatePad({ headerAddress: v })} placeholder="123 Main Street, Dhaka" />
-              </SettingField>
-              <SettingField label="Phone">
-                <SettingInput value={pad.headerPhone} onChange={(v) => updatePad({ headerPhone: v })} placeholder="+880 1700-000000" />
-              </SettingField>
-              <SettingField label="Email">
-                <SettingInput value={pad.headerEmail} onChange={(v) => updatePad({ headerEmail: v })} placeholder="doctor@example.com" />
-              </SettingField>
-            </>
-          )}
-
-          {section === "footer" && (
-            <>
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded"
-                  checked={pad.footerShowDivider}
-                  onChange={(e) => updatePad({ footerShowDivider: e.target.checked })}
-                />
-                Show divider line above footer
-              </label>
-              <SettingField label="Footer Line 1">
-                <SettingInput value={pad.footerLine1} onChange={(v) => updatePad({ footerLine1: v })} placeholder="Visiting hours: Sat–Thu, 6–9 PM" />
-              </SettingField>
-              <SettingField label="Footer Line 2">
-                <SettingInput value={pad.footerLine2} onChange={(v) => updatePad({ footerLine2: v })} placeholder="123 Main Street, Dhaka | +880 1700-000000" />
-              </SettingField>
-              <SettingField label="Footer Line 3">
-                <SettingInput value={pad.footerLine3} onChange={(v) => updatePad({ footerLine3: v })} placeholder="www.eyecarebd.com" />
-              </SettingField>
-            </>
+        {/* Page Size */}
+        <div className="border-b p-3 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="w-24 shrink-0 text-right text-[10px] text-muted-foreground">Page Size:</span>
+            <div className="flex flex-wrap gap-1">
+              {(["A4", "A5", "Custom"] as const).map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  className={cn("rounded border px-1.5 py-0.5 text-[10px] font-medium transition", pad.pageSize === sz ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
+                  onClick={() => updatePad({ pageSize: sz })}
+                >{sz}</button>
+              ))}
+            </div>
+          </div>
+          {pad.pageSize === "Custom" && (
+            <div className="flex items-center gap-1 pl-2 text-[10px]">
+              <input className="h-5 w-14 rounded border bg-background px-1 text-center text-xs outline-none" value={pad.customWidth} placeholder="W mm" onChange={(e) => updatePad({ customWidth: e.target.value })} />
+              <span className="text-muted-foreground">×</span>
+              <input className="h-5 w-14 rounded border bg-background px-1 text-center text-xs outline-none" value={pad.customHeight} placeholder="H mm" onChange={(e) => updatePad({ customHeight: e.target.value })} />
+              <span className="text-muted-foreground">mm</span>
+            </div>
           )}
         </div>
 
-        <div className="shrink-0 border-t px-4 py-2.5">
-          <p className="text-[10px] text-muted-foreground">Changes are saved automatically</p>
+        {/* Prescription body spacer */}
+        <div className="flex flex-1 items-center justify-center">
+          <span className="rotate-90 text-[10px] text-muted-foreground/40 whitespace-nowrap">Prescription Body</span>
         </div>
       </div>
 
-      {/* Preview column */}
-      <div className="flex flex-1 flex-col items-center overflow-y-auto bg-muted/20 p-6 gap-3">
-        <p className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live Preview</p>
-        <PadPreview pad={pad} />
-        <p className="text-[10px] text-muted-foreground text-center max-w-[260px]">
-          This preview shows how your prescription pad header and footer will look when printed.
-        </p>
+      {/* ── Right: Header + Body + Footer ─────────── */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+
+        {/* Header section */}
+        <div className="shrink-0 border-b">
+          <div className="border-b bg-muted/50 px-3 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide">
+            Header
+          </div>
+          {/* 3-column header editor */}
+          <div className="grid grid-cols-3 divide-x">
+            {/* English column */}
+            <div className="p-2">
+              <p className="mb-1 text-[10px] font-semibold text-muted-foreground">Doctor's Info (English)</p>
+              <PadInput label="Doctor Name" value={pad.headerEnDoctorName} onChange={(v) => updatePad({ headerEnDoctorName: v })} placeholder="Dr. Abdullah" />
+              <PadInput label="Degrees" value={pad.headerEnDegrees} onChange={(v) => updatePad({ headerEnDegrees: v })} placeholder="MBBS, MS" />
+              <PadInput label="Designation" value={pad.headerEnDesignation} onChange={(v) => updatePad({ headerEnDesignation: v })} placeholder="Consultant" />
+              <PadInput label="Institute" value={pad.headerEnInstitute} onChange={(v) => updatePad({ headerEnInstitute: v })} placeholder="Eye Hospital" />
+              <PadInput label="Contact" value={pad.headerEnContact} onChange={(v) => updatePad({ headerEnContact: v })} placeholder="+880..." />
+            </div>
+
+            {/* Logo + Specialty column */}
+            <div className="flex flex-col items-center gap-2 p-2">
+              <p className="text-[10px] font-semibold text-muted-foreground">Logo / Specialty</p>
+              <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
+              <input
+                type="text"
+                className="mt-1 h-7 w-full rounded border bg-background px-2 text-center text-xs outline-none focus:ring-1 focus:ring-primary"
+                value={pad.headerSpecialty}
+                placeholder="Specialty"
+                onChange={(e) => updatePad({ headerSpecialty: e.target.value })}
+              />
+            </div>
+
+            {/* Bengali column */}
+            <div className="p-2">
+              <p className="mb-1 text-[10px] font-semibold text-muted-foreground">ডাক্তারের তথ্য (বাংলা)</p>
+              <PadInput label="ডাক্তারের নাম" value={pad.headerBnDoctorName} onChange={(v) => updatePad({ headerBnDoctorName: v })} placeholder="ডাঃ আবদুল্লাহ" font="bangla" />
+              <PadInput label="ডিগ্রী" value={pad.headerBnDegrees} onChange={(v) => updatePad({ headerBnDegrees: v })} placeholder="এমবিবিএস" font="bangla" />
+              <PadInput label="পদবী" value={pad.headerBnDesignation} onChange={(v) => updatePad({ headerBnDesignation: v })} placeholder="পরামর্শদাতা" font="bangla" />
+              <PadInput label="প্রতিষ্ঠান" value={pad.headerBnInstitute} onChange={(v) => updatePad({ headerBnInstitute: v })} placeholder="চক্ষু হাসপাতাল" font="bangla" />
+              <PadInput label="যোগাযোগ" value={pad.headerBnContact} onChange={(v) => updatePad({ headerBnContact: v })} placeholder="+৮৮০..." font="bangla" />
+            </div>
+          </div>
+        </div>
+
+        {/* Prescription body area */}
+        <div className="flex flex-1 items-center justify-center text-[11px] text-muted-foreground/50">
+          (Prescription according to selected size)
+        </div>
+
+        {/* Footer section */}
+        <div className="shrink-0 border-t">
+          <div className="border-b bg-muted/50 px-3 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide">
+            Footer
+          </div>
+          <div className="p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded"
+                  checked={pad.footerShowDivider}
+                  onChange={(e) => updatePad({ footerShowDivider: e.target.checked })}
+                />
+                Divider line
+              </label>
+              <span className="ml-auto text-[10px] text-muted-foreground">Alignment:</span>
+              <div className="flex rounded-md border overflow-hidden">
+                {(["left", "center", "right"] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    className={cn("px-2 py-0.5 text-[10px] capitalize transition", pad.footerAlignment === a ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
+                    onClick={() => updatePad({ footerAlignment: a })}
+                  >{a}</button>
+                ))}
+              </div>
+            </div>
+            <textarea
+              className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+              rows={2}
+              placeholder="Any info — visiting hours, address, website…"
+              value={pad.footerText}
+              style={{ textAlign: pad.footerAlignment }}
+              onChange={(e) => updatePad({ footerText: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="shrink-0 border-t px-4 py-1.5">
+          <p className="text-[10px] text-muted-foreground">Changes are saved automatically</p>
+        </div>
       </div>
     </div>
   );
