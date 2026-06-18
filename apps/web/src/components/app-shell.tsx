@@ -354,9 +354,12 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
     ? (parseFloat(pad.customHeight) || 11) * PX_PER_IN
     : PAGE_SIZES[pad.pageSize]?.h ?? PAGE_SIZES.A4.h;
 
-  const PREVIEW_W = 480;
+  const PREVIEW_W = 640;
   const scale = PREVIEW_W / pageW;
   const previewH = pageH * scale;
+  // epx: given a desired effective pixel size, returns the pre-scale size so
+  // the element always appears at `target` px regardless of the zoom factor.
+  const epx = (target: number) => Math.round(target / scale);
 
   const inToPx = (v: string, fallback: number) => (parseFloat(v) || fallback) * PX_PER_IN;
   const mTop    = inToPx(pad.marginTop,    0.6);
@@ -419,12 +422,12 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
                 {/* English */}
                 <div style={{ flex: 1, overflow: "hidden", padding: "4px 6px" }}
                   dangerouslySetInnerHTML={{ __html: pad.headerEnLines || "" }} />
-                {/* Middle: logo + specialty */}
+                {/* Middle: logo + specialty — no fontSize wrapper so editor HTML controls sizes */}
                 <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "4px 8px", minWidth: 80 }}>
                   {pad.headerLogo && (
                     <img src={pad.headerLogo} alt="Logo" style={{ maxHeight: hdrH * 0.55, maxWidth: 120, objectFit: "contain" }} />
                   )}
-                  <div style={{ fontSize: 11, textAlign: "center" }}
+                  <div style={{ textAlign: "center" }}
                     dangerouslySetInnerHTML={{ __html: pad.headerMidLines || "" }} />
                 </div>
                 {/* Bengali */}
@@ -433,37 +436,28 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
               </div>
 
               {/* Body */}
-              <div style={{ flex: 1, display: "flex", overflow: "hidden", fontSize: 11 }}>
+              <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
                 {/* Left column — patient info */}
-                <div style={{ width: `${bodyLeft}%`, borderRight: "1px solid #e5e7eb", padding: "8px 6px", display: "flex", flexDirection: "column", gap: 4 }}>
-                  {[
-                    "Name",
-                    "Age / Sex",
-                    "Weight / BP",
-                    "Chief Complaints",
-                    "On Examination",
-                    "Investigation",
-                    "Diagnosis",
-                    "Follow Up",
-                  ].map((label) => (
+                <div style={{ width: `${bodyLeft}%`, borderRight: "1px solid #e5e7eb", padding: "8px 6px", display: "flex", flexDirection: "column", gap: epx(5) }}>
+                  {["Name", "Age / Sex", "Weight / BP", "Chief Complaints", "On Examination", "Investigation", "Diagnosis", "Follow Up"].map((label) => (
                     <div key={label}>
-                      <div style={{ fontSize: 9, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>{label}</div>
-                      <div style={{ borderBottom: "1px dotted #d1d5db", height: 14 }} />
+                      <div style={{ fontSize: epx(8), fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: epx(2) }}>{label}</div>
+                      <div style={{ borderBottom: "1px dotted #d1d5db", height: epx(14) }} />
                     </div>
                   ))}
                 </div>
                 {/* Right column — Rx */}
-                <div style={{ flex: 1, padding: "8px 8px", display: "flex", flexDirection: "column", gap: 3 }}>
-                  <div style={{ fontSize: 22, fontFamily: "serif", fontWeight: 700, color: "#374151", marginBottom: 4 }}>℞</div>
+                <div style={{ flex: 1, padding: "8px 8px", display: "flex", flexDirection: "column", gap: epx(3) }}>
+                  <div style={{ fontSize: epx(22), fontFamily: "serif", fontWeight: 700, color: "#374151", marginBottom: epx(4) }}>℞</div>
                   {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} style={{ marginBottom: 6 }}>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                        <span style={{ fontSize: 9, color: "#9ca3af", minWidth: 12 }}>{i + 1}.</span>
-                        <div style={{ flex: 1, borderBottom: "1px dotted #d1d5db", height: 14 }} />
+                    <div key={i} style={{ marginBottom: epx(6) }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: epx(4) }}>
+                        <span style={{ fontSize: epx(9), color: "#9ca3af", minWidth: epx(12) }}>{i + 1}.</span>
+                        <div style={{ flex: 1, borderBottom: "1px dotted #d1d5db", height: epx(14) }} />
                       </div>
-                      <div style={{ display: "flex", gap: 4, marginTop: 2 }}>
-                        <span style={{ minWidth: 12 }} />
-                        <div style={{ flex: 1, borderBottom: "1px dotted #e5e7eb", height: 11 }} />
+                      <div style={{ display: "flex", gap: epx(4), marginTop: epx(2) }}>
+                        <span style={{ minWidth: epx(12) }} />
+                        <div style={{ flex: 1, borderBottom: "1px dotted #e5e7eb", height: epx(11) }} />
                       </div>
                     </div>
                   ))}
@@ -475,13 +469,15 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
                 height: ftrH, flexShrink: 0,
                 borderTop: "1px solid #d1d5db",
                 display: "flex", flexDirection: "column", justifyContent: "center",
-                padding: "4px 6px",
+                padding: `${epx(4)}px ${epx(6)}px`,
               }}>
                 {pad.footerShowDivider && (
-                  <div style={{ borderTop: "1px solid #9ca3af", marginBottom: 4 }} />
+                  <div style={{ borderTop: "1px solid #9ca3af", marginBottom: epx(4) }} />
                 )}
-                <div style={{ fontSize: 11, color: "#374151", textAlign: pad.footerAlignment, whiteSpace: "pre-wrap" }}>
-                  {pad.footerText || <span style={{ color: "#d1d5db", fontStyle: "italic" }}>No footer text</span>}
+                <div style={{ fontSize: epx(11), color: "#374151", textAlign: pad.footerAlignment, whiteSpace: "pre-wrap" }}>
+                  {pad.footerText
+                    ? pad.footerText
+                    : <span style={{ color: "#d1d5db", fontStyle: "italic" }}>No footer text</span>}
                 </div>
               </div>
             </div>
