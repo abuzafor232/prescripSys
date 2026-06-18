@@ -6344,9 +6344,6 @@ function FollowUpNoteBox({
     <div className="flex shrink-0 flex-col gap-2">
       {(noteChips.length > 0 || addingChip) && (
         <div className="flex flex-col gap-1.5 rounded-md border bg-muted/30 p-2">
-          {noteChips.length > 0 && (
-            <p className="text-[10px] text-muted-foreground">Click a capsule to add it to the prescription</p>
-          )}
           <div className="flex flex-wrap gap-1.5">
             {noteChips.map((chip, idx) =>
               editingIdx === idx ? (
