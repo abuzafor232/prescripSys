@@ -81,8 +81,8 @@ const DEFAULT_PAD: PadSettings = {
   newPatientFees: "", followUpFees: "", reportFees: "",
   headerEnHtml: "", headerLogo: "", headerMidHtml: "", headerBnHtml: "",
   footerText: "", footerAlignment: "center", footerShowDivider: true,
-  marginTop: "15", marginBottom: "15", marginLeft: "15", marginRight: "15",
-  headerHeight: "40", footerHeight: "20", bodyLeftPct: "35",
+  marginTop: "0.6", marginBottom: "0.6", marginLeft: "0.6", marginRight: "0.6",
+  headerHeight: "1.5", footerHeight: "0.8", bodyLeftPct: "35",
 };
 
 function loadPadSettings(): PadSettings {
@@ -245,12 +245,10 @@ function PadSettingsPanel({
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* ── Left column ─────────── */}
-      <div className="flex w-80 shrink-0 flex-col border-r">
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
+      <div className="flex w-72 shrink-0 flex-col border-r">
 
           {/* Chamber dropdown */}
-          <div className="border-b p-4">
+          <div className="border-b px-3 pt-3 pb-2.5">
             <ChamberDropdown
               chambers={chambers}
               selectedId={selectedChamberId}
@@ -261,8 +259,8 @@ function PadSettingsPanel({
           </div>
 
           {/* Fees */}
-          <div className="border-b p-4 space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Consultation Fees</p>
+          <div className="border-b px-3 py-2 space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Consultation Fees</p>
             {(
               [
                 ["New Patient", "newPatientFees"],
@@ -270,12 +268,12 @@ function PadSettingsPanel({
                 ["Report",      "reportFees"],
               ] as [string, keyof PadSettings][]
             ).map(([label, key]) => (
-              <div key={key} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 text-sm text-muted-foreground">{label}</span>
+              <div key={key} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-xs text-muted-foreground">{label}</span>
                 <input
                   type="text"
                   inputMode="numeric"
-                  className="h-9 w-28 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+                  className="h-7 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
                   placeholder="৳ 0"
                   value={pad[key] as string}
                   onChange={(e) => updatePad({ [key]: e.target.value })}
@@ -285,10 +283,10 @@ function PadSettingsPanel({
           </div>
 
           {/* Page Size */}
-          <div className="border-b p-4 space-y-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Page Size</p>
+          <div className="border-b px-3 py-2 space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Page Size</p>
             <select
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+              className="h-7 w-full rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
               value={pad.pageSize}
               onChange={(e) => updatePad({ pageSize: e.target.value as PadSettings["pageSize"] })}
             >
@@ -298,78 +296,66 @@ function PadSettingsPanel({
               <option value="Custom">Custom</option>
             </select>
             {pad.pageSize === "Custom" && (
-              <div className="flex items-center gap-2">
-                <input className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary" value={pad.customWidth} placeholder="Width" onChange={(e) => updatePad({ customWidth: e.target.value })} />
-                <span className="text-sm text-muted-foreground">×</span>
-                <input className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary" value={pad.customHeight} placeholder="Height" onChange={(e) => updatePad({ customHeight: e.target.value })} />
-                <span className="text-sm text-muted-foreground">mm</span>
+              <div className="flex items-center gap-1.5">
+                <input className="h-7 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary" value={pad.customWidth} placeholder="W" onChange={(e) => updatePad({ customWidth: e.target.value })} />
+                <span className="text-xs text-muted-foreground">×</span>
+                <input className="h-7 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary" value={pad.customHeight} placeholder="H" onChange={(e) => updatePad({ customHeight: e.target.value })} />
+                <span className="text-xs text-muted-foreground">in</span>
               </div>
             )}
           </div>
 
           {/* Margins */}
-          <div className="border-b p-4 space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Margins (mm)</p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div className="border-b px-3 py-2 space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Margins (in)</p>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
               {(
                 [["Top","marginTop"],["Bottom","marginBottom"],["Left","marginLeft"],["Right","marginRight"]] as [string, keyof PadSettings][]
               ).map(([label, key]) => (
-                <div key={key} className="space-y-1">
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      className="h-8 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-                      placeholder="15"
-                      value={pad[key] as string}
-                      onChange={(e) => updatePad({ [key]: e.target.value })}
-                    />
-                    <span className="text-xs text-muted-foreground">mm</span>
-                  </div>
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className="w-12 shrink-0 text-xs text-muted-foreground">{label}</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className="h-7 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="0.6"
+                    value={pad[key] as string}
+                    onChange={(e) => updatePad({ [key]: e.target.value })}
+                  />
                 </div>
               ))}
             </div>
           </div>
 
           {/* Header / Footer height */}
-          <div className="border-b p-4 space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Section Heights (mm)</p>
+          <div className="border-b px-3 py-2 space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Section Heights (in)</p>
             {(
-              [["Header Height","headerHeight"],["Footer Height","footerHeight"]] as [string, keyof PadSettings][]
+              [["Header","headerHeight"],["Footer","footerHeight"]] as [string, keyof PadSettings][]
             ).map(([label, key]) => (
-              <div key={key} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 text-sm text-muted-foreground">{label}</span>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className="h-9 w-20 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="40"
-                    value={pad[key] as string}
-                    onChange={(e) => updatePad({ [key]: e.target.value })}
-                  />
-                  <span className="text-sm text-muted-foreground">mm</span>
-                </div>
+              <div key={key} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-xs text-muted-foreground">{label} Height</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="h-7 w-16 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="1.5"
+                  value={pad[key] as string}
+                  onChange={(e) => updatePad({ [key]: e.target.value })}
+                />
+                <span className="text-xs text-muted-foreground">in</span>
               </div>
             ))}
           </div>
 
           {/* Body column split */}
-          <div className="p-4 space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Body Column Split</p>
-            {/* Visual split bar */}
-            <div className="flex h-7 overflow-hidden rounded-md border text-[10px] font-semibold">
-              <div
-                className="flex items-center justify-center bg-primary/15 text-primary transition-all"
-                style={{ width: `${pad.bodyLeftPct}%` }}
-              >
+          <div className="px-3 py-2 space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Body Column Split</p>
+            <div className="flex h-5 overflow-hidden rounded border text-[9px] font-bold">
+              <div className="flex items-center justify-center bg-primary/15 text-primary transition-all" style={{ width: `${pad.bodyLeftPct}%` }}>
                 {pad.bodyLeftPct}%
               </div>
-              <div
-                className="flex items-center justify-center bg-muted text-muted-foreground transition-all"
-                style={{ width: `${100 - parseInt(pad.bodyLeftPct || "35")}%` }}
-              >
+              <div className="flex items-center justify-center bg-muted text-muted-foreground transition-all" style={{ width: `${100 - parseInt(pad.bodyLeftPct || "35")}%` }}>
                 {100 - parseInt(pad.bodyLeftPct || "35")}%
               </div>
             </div>
@@ -388,20 +374,18 @@ function PadSettingsPanel({
             </div>
           </div>
 
-        </div>{/* end scrollable */}
-
-        {/* Save / Cancel — always visible */}
-        <div className="shrink-0 border-t p-4 flex gap-3">
+        {/* Save / Cancel */}
+        <div className="mt-auto border-t px-3 py-2.5 flex gap-2">
           <button
             type="button"
-            className="flex-1 rounded-md border py-2.5 text-sm font-semibold hover:bg-muted"
+            className="flex-1 rounded border py-1.5 text-xs font-semibold hover:bg-muted"
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="flex-1 rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            className="flex-1 rounded bg-primary py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
             onClick={onSave}
           >
             Save
