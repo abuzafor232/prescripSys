@@ -149,7 +149,7 @@ function PadInput({ label, value, onChange, placeholder, font }: {
 }) {
   return (
     <div className="flex items-center gap-1 border-b border-border/40 py-1 last:border-b-0">
-      <span className="w-20 shrink-0 text-[10px] text-muted-foreground">{label}</span>
+      <span className="w-24 shrink-0 text-xs text-muted-foreground">{label}</span>
       <input
         type="text"
         className={cn(
@@ -167,48 +167,49 @@ function PadInput({ label, value, onChange, placeholder, font }: {
 // ─── Pad Settings Panel ──────────────────────────────────────────────────────
 
 function PadSettingsPanel({
-  pad, updatePad, chambers, selectedChamberId, onChamberChange,
+  pad, updatePad, chambers, selectedChamberId, onChamberChange, onChamberAdd, onChamberRemove,
 }: {
   pad: PadSettings;
   updatePad: (p: Partial<PadSettings>) => void;
   chambers: Chamber[];
   selectedChamberId: string;
   onChamberChange: (id: string) => void;
+  onChamberAdd: (name: string) => void;
+  onChamberRemove: (id: string) => void;
 }) {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* ── Left: Select Chamber sidebar ─────────── */}
-      <div className="flex w-52 shrink-0 flex-col border-r">
+      <div className="flex w-72 shrink-0 flex-col border-r">
         {/* Chamber dropdown */}
-        <div className="border-b bg-muted/50 px-3 py-2 text-center text-[11px] font-bold uppercase tracking-wide">
+        <div className="border-b bg-muted/50 px-4 py-2.5 text-center text-sm font-bold uppercase tracking-wide">
           Select Chamber
         </div>
-        <div className="border-b p-3">
-          <select
-            className="h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-            value={selectedChamberId}
-            onChange={(e) => onChamberChange(e.target.value)}
-          >
-            {chambers.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+        <div className="border-b p-4">
+          <ChamberDropdown
+            chambers={chambers}
+            selectedId={selectedChamberId}
+            onChange={onChamberChange}
+            onAdd={onChamberAdd}
+            onRemove={onChamberRemove}
+          />
         </div>
 
         {/* Fees */}
-        <div className="border-b p-3 space-y-2">
+        <div className="border-b p-4 space-y-3">
           {(
             [
               ["New Patient Fees", "newPatientFees"],
-              ["Follow-Up Fees", "followUpFees"],
-              ["Report Fees", "reportFees"],
+              ["Follow-Up Fees",   "followUpFees"],
+              ["Report Fees",      "reportFees"],
             ] as [string, keyof PadSettings][]
           ).map(([label, key]) => (
-            <div key={key} className="flex items-center gap-2">
-              <span className="w-28 shrink-0 text-right text-[10px] text-muted-foreground">{label}:</span>
+            <div key={key} className="flex items-center gap-3">
+              <span className="w-36 shrink-0 text-right text-sm text-muted-foreground">{label}:</span>
               <input
                 type="text"
-                className="h-6 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                className="h-8 w-24 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+                placeholder="0"
                 value={pad[key] as string}
                 onChange={(e) => updatePad({ [key]: e.target.value })}
               />
@@ -217,11 +218,11 @@ function PadSettingsPanel({
         </div>
 
         {/* Page Size */}
-        <div className="border-b p-3">
-          <div className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-right text-[10px] text-muted-foreground">Page Size:</span>
+        <div className="border-b p-4">
+          <div className="flex items-center gap-3">
+            <span className="w-36 shrink-0 text-right text-sm text-muted-foreground">Page Size:</span>
             <select
-              className="h-7 flex-1 rounded border bg-background px-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
+              className="h-8 flex-1 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
               value={pad.pageSize}
               onChange={(e) => updatePad({ pageSize: e.target.value as PadSettings["pageSize"] })}
             >
@@ -232,18 +233,18 @@ function PadSettingsPanel({
             </select>
           </div>
           {pad.pageSize === "Custom" && (
-            <div className="mt-2 flex items-center gap-1 pl-2 text-[10px]">
-              <input className="h-5 w-14 rounded border bg-background px-1 text-center text-xs outline-none" value={pad.customWidth} placeholder="W" onChange={(e) => updatePad({ customWidth: e.target.value })} />
+            <div className="mt-2.5 flex items-center gap-2 pl-2">
+              <input className="h-8 w-20 rounded border bg-background px-2 text-center text-sm outline-none focus:ring-1 focus:ring-primary" value={pad.customWidth} placeholder="Width" onChange={(e) => updatePad({ customWidth: e.target.value })} />
               <span className="text-muted-foreground">×</span>
-              <input className="h-5 w-14 rounded border bg-background px-1 text-center text-xs outline-none" value={pad.customHeight} placeholder="H" onChange={(e) => updatePad({ customHeight: e.target.value })} />
-              <span className="text-muted-foreground">mm</span>
+              <input className="h-8 w-20 rounded border bg-background px-2 text-center text-sm outline-none focus:ring-1 focus:ring-primary" value={pad.customHeight} placeholder="Height" onChange={(e) => updatePad({ customHeight: e.target.value })} />
+              <span className="text-sm text-muted-foreground">mm</span>
             </div>
           )}
         </div>
 
         {/* Prescription body spacer */}
         <div className="flex flex-1 items-center justify-center">
-          <span className="rotate-90 text-[10px] text-muted-foreground/40 whitespace-nowrap">Prescription Body</span>
+          <span className="rotate-90 whitespace-nowrap text-xs text-muted-foreground/40">Prescription Body</span>
         </div>
       </div>
 
@@ -252,14 +253,14 @@ function PadSettingsPanel({
 
         {/* Header section */}
         <div className="shrink-0 border-b">
-          <div className="border-b bg-muted/50 px-3 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide">
+          <div className="border-b bg-muted/50 px-3 py-2.5 text-center text-sm font-bold uppercase tracking-wide">
             Header
           </div>
           {/* 3-column header editor */}
           <div className="grid grid-cols-3 divide-x">
             {/* English column */}
             <div className="p-2">
-              <p className="mb-1 text-[10px] font-semibold text-muted-foreground">Doctor's Info (English)</p>
+              <p className="mb-1.5 text-xs font-semibold text-muted-foreground">Doctor's Info (English)</p>
               <PadInput label="Doctor Name" value={pad.headerEnDoctorName} onChange={(v) => updatePad({ headerEnDoctorName: v })} placeholder="Dr. Abdullah" />
               <PadInput label="Degrees" value={pad.headerEnDegrees} onChange={(v) => updatePad({ headerEnDegrees: v })} placeholder="MBBS, MS" />
               <PadInput label="Designation" value={pad.headerEnDesignation} onChange={(v) => updatePad({ headerEnDesignation: v })} placeholder="Consultant" />
@@ -282,7 +283,7 @@ function PadSettingsPanel({
 
             {/* Bengali column */}
             <div className="p-2">
-              <p className="mb-1 text-[10px] font-semibold text-muted-foreground">ডাক্তারের তথ্য (বাংলা)</p>
+              <p className="mb-1.5 text-xs font-semibold text-muted-foreground">ডাক্তারের তথ্য (বাংলা)</p>
               <PadInput label="ডাক্তারের নাম" value={pad.headerBnDoctorName} onChange={(v) => updatePad({ headerBnDoctorName: v })} placeholder="ডাঃ আবদুল্লাহ" font="bangla" />
               <PadInput label="ডিগ্রী" value={pad.headerBnDegrees} onChange={(v) => updatePad({ headerBnDegrees: v })} placeholder="এমবিবিএস" font="bangla" />
               <PadInput label="পদবী" value={pad.headerBnDesignation} onChange={(v) => updatePad({ headerBnDesignation: v })} placeholder="পরামর্শদাতা" font="bangla" />
@@ -293,18 +294,18 @@ function PadSettingsPanel({
         </div>
 
         {/* Prescription body area */}
-        <div className="flex flex-1 items-center justify-center text-[11px] text-muted-foreground/50">
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/50">
           (Prescription according to selected size)
         </div>
 
         {/* Footer section */}
         <div className="shrink-0 border-t">
-          <div className="border-b bg-muted/50 px-3 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide">
+          <div className="border-b bg-muted/50 px-3 py-2.5 text-center text-sm font-bold uppercase tracking-wide">
             Footer
           </div>
           <div className="p-3 space-y-2">
             <div className="flex items-center gap-2">
-              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
                   className="h-3.5 w-3.5 rounded"
@@ -344,11 +345,106 @@ function PadSettingsPanel({
   );
 }
 
-// ─── Redesigned Chamber Settings Dialog ─────────────────────────────────────
+// ─── Chamber Dropdown (with inline add/remove) ───────────────────────────────
+
+function ChamberDropdown({
+  chambers, selectedId, onChange, onAdd, onRemove,
+}: {
+  chambers: Chamber[];
+  selectedId: string;
+  onChange: (id: string) => void;
+  onAdd: (name: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const selected = chambers.find((c) => c.id === selectedId);
+
+  function submit() {
+    const name = newName.trim();
+    if (!name) return;
+    onAdd(name);
+    setNewName("");
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-2 rounded-md border bg-background px-3 py-2.5 text-sm font-semibold hover:bg-muted"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="truncate">{selected?.name ?? "Select Chamber"}</span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border bg-card shadow-xl">
+          <div className="max-h-52 overflow-y-auto">
+            {chambers.map((c) => (
+              <div
+                key={c.id}
+                className={cn("flex items-center gap-2 px-3 py-2.5 transition hover:bg-muted", c.id === selectedId && "bg-primary/8")}
+              >
+                <button
+                  type="button"
+                  className="flex-1 text-left text-sm font-medium"
+                  onClick={() => { onChange(c.id); setOpen(false); }}
+                >
+                  {c.name}
+                </button>
+                {c.id === selectedId && (
+                  <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">Active</span>
+                )}
+                <button
+                  type="button"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-destructive hover:bg-destructive/10"
+                  onClick={(e) => { e.stopPropagation(); onRemove(c.id); }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="border-t p-2">
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                className="h-8 flex-1 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Add new chamber…"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); submit(); } }}
+              />
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded border bg-background hover:bg-primary hover:text-primary-foreground transition"
+                onClick={submit}
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Chamber Settings Dialog ─────────────────────────────────────────────────
 
 function AppShellChamberSettingsDialog({
   chambers,
-  userEmail,
   onClose,
   onUpdate,
 }: {
@@ -357,160 +453,51 @@ function AppShellChamberSettingsDialog({
   onClose: () => void;
   onUpdate: (chambers: Chamber[]) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"pad" | "chambers">("pad");
+  const [pad, setPad] = useState<PadSettings>(() => loadPadSettings());
+  const [localChambers, setLocalChambers] = useState<Chamber[]>(chambers);
   const [selectedChamberId, setSelectedChamberId] = useState<string>(chambers[0]?.id ?? "");
 
-  // Pad settings
-  const [pad, setPad] = useState<PadSettings>(() => loadPadSettings());
   function updatePad(patch: Partial<PadSettings>) {
     setPad((prev) => { const next = { ...prev, ...patch }; savePadSettings(next); return next; });
   }
 
-  // Chambers tab
-  const [password, setPassword] = useState("");
-  const [verified, setVerified] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [authError, setAuthError] = useState("");
-  const [localChambers, setLocalChambers] = useState<Chamber[]>(chambers);
-  const [newName, setNewName] = useState("");
-  const [addError, setAddError] = useState("");
-
-  async function handleVerify() {
-    if (!password.trim()) { setAuthError("Enter your login password."); return; }
-    setVerifying(true); setAuthError("");
-    try { await loginWithPassword(userEmail, password); setVerified(true); }
-    catch { setAuthError("Incorrect password. Please try again."); }
-    finally { setVerifying(false); }
+  function addChamber(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed || localChambers.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) return;
+    const next = [...localChambers, { id: `ch-${Date.now()}`, name: trimmed }];
+    setLocalChambers(next);
+    onUpdate(next);
   }
 
-  function handleAdd() {
-    const name = newName.trim();
-    if (!name) { setAddError("Chamber name cannot be empty."); return; }
-    if (localChambers.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
-      setAddError("A chamber with this name already exists."); return;
-    }
-    setLocalChambers((cur) => [...cur, { id: `ch-${Date.now()}`, name }]);
-    setNewName(""); setAddError("");
+  function removeChamber(id: string) {
+    const next = localChambers.filter((c) => c.id !== id);
+    const safe = next.length === 0 ? DEFAULT_CHAMBERS : next;
+    setLocalChambers(safe);
+    if (selectedChamberId === id) setSelectedChamberId(safe[0]?.id ?? "");
+    onUpdate(safe);
   }
-
-  const tabs = [
-    { key: "pad" as const, label: "Prescription Pad", icon: Printer },
-    { key: "chambers" as const, label: "Chambers", icon: Briefcase },
-  ];
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-card">
-      {/* Top bar */}
-      <div className="flex shrink-0 items-center justify-between border-b bg-card px-5 py-3 shadow-sm">
-        <div className="flex items-center gap-3">
-          <h2 className="text-base font-bold">Prescription Pad Settings</h2>
-          <div className="flex rounded-md border overflow-hidden">
-            {tabs.map(({ key, label, icon: Icon }) => (
-              <button
-                key={key}
-                type="button"
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition",
-                  activeTab === key ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"
-                )}
-                onClick={() => setActiveTab(key)}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <button
-          type="button"
-          className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
-          onClick={onClose}
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+    <div className="fixed inset-0 z-[60] flex bg-card">
+      {/* Floating close */}
+      <button
+        type="button"
+        aria-label="Close settings"
+        className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground transition"
+        onClick={onClose}
+      >
+        <X className="h-5 w-5" />
+      </button>
 
-      {/* Content area */}
-      <div className="flex flex-1 overflow-hidden">
-        {activeTab === "pad" ? (
-          <PadSettingsPanel
-            pad={pad}
-            updatePad={updatePad}
-            chambers={chambers}
-            selectedChamberId={selectedChamberId}
-            onChamberChange={setSelectedChamberId}
-          />
-        ) : (
-            <div className="flex-1 overflow-y-auto">
-              <div className="space-y-4 p-5">
-                {!verified ? (
-                  <div className="space-y-3 max-w-sm">
-                    <p className="text-sm text-muted-foreground">Enter your login password to manage chambers.</p>
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Login Password</label>
-                      <input autoFocus type="password"
-                        className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
-                        placeholder="Enter your password" value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") void handleVerify(); }} />
-                    </div>
-                    {authError && <p className="text-xs text-destructive">{authError}</p>}
-                    <button
-                      className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-                      disabled={verifying} onClick={() => void handleVerify()}>
-                      {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      Verify &amp; Continue
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4 max-w-sm">
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Active Chambers</p>
-                      {localChambers.length === 0 ? (
-                        <p className="text-xs italic text-muted-foreground">No chambers. Add one below.</p>
-                      ) : (
-                        <div className="divide-y rounded-md border">
-                          {localChambers.map((c) => (
-                            <div key={c.id} className="flex items-center justify-between px-3 py-2">
-                              <span className="text-sm font-medium">{c.name}</span>
-                              <button type="button"
-                                className="flex h-6 w-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
-                                onClick={() => setLocalChambers((cur) => cur.filter((x) => x.id !== c.id))}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      <p className="text-sm font-medium">Add Chamber</p>
-                      <div className="flex gap-2">
-                        <input type="text"
-                          className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
-                          placeholder="Chamber name" value={newName}
-                          onChange={(e) => { setNewName(e.target.value); setAddError(""); }}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }} />
-                        <button type="button"
-                          className="flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted"
-                          onClick={handleAdd}>
-                          <Plus className="h-4 w-4" /> Add
-                        </button>
-                      </div>
-                      {addError && <p className="text-xs text-destructive">{addError}</p>}
-                    </div>
-                    <div className="flex gap-2 border-t pt-3">
-                      <button type="button" className="flex-1 rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={onClose}>Cancel</button>
-                      <button type="button"
-                        className="flex-1 h-9 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-                        onClick={() => { onUpdate(localChambers); onClose(); }}>Save Changes</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-      </div>
+      <PadSettingsPanel
+        pad={pad}
+        updatePad={updatePad}
+        chambers={localChambers}
+        selectedChamberId={selectedChamberId}
+        onChamberChange={setSelectedChamberId}
+        onChamberAdd={addChamber}
+        onChamberRemove={removeChamber}
+      />
     </div>
   );
 }
