@@ -448,32 +448,51 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
             background: "white",
             boxShadow: "inset 0 0 0 1px #e5e7eb",
           }}>
+            {/* Scoped CSS reset for contentEditable-produced HTML (p margins, ul padding, etc.) */}
+            <style>{`
+              .rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4 { margin:0; padding:0; }
+              .rxp ul,.rxp ol { margin:0; padding-left:1.4em; }
+              .rxp li { margin:0; padding:0; }
+              .rxp * { box-sizing:border-box; word-break:break-word; overflow-wrap:break-word; }
+            `}</style>
+
             {/* Margin inset */}
             <div style={{
               position: "absolute",
               top: mTop, bottom: mBottom, left: mLeft, right: mRight,
               display: "flex", flexDirection: "column",
+              overflow: "hidden",
             }}>
               {/* Header */}
               <div style={{
                 height: hdrH, flexShrink: 0,
                 display: "flex", alignItems: "stretch",
                 borderBottom: "1px solid #d1d5db",
+                overflow: "hidden",
               }}>
                 {/* English */}
-                <div style={{ flex: 1, overflow: "hidden", padding: "4px 6px" }}
-                  dangerouslySetInnerHTML={{ __html: pad.headerEnLines || "" }} />
-                {/* Middle: logo + specialty — no fontSize wrapper so editor HTML controls sizes */}
-                <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "4px 8px", minWidth: 80 }}>
+                <div
+                  className="rxp"
+                  style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px", wordBreak: "break-word" }}
+                  dangerouslySetInnerHTML={{ __html: pad.headerEnLines || "" }}
+                />
+                {/* Middle: logo + specialty */}
+                <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "6px 8px", minWidth: 80, maxWidth: "35%", overflow: "hidden" }}>
                   {pad.headerLogo && (
-                    <img src={pad.headerLogo} alt="Logo" style={{ maxHeight: hdrH * 0.55, maxWidth: 120, objectFit: "contain" }} />
+                    <img src={pad.headerLogo} alt="Logo" style={{ maxHeight: hdrH * 0.5, maxWidth: 120, objectFit: "contain", marginBottom: 4 }} />
                   )}
-                  <div style={{ textAlign: "center" }}
-                    dangerouslySetInnerHTML={{ __html: pad.headerMidLines || "" }} />
+                  <div
+                    className="rxp"
+                    style={{ textAlign: "center", width: "100%" }}
+                    dangerouslySetInnerHTML={{ __html: pad.headerMidLines || "" }}
+                  />
                 </div>
                 {/* Bengali */}
-                <div style={{ flex: 1, overflow: "hidden", padding: "4px 6px", textAlign: "right" }}
-                  dangerouslySetInnerHTML={{ __html: pad.headerBnLines || "" }} />
+                <div
+                  className="rxp"
+                  style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px", textAlign: "right", wordBreak: "break-word" }}
+                  dangerouslySetInnerHTML={{ __html: pad.headerBnLines || "" }}
+                />
               </div>
 
               {/* Body */}
