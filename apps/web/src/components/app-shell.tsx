@@ -396,21 +396,20 @@ const PAGE_SIZES: Record<string, { w: number; h: number }> = {
 };
 
 function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void }) {
+  // ── Page dimensions at 96 dpi ──────────────────────────────────────────────
   const pageW = pad.pageSize === "Custom"
-    ? (parseFloat(pad.customWidth) || 8.5) * PX_PER_IN
+    ? (parseFloat(pad.customWidth)  || 8.5) * PX_PER_IN
     : PAGE_SIZES[pad.pageSize]?.w ?? PAGE_SIZES.A4.w;
   const pageH = pad.pageSize === "Custom"
-    ? (parseFloat(pad.customHeight) || 11) * PX_PER_IN
+    ? (parseFloat(pad.customHeight) || 11)  * PX_PER_IN
     : PAGE_SIZES[pad.pageSize]?.h ?? PAGE_SIZES.A4.h;
 
-  const PREVIEW_W = 640;
-  const scale = PREVIEW_W / pageW;
-  const previewH = pageH * scale;
-  // epx: given a desired effective pixel size, returns the pre-scale size so
-  // the element always appears at `target` px regardless of the zoom factor.
-  const epx = (target: number) => Math.round(target / scale);
+  // 700 px wide preview (≈ 88 % for A4) — fonts stay legible without epx()
+  const PREVIEW_W = 700;
+  const scale     = PREVIEW_W / pageW;
+  const previewH  = Math.round(pageH * scale);
 
-  const inToPx = (v: string, fallback: number) => (parseFloat(v) || fallback) * PX_PER_IN;
+  const inToPx = (v: string, fb: number) => (parseFloat(v) || fb) * PX_PER_IN;
   const mTop    = inToPx(pad.marginTop,    0.6);
   const mBottom = inToPx(pad.marginBottom, 0.6);
   const mLeft   = inToPx(pad.marginLeft,   0.6);
@@ -418,153 +417,182 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
   const hdrH    = inToPx(pad.headerHeight, 1.7);
   const ftrH    = inToPx(pad.footerHeight, 0.8);
   const bodyLeft = parseInt(pad.bodyLeftPct) || 35;
+  const hasMid   = !!(pad.headerLogo || pad.headerMidLines);
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
-      {/* Header bar */}
-      <div className="mb-3 flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
-        <span className="text-sm font-bold text-white tracking-wide uppercase">Live Preview</span>
+      {/* ── Top bar ── */}
+      <div className="mb-3 flex shrink-0 items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <span className="text-xs font-bold uppercase tracking-widest text-white/80">Live Preview</span>
+        <span className="text-xs text-white/40">
+          {pad.pageSize === "Custom" ? `${pad.customWidth}×${pad.customHeight} in` : pad.pageSize}
+          &nbsp;·&nbsp;{Math.round(scale * 100)}%
+        </span>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md bg-white/20 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/30 transition"
+          className="ml-2 flex items-center gap-1.5 rounded bg-white/15 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25"
           onClick={onClose}
         >
           <X className="h-3.5 w-3.5" /> Close
         </button>
       </div>
 
-      {/* Scrollable paper wrapper */}
+      {/* ── Scrollable paper ── */}
       <div
-        className="overflow-auto rounded shadow-2xl"
-        style={{ maxHeight: "85vh" }}
+        className="overflow-auto rounded-sm shadow-2xl ring-1 ring-white/10"
+        style={{ maxHeight: "calc(100vh - 80px)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Scaled container */}
+        {/* Clip wrapper — exact scaled dimensions */}
         <div style={{ width: PREVIEW_W, height: previewH, position: "relative", overflow: "hidden" }}>
-          {/* Full-size page, scaled down */}
+
+          {/* Full-size page scaled down via CSS transform */}
           <div style={{
-            width: pageW,
-            height: pageH,
+            width: pageW, height: pageH,
             transform: `scale(${scale})`,
             transformOrigin: "top left",
-            position: "absolute",
-            top: 0,
-            left: 0,
+            position: "absolute", top: 0, left: 0,
             background: "white",
-            boxShadow: "inset 0 0 0 1px #e5e7eb",
           }}>
-            {/* Scoped CSS reset for contentEditable-produced HTML (p margins, ul padding, etc.) */}
+            {/* CSS reset: neutralise browser defaults inside contentEditable HTML */}
             <style>{`
-              .rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4 { margin:0; padding:0; }
-              .rxp ul,.rxp ol { margin:0; padding-left:1.4em; }
-              .rxp li { margin:0; padding:0; }
-              .rxp * { box-sizing:border-box; word-break:break-word; overflow-wrap:break-word; }
+              .rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}
+              .rxp ul,.rxp ol{margin:0;padding-left:1.4em}
+              .rxp li{margin:0;padding:0}
+              .rxp *{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word}
             `}</style>
 
-            {/* Margin inset */}
+            {/* ── Content area (margin inset) ── */}
             <div style={{
               position: "absolute",
               top: mTop, bottom: mBottom, left: mLeft, right: mRight,
               display: "flex", flexDirection: "column",
               overflow: "hidden",
             }}>
-              {/* Header — fixed height matches the editor box exactly */}
+
+              {/* ── Header ── */}
               <div style={{
                 height: hdrH, flexShrink: 0,
-                display: "flex", alignItems: "flex-start",
-                borderBottom: "1px solid #d1d5db",
+                display: "flex", alignItems: "stretch",
+                borderBottom: "1.5px solid #94a3b8",
                 overflow: "hidden",
               }}>
-                {/* English */}
+                {/* English column */}
                 <div
                   className="rxp"
-                  style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px", wordBreak: "break-word" }}
+                  style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px" }}
                   dangerouslySetInnerHTML={{ __html: pad.headerEnLines || "" }}
                 />
-                {/* Middle: logo + specialty */}
-                <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "6px 8px", minWidth: 80, maxWidth: "35%", overflow: "hidden" }}>
-                  {pad.headerLogo && (
-                    <img src={pad.headerLogo} alt="Logo" style={{ maxHeight: hdrH * 0.5, maxWidth: 120, objectFit: "contain", marginBottom: 4 }} />
-                  )}
-                  <div
-                    className="rxp"
-                    style={{ textAlign: "center", width: "100%" }}
-                    dangerouslySetInnerHTML={{ __html: pad.headerMidLines || "" }}
-                  />
-                </div>
-                {/* Bengali */}
+
+                {/* Middle column — rendered only when there is content */}
+                {hasMid && (
+                  <div style={{
+                    width: "30%", maxWidth: 220, flexShrink: 0,
+                    display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center",
+                    padding: "6px 8px", overflow: "hidden",
+                    borderLeft: "1px solid #e2e8f0",
+                    borderRight: "1px solid #e2e8f0",
+                  }}>
+                    {pad.headerLogo && (
+                      <img
+                        src={pad.headerLogo} alt=""
+                        style={{ maxHeight: hdrH * 0.55, maxWidth: 140, objectFit: "contain" }}
+                      />
+                    )}
+                    {pad.headerMidLines && (
+                      <div
+                        className="rxp"
+                        style={{ textAlign: "center", width: "100%", marginTop: pad.headerLogo ? 4 : 0 }}
+                        dangerouslySetInnerHTML={{ __html: pad.headerMidLines }}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Bengali column */}
                 <div
                   className="rxp"
-                  style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px", textAlign: "right", wordBreak: "break-word" }}
+                  style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px", textAlign: "right" }}
                   dangerouslySetInnerHTML={{ __html: pad.headerBnLines || "" }}
                 />
               </div>
 
-              {/* Body */}
+              {/* ── Body ── */}
               <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-                {/* Left column — patient info */}
-                <div style={{ width: `${bodyLeft}%`, borderRight: "1px solid #e5e7eb", padding: "8px 6px", display: "flex", flexDirection: "column", gap: epx(5) }}>
-                  {["Name", "Age / Sex", "Weight / BP", "Chief Complaints", "On Examination", "Investigation", "Diagnosis", "Follow Up"].map((label) => (
+
+                {/* Left — patient info fields */}
+                <div style={{
+                  width: `${bodyLeft}%`, flexShrink: 0,
+                  borderRight: "1px solid #cbd5e1",
+                  padding: "10px 8px",
+                  display: "flex", flexDirection: "column", gap: 9,
+                  overflow: "hidden",
+                }}>
+                  {["Patient Name","Age / Sex","Weight / BP","Chief Complaints","On Examination","Investigation","Diagnosis","Follow Up"].map((label) => (
                     <div key={label}>
-                      <div style={{ fontSize: epx(8), fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: epx(2) }}>{label}</div>
-                      <div style={{ borderBottom: "1px dotted #d1d5db", height: epx(14) }} />
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>
+                        {label}
+                      </div>
+                      <div style={{ borderBottom: "1px solid #e2e8f0", paddingBottom: 10 }} />
                     </div>
                   ))}
                 </div>
-                {/* Right column — Rx */}
-                <div style={{ flex: 1, padding: "8px 8px", display: "flex", flexDirection: "column", gap: epx(3) }}>
-                  <div style={{ fontSize: epx(22), fontFamily: "serif", fontWeight: 700, color: "#374151", marginBottom: epx(4) }}>℞</div>
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} style={{ marginBottom: epx(6) }}>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: epx(4) }}>
-                        <span style={{ fontSize: epx(9), color: "#9ca3af", minWidth: epx(12) }}>{i + 1}.</span>
-                        <div style={{ flex: 1, borderBottom: "1px dotted #d1d5db", height: epx(14) }} />
+
+                {/* Right — Rx area */}
+                <div style={{
+                  flex: 1, padding: "10px 12px",
+                  display: "flex", flexDirection: "column",
+                  overflow: "hidden",
+                }}>
+                  <div style={{ fontSize: 34, fontFamily: "serif", fontWeight: 700, color: "#1e293b", lineHeight: 1, marginBottom: 10 }}>
+                    ℞
+                  </div>
+                  {Array.from({ length: 7 }).map((_, i) => (
+                    <div key={i} style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: 5 }}>
+                        <span style={{ fontSize: 10, color: "#94a3b8", minWidth: 16, lineHeight: 1 }}>{i + 1}.</span>
+                        <div style={{ flex: 1, borderBottom: "1px dashed #cbd5e1" }} />
                       </div>
-                      <div style={{ display: "flex", gap: epx(4), marginTop: epx(2) }}>
-                        <span style={{ minWidth: epx(12) }} />
-                        <div style={{ flex: 1, borderBottom: "1px dotted #e5e7eb", height: epx(11) }} />
-                      </div>
+                      <div style={{ marginLeft: 21, marginTop: 5, borderBottom: "1px dashed #e2e8f0" }} />
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Footer */}
+              {/* ── Footer ── */}
               <div style={{
                 height: ftrH, flexShrink: 0,
-                borderTop: "1px solid #d1d5db",
+                borderTop: "1.5px solid #94a3b8",
+                overflow: "hidden",
                 display: "flex", flexDirection: "column", justifyContent: "center",
-                padding: `${epx(4)}px ${epx(6)}px`,
+                padding: "5px 10px",
               }}>
                 {pad.footerShowDivider && (
-                  <div style={{ borderTop: "1px solid #9ca3af", marginBottom: epx(4) }} />
+                  <div style={{ borderTop: "1px solid #64748b", marginBottom: 5 }} />
                 )}
-                <div style={{ fontSize: epx(11), color: "#374151", textAlign: pad.footerAlignment, whiteSpace: "pre-wrap" }}>
-                  {pad.footerText
-                    ? pad.footerText
-                    : <span style={{ color: "#d1d5db", fontStyle: "italic" }}>No footer text</span>}
-                </div>
+                {pad.footerText ? (
+                  <div style={{
+                    fontSize: 11, color: "#374151",
+                    textAlign: pad.footerAlignment,
+                    whiteSpace: "pre-wrap", lineHeight: 1.45,
+                  }}>
+                    {pad.footerText}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 10, color: "#cbd5e1", textAlign: "center", fontStyle: "italic" }}>
+                    footer text
+                  </div>
+                )}
               </div>
-            </div>
 
-            {/* Margin guides (subtle dashed outline) */}
-            <div style={{
-              position: "absolute",
-              top: mTop, bottom: mBottom, left: mLeft, right: mRight,
-              border: "1px dashed rgba(59,130,246,0.15)",
-              pointerEvents: "none",
-            }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Page size label */}
-      <p className="mt-2 text-[11px] text-white/50">
-        {pad.pageSize === "Custom" ? `Custom ${pad.customWidth}×${pad.customHeight} in` : pad.pageSize} — scale {Math.round(scale * 100)}%
-      </p>
+            </div>{/* /margin inset */}
+          </div>{/* /full-size page */}
+        </div>{/* /clip wrapper */}
+      </div>{/* /scrollable paper */}
     </div>
   );
 }
