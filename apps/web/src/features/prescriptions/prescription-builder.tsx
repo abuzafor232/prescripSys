@@ -2066,15 +2066,16 @@ export function PrescriptionBuilder() {
           const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000);
           let periodText = "";
           if (diffDays > 0) {
-            if (diffDays >= 365) {
-              const years = Math.floor(diffDays / 365);
-              periodText = ` (${banglaDigits(years)} বছর পর)`;
-            } else if (diffDays >= 30) {
-              const months = Math.floor(diffDays / 30);
-              periodText = ` (${banglaDigits(months)} মাস পর)`;
-            } else {
-              periodText = ` (${banglaDigits(diffDays)} দিন পর)`;
-            }
+            const yrs = Math.floor(diffDays / 365);
+            const rem1 = diffDays - yrs * 365;
+            const mos = Math.floor(rem1 / 30);
+            const days = rem1 - mos * 30;
+            const parts = [
+              yrs > 0 ? `${banglaDigits(yrs)} বছর` : "",
+              mos > 0 ? `${banglaDigits(mos)} মাস` : "",
+              days > 0 ? `${banglaDigits(days)} দিন` : "",
+            ].filter(Boolean);
+            periodText = ` (${parts.join(" ")} পর)`;
           } else if (diffDays === 0) {
             periodText = " (আজ)";
           }
