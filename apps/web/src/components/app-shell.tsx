@@ -58,10 +58,10 @@ type PadSettings = {
   newPatientFees: string;
   followUpFees: string;
   reportFees: string;
-  headerEnHtml: string;
+  headerEnLines: string;
   headerLogo: string;
-  headerMidHtml: string;
-  headerBnHtml: string;
+  headerMidLines: string;
+  headerBnLines: string;
   footerText: string;
   footerAlignment: "left" | "center" | "right";
   footerShowDivider: boolean;
@@ -79,7 +79,7 @@ const DEFAULT_PAD: PadSettings = {
   pageSize: "A4",
   customWidth: "210", customHeight: "297",
   newPatientFees: "", followUpFees: "", reportFees: "",
-  headerEnHtml: "", headerLogo: "", headerMidHtml: "", headerBnHtml: "",
+  headerEnLines: "", headerLogo: "", headerMidLines: "", headerBnLines: "",
   footerText: "", footerAlignment: "center", footerShowDivider: true,
   marginTop: "0.6", marginBottom: "0.6", marginLeft: "0.6", marginRight: "0.6",
   headerHeight: "1.5", footerHeight: "0.8", bodyLeftPct: "35",
@@ -141,88 +141,135 @@ function LogoUpload({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
-// ─── Rich Text Editor ────────────────────────────────────────────────────────
+// ─── Line Editor ─────────────────────────────────────────────────────────────
 
-function RichTextEditor({
+type DocLine = {
+  id: string;
+  text: string;
+  size: number;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  align: "left" | "center" | "right";
+};
+
+let _lid = 0;
+function newDocLine(defaults?: Partial<DocLine>): DocLine {
+  return { id: `dl-${++_lid}`, text: "", size: 13, color: "#000000", bold: false, italic: false, underline: false, align: "left", ...defaults };
+}
+
+function parseLines(raw: string): DocLine[] {
+  try {
+    const p = JSON.parse(raw) as DocLine[];
+    return Array.isArray(p) && p.length > 0 ? p : [newDocLine()];
+  } catch { return [newDocLine()]; }
+}
+
+function LineEditor({
   initialValue,
   onChange,
-  placeholder = "Click to edit…",
-  minHeight = "100px",
+  placeholder = "Type here…",
 }: {
   initialValue: string;
-  onChange: (html: string) => void;
+  onChange: (json: string) => void;
   placeholder?: string;
-  minHeight?: string;
 }) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const savedRange = useRef<Range | null>(null);
+  const [lines, setLines] = useState<DocLine[]>(() => parseLines(initialValue));
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const refs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  useEffect(() => {
-    if (editorRef.current) editorRef.current.innerHTML = initialValue;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const active = lines.find((l) => l.id === activeId) ?? null;
 
-  function saveRange() {
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
-      savedRange.current = sel.getRangeAt(0).cloneRange();
-    }
+  function emit(next: DocLine[]) { onChange(JSON.stringify(next)); }
+
+  function upd(id: string, patch: Partial<DocLine>) {
+    setLines((prev) => { const n = prev.map((l) => l.id === id ? { ...l, ...patch } : l); emit(n); return n; });
   }
 
-  function exec(cmd: string, val?: string) {
-    const sel = window.getSelection();
-    if (savedRange.current) {
-      editorRef.current?.focus();
-      sel?.removeAllRanges();
-      sel?.addRange(savedRange.current);
-    }
-    document.execCommand(cmd, false, val ?? undefined);
-    if (editorRef.current) onChange(editorRef.current.innerHTML);
+  function addAfter(id: string) {
+    const cur = lines.find((l) => l.id === id);
+    const nl = newDocLine(cur ? { size: cur.size, color: cur.color, align: cur.align } : undefined);
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l.id === id);
+      const n = [...prev.slice(0, idx + 1), nl, ...prev.slice(idx + 1)];
+      emit(n); return n;
+    });
+    setActiveId(nl.id);
+    setTimeout(() => refs.current[nl.id]?.focus(), 0);
+  }
+
+  function removeLine(id: string) {
+    if (lines.length <= 1) return;
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l.id === id);
+      const n = prev.filter((l) => l.id !== id);
+      emit(n);
+      const focus = n[Math.max(0, idx - 1)];
+      if (focus) { setActiveId(focus.id); setTimeout(() => refs.current[focus.id]?.focus(), 0); }
+      return n;
+    });
+  }
+
+  function tbBtn(on: boolean) {
+    return cn("flex h-6 w-6 items-center justify-center rounded hover:bg-muted", on && "bg-primary/15 text-primary");
   }
 
   return (
     <div className="flex flex-col overflow-hidden rounded-md border bg-background">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b bg-muted/30 px-1.5 py-1">
-        {/* Font size */}
-        <select
-          className="h-6 rounded border bg-background px-1 text-[10px] mr-1"
-          defaultValue="3"
-          onChange={(e) => { exec("fontSize", e.target.value); editorRef.current?.focus(); }}
-        >
-          {[["1","8pt"],["2","10pt"],["3","12pt"],["4","14pt"],["5","18pt"],["6","24pt"],["7","36pt"]].map(([v, l]) => (
-            <option key={v} value={v}>{l}</option>
-          ))}
-        </select>
-        {/* Color */}
-        <input
-          type="color"
-          title="Text color"
-          className="h-6 w-6 cursor-pointer rounded border p-0.5 mr-1"
-          defaultValue="#000000"
-          onChange={(e) => exec("foreColor", e.target.value)}
-        />
-        {/* B I U */}
-        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Bold" onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}><Bold className="h-3 w-3" /></button>
-        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Italic" onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}><Italic className="h-3 w-3" /></button>
-        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted mr-1" title="Underline" onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
-        {/* Alignment */}
-        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Align Left" onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}><AlignLeft className="h-3 w-3" /></button>
-        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Align Center" onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}><AlignCenter className="h-3 w-3" /></button>
-        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Align Right" onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}><AlignRight className="h-3 w-3" /></button>
+      {/* Toolbar — shows active line's formatting */}
+      <div className="flex flex-wrap items-center gap-0.5 border-b bg-muted/30 px-1.5 py-1 min-h-[30px]">
+        {active ? (
+          <>
+            <select
+              className="h-6 rounded border bg-background px-1 text-[10px] mr-1"
+              value={String(active.size)}
+              onChange={(e) => upd(active.id, { size: parseInt(e.target.value) })}
+            >
+              {[8,9,10,11,12,13,14,16,18,20,24,28,32].map((s) => <option key={s} value={s}>{s}px</option>)}
+            </select>
+            <input type="color" title="Color" className="h-6 w-6 cursor-pointer rounded border p-0.5 mr-1" value={active.color} onChange={(e) => upd(active.id, { color: e.target.value })} />
+            <button type="button" className={tbBtn(active.bold)} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { bold: !active.bold }); refs.current[active.id]?.focus(); }}><Bold className="h-3 w-3" /></button>
+            <button type="button" className={tbBtn(active.italic)} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { italic: !active.italic }); refs.current[active.id]?.focus(); }}><Italic className="h-3 w-3" /></button>
+            <button type="button" className={cn(tbBtn(active.underline), "mr-1")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { underline: !active.underline }); refs.current[active.id]?.focus(); }}><Underline className="h-3 w-3" /></button>
+            <button type="button" className={tbBtn(active.align === "left")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { align: "left" }); refs.current[active.id]?.focus(); }}><AlignLeft className="h-3 w-3" /></button>
+            <button type="button" className={tbBtn(active.align === "center")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { align: "center" }); refs.current[active.id]?.focus(); }}><AlignCenter className="h-3 w-3" /></button>
+            <button type="button" className={tbBtn(active.align === "right")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { align: "right" }); refs.current[active.id]?.focus(); }}><AlignRight className="h-3 w-3" /></button>
+          </>
+        ) : (
+          <span className="px-1 text-[10px] text-muted-foreground/50">Click a line to format</span>
+        )}
       </div>
-      {/* ContentEditable area */}
-      <div
-        ref={editorRef}
-        contentEditable
-        suppressContentEditableWarning
-        className="flex-1 p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-muted-foreground/40 empty:before:content-[attr(data-placeholder)]"
-        data-placeholder={placeholder}
-        style={{ minHeight, cursor: "text" }}
-        onKeyUp={saveRange}
-        onClick={saveRange}
-        onInput={() => { if (editorRef.current) onChange(editorRef.current.innerHTML); }}
-      />
+
+      {/* Lines */}
+      <div className="flex flex-col p-1.5 gap-0.5">
+        {lines.map((line, idx) => (
+          <div key={line.id} className={cn("flex items-center gap-1 rounded px-1 py-0.5", activeId === line.id && "bg-primary/5 ring-1 ring-inset ring-primary/20")}>
+            <input
+              ref={(el) => { refs.current[line.id] = el; }}
+              type="text"
+              className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground/25"
+              style={{ fontSize: `${line.size}px`, color: line.color, fontWeight: line.bold ? "bold" : "normal", fontStyle: line.italic ? "italic" : "normal", textDecoration: line.underline ? "underline" : "none", textAlign: line.align }}
+              placeholder={idx === 0 ? placeholder : ""}
+              value={line.text}
+              onChange={(e) => upd(line.id, { text: e.target.value })}
+              onFocus={() => setActiveId(line.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); addAfter(line.id); }
+                if (e.key === "Backspace" && line.text === "") { e.preventDefault(); removeLine(line.id); }
+              }}
+            />
+            {activeId === line.id && lines.length > 1 && (
+              <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground/30 hover:text-destructive" onMouseDown={(e) => { e.preventDefault(); removeLine(line.id); }}>
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        ))}
+        <button type="button" className="mt-0.5 flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50 transition" onClick={() => addAfter(lines[lines.length - 1]?.id ?? "")}>
+          <Plus className="h-3 w-3" /> Add line
+        </button>
+      </div>
     </div>
   );
 }
@@ -350,8 +397,9 @@ function PadSettingsPanel({
           <div className="px-3 py-2 space-y-1.5">
             <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Body Column Split</p>
             <div className="flex h-5 overflow-hidden rounded border text-[9px] font-bold">
-              <div className="flex items-center justify-center bg-primary/15 text-primary transition-all" style={{ width: `${pad.bodyLeftPct}%` }}>
+              <div className="relative flex items-center justify-center bg-primary/15 text-primary transition-all" style={{ width: `${pad.bodyLeftPct}%` }}>
                 {pad.bodyLeftPct}%
+                <div className="absolute right-0 top-0 h-full w-px bg-primary/50" />
               </div>
               <div className="flex items-center justify-center bg-muted text-muted-foreground transition-all" style={{ width: `${100 - parseInt(pad.bodyLeftPct || "35")}%` }}>
                 {100 - parseInt(pad.bodyLeftPct || "35")}%
@@ -404,12 +452,10 @@ function PadSettingsPanel({
             {/* English column */}
             <div className="p-3">
               <p className="mb-2 text-xs font-semibold text-muted-foreground">Doctor's Info (English)</p>
-              <RichTextEditor
-                key="en"
-                initialValue={pad.headerEnHtml}
-                onChange={(html) => updatePad({ headerEnHtml: html })}
-                placeholder="Dr. Name, MBBS, Designation…"
-                minHeight="120px"
+              <LineEditor
+                initialValue={pad.headerEnLines}
+                onChange={(json) => updatePad({ headerEnLines: json })}
+                placeholder="Dr. Name, MBBS…"
               />
             </div>
 
@@ -417,32 +463,36 @@ function PadSettingsPanel({
             <div className="flex flex-col gap-2 p-3">
               <p className="text-xs font-semibold text-muted-foreground">Logo / Specialty</p>
               <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
-              <RichTextEditor
-                key="mid"
-                initialValue={pad.headerMidHtml}
-                onChange={(html) => updatePad({ headerMidHtml: html })}
+              <LineEditor
+                initialValue={pad.headerMidLines}
+                onChange={(json) => updatePad({ headerMidLines: json })}
                 placeholder="Specialty, clinic name…"
-                minHeight="80px"
               />
             </div>
 
             {/* Bengali column */}
             <div className="p-3">
               <p className="mb-2 text-xs font-semibold text-muted-foreground">ডাক্তারের তথ্য (বাংলা)</p>
-              <RichTextEditor
-                key="bn"
-                initialValue={pad.headerBnHtml}
-                onChange={(html) => updatePad({ headerBnHtml: html })}
+              <LineEditor
+                initialValue={pad.headerBnLines}
+                onChange={(json) => updatePad({ headerBnLines: json })}
                 placeholder="ডাঃ নাম, এমবিবিএস…"
-                minHeight="120px"
               />
             </div>
           </div>
         </div>
 
-        {/* Prescription body area */}
-        <div className="flex min-h-32 flex-1 items-center justify-center text-sm text-muted-foreground/40">
-          (Prescription body — according to selected page size)
+        {/* Prescription body area — shows column split */}
+        <div className="flex min-h-32 flex-1">
+          <div
+            className="flex items-center justify-center border-r border-dashed border-muted-foreground/30 text-xs text-muted-foreground/30 transition-all"
+            style={{ width: `${pad.bodyLeftPct}%` }}
+          >
+            Left {pad.bodyLeftPct}%
+          </div>
+          <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground/30">
+            Right {100 - parseInt(pad.bodyLeftPct || "35")}%
+          </div>
         </div>
 
         {/* Footer section */}
@@ -625,7 +675,7 @@ function AppShellChamberSettingsDialog({
 }) {
   const [pad, setPad] = useState<PadSettings>(() => loadPadSettings());
   const [localChambers, setLocalChambers] = useState<Chamber[]>(chambers);
-  const [selectedChamberId, setSelectedChamberId] = useState<string>(chambers[0]?.id ?? "");
+  const [selectedChamberId, setSelectedChamberId] = useState<string>("");
 
   function updatePad(patch: Partial<PadSettings>) {
     setPad((prev) => ({ ...prev, ...patch }));
