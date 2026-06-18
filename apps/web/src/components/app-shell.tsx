@@ -237,9 +237,6 @@ function PadSettingsPanel({
       {/* ── Left column ─────────── */}
       <div className="flex w-80 shrink-0 flex-col border-r">
         {/* Chamber dropdown */}
-        <div className="border-b bg-muted/50 px-4 py-3 text-center text-sm font-bold uppercase tracking-wide">
-          Select Chamber
-        </div>
         <div className="border-b p-4">
           <ChamberDropdown
             chambers={chambers}
