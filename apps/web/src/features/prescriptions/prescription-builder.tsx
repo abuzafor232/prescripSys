@@ -1333,7 +1333,7 @@ export function PrescriptionBuilder() {
       updateNote("history", "");
     } else {
       updateNote(panel, "");
-      if (panel === "followUp") { setFollowUpDate(""); setFees(""); setFollowUpNoteChips([]); }
+      if (panel === "followUp") { setFollowUpDate(""); setFees(""); }
     }
     showStatus("success", `${panelTitles[panel]} cleared`);
   }
@@ -1357,7 +1357,6 @@ export function PrescriptionBuilder() {
     setVision(createInitialVision());
     setReferrals([]);
     setFollowUpDate("");
-    setFollowUpNoteChips([]);
     setFees("");
     setRxInvestigations([]);
     setRxDiagnoses([]);
