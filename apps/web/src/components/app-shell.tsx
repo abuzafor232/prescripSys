@@ -11,6 +11,7 @@ import {
   Briefcase,
   CalendarClock,
   ChevronDown,
+  Eye,
   FilePlus2,
   Italic,
   LayoutDashboard,
@@ -265,6 +266,154 @@ function FreeformEditor({
   );
 }
 
+// ─── Pad Preview ─────────────────────────────────────────────────────────────
+
+const PX_PER_IN = 96;
+const PX_PER_MM = PX_PER_IN / 25.4;
+
+const PAGE_SIZES: Record<string, { w: number; h: number }> = {
+  A4:     { w: 210 * PX_PER_MM, h: 297 * PX_PER_MM },
+  A5:     { w: 148 * PX_PER_MM, h: 210 * PX_PER_MM },
+  Letter: { w: 216 * PX_PER_MM, h: 279 * PX_PER_MM },
+};
+
+function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void }) {
+  const pageW = pad.pageSize === "Custom"
+    ? (parseFloat(pad.customWidth) || 8.5) * PX_PER_IN
+    : PAGE_SIZES[pad.pageSize]?.w ?? PAGE_SIZES.A4.w;
+  const pageH = pad.pageSize === "Custom"
+    ? (parseFloat(pad.customHeight) || 11) * PX_PER_IN
+    : PAGE_SIZES[pad.pageSize]?.h ?? PAGE_SIZES.A4.h;
+
+  const PREVIEW_W = 480;
+  const scale = PREVIEW_W / pageW;
+  const previewH = pageH * scale;
+
+  const inToPx = (v: string, fallback: number) => (parseFloat(v) || fallback) * PX_PER_IN;
+  const mTop    = inToPx(pad.marginTop,    0.6);
+  const mBottom = inToPx(pad.marginBottom, 0.6);
+  const mLeft   = inToPx(pad.marginLeft,   0.6);
+  const mRight  = inToPx(pad.marginRight,  0.6);
+  const hdrH    = inToPx(pad.headerHeight, 1.5);
+  const ftrH    = inToPx(pad.footerHeight, 0.8);
+  const bodyLeft = parseInt(pad.bodyLeftPct) || 35;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      {/* Header bar */}
+      <div className="mb-3 flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+        <span className="text-sm font-bold text-white tracking-wide uppercase">Live Preview</span>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md bg-white/20 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/30 transition"
+          onClick={onClose}
+        >
+          <X className="h-3.5 w-3.5" /> Close
+        </button>
+      </div>
+
+      {/* Scrollable paper wrapper */}
+      <div
+        className="overflow-auto rounded shadow-2xl"
+        style={{ maxHeight: "85vh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Scaled container */}
+        <div style={{ width: PREVIEW_W, height: previewH, position: "relative", overflow: "hidden" }}>
+          {/* Full-size page, scaled down */}
+          <div style={{
+            width: pageW,
+            height: pageH,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+            position: "absolute",
+            top: 0,
+            left: 0,
+            background: "white",
+            boxShadow: "inset 0 0 0 1px #e5e7eb",
+          }}>
+            {/* Margin inset */}
+            <div style={{
+              position: "absolute",
+              top: mTop, bottom: mBottom, left: mLeft, right: mRight,
+              display: "flex", flexDirection: "column",
+            }}>
+              {/* Header */}
+              <div style={{
+                height: hdrH, flexShrink: 0,
+                display: "flex", alignItems: "stretch",
+                borderBottom: "1px solid #d1d5db",
+              }}>
+                {/* English */}
+                <div style={{ flex: 1, overflow: "hidden", padding: "4px 6px" }}
+                  dangerouslySetInnerHTML={{ __html: pad.headerEnLines || "" }} />
+                {/* Middle: logo + specialty */}
+                <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "4px 8px", minWidth: 80 }}>
+                  {pad.headerLogo && (
+                    <img src={pad.headerLogo} alt="Logo" style={{ maxHeight: hdrH * 0.55, maxWidth: 120, objectFit: "contain" }} />
+                  )}
+                  <div style={{ fontSize: 11, textAlign: "center" }}
+                    dangerouslySetInnerHTML={{ __html: pad.headerMidLines || "" }} />
+                </div>
+                {/* Bengali */}
+                <div style={{ flex: 1, overflow: "hidden", padding: "4px 6px", textAlign: "right" }}
+                  dangerouslySetInnerHTML={{ __html: pad.headerBnLines || "" }} />
+              </div>
+
+              {/* Body */}
+              <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+                <div style={{
+                  width: `${bodyLeft}%`,
+                  borderRight: "1px dashed #d1d5db",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <span style={{ fontSize: 10, color: "#d1d5db", transform: "rotate(-90deg)", whiteSpace: "nowrap" }}>
+                    Left {bodyLeft}%
+                  </span>
+                </div>
+                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 10, color: "#d1d5db" }}>Right {100 - bodyLeft}%</span>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                height: ftrH, flexShrink: 0,
+                borderTop: "1px solid #d1d5db",
+                display: "flex", flexDirection: "column", justifyContent: "center",
+                padding: "4px 6px",
+              }}>
+                {pad.footerShowDivider && (
+                  <div style={{ borderTop: "1px solid #9ca3af", marginBottom: 4 }} />
+                )}
+                <div style={{ fontSize: 11, color: "#374151", textAlign: pad.footerAlignment, whiteSpace: "pre-wrap" }}>
+                  {pad.footerText || <span style={{ color: "#d1d5db", fontStyle: "italic" }}>No footer text</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Margin guides (subtle dashed outline) */}
+            <div style={{
+              position: "absolute",
+              top: mTop, bottom: mBottom, left: mLeft, right: mRight,
+              border: "1px dashed rgba(59,130,246,0.15)",
+              pointerEvents: "none",
+            }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Page size label */}
+      <p className="mt-2 text-[11px] text-white/50">
+        {pad.pageSize === "Custom" ? `Custom ${pad.customWidth}×${pad.customHeight} in` : pad.pageSize} — scale {Math.round(scale * 100)}%
+      </p>
+    </div>
+  );
+}
+
 // ─── Pad Settings Panel ──────────────────────────────────────────────────────
 
 function PadSettingsPanel({
@@ -280,8 +429,11 @@ function PadSettingsPanel({
   onSave: () => void;
   onCancel: () => void;
 }) {
+  const [previewing, setPreviewing] = useState(false);
+
   return (
     <div className="flex flex-1 overflow-hidden">
+      {previewing && <PadPreview pad={pad} onClose={() => setPreviewing(false)} />}
       {/* ── Left column ─────────── */}
       <div className="flex w-72 shrink-0 flex-col border-r bg-card shadow-soft">
 
@@ -411,8 +563,20 @@ function PadSettingsPanel({
             </div>
           </div>
 
+        {/* Live Preview */}
+        <div className="border-t px-3 py-2">
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/8 py-2 text-xs font-semibold text-primary hover:bg-primary/15 transition"
+            onClick={() => setPreviewing(true)}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Live Preview
+          </button>
+        </div>
+
         {/* Save / Cancel */}
-        <div className="mt-auto border-t bg-primary/5 px-3 py-2.5 flex gap-2">
+        <div className="border-t bg-primary/5 px-3 py-2.5 flex gap-2">
           <button
             type="button"
             className="flex-1 rounded border py-1.5 text-xs font-semibold hover:bg-muted"
