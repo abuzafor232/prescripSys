@@ -13,7 +13,7 @@ import {
   CalendarClock,
   ChevronDown,
   Eraser,
-
+  Eye,
   FilePlus2,
   Indent,
   Italic,
@@ -386,6 +386,145 @@ function FreeformEditor({
 
 // ─── Pad Settings Panel ──────────────────────────────────────────────────────
 
+// Per-chamber pad storage
+const chamberPadKey = (id: string) => `rx-pad-settings-${id}`;
+function loadChamberPad(id: string): PadSettings {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(chamberPadKey(id)) : null;
+    return raw ? { ...DEFAULT_PAD, ...(JSON.parse(raw) as Partial<PadSettings>) } : { ...DEFAULT_PAD };
+  } catch { return { ...DEFAULT_PAD }; }
+}
+function saveChamberPad(id: string, pad: PadSettings) {
+  try {
+    localStorage.setItem(chamberPadKey(id), JSON.stringify(pad));
+    localStorage.setItem(PAD_SETTINGS_KEY, JSON.stringify(pad)); // keep global in sync
+  } catch {}
+}
+
+// Page-size constants for preview
+const _PX_IN = 96;
+const _PX_MM = _PX_IN / 25.4;
+const _PAGE_W: Record<string, { w: number; h: number }> = {
+  A4:     { w: 210 * _PX_MM, h: 297 * _PX_MM },
+  A5:     { w: 148 * _PX_MM, h: 210 * _PX_MM },
+  Letter: { w: 216 * _PX_MM, h: 279 * _PX_MM },
+};
+
+function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => void }) {
+  const pageW = pad.pageSize === "Custom"
+    ? (parseFloat(pad.customWidth)  || 8.5) * _PX_IN
+    : _PAGE_W[pad.pageSize]?.w ?? _PAGE_W.A4.w;
+  const pageH = pad.pageSize === "Custom"
+    ? (parseFloat(pad.customHeight) || 11)  * _PX_IN
+    : _PAGE_W[pad.pageSize]?.h ?? _PAGE_W.A4.h;
+
+  const PREVIEW_W = 700;
+  const scale    = PREVIEW_W / pageW;
+  const previewH = Math.round(pageH * scale);
+
+  const ip = (v: string, fb: number) => (parseFloat(v) || fb) * _PX_IN;
+  const mTop = ip(pad.marginTop, 0.6),   mBottom = ip(pad.marginBottom, 0.6);
+  const mLeft = ip(pad.marginLeft, 0.6), mRight  = ip(pad.marginRight,  0.6);
+  const hdrH = ip(pad.headerHeight, 1.7);
+  const ftrH = ip(pad.footerHeight, 0.8);
+  const bodyLeft = parseInt(pad.bodyLeftPct) || 35;
+  const hasMid   = !!(pad.headerLogo || pad.headerMidLines);
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      {/* Top bar */}
+      <div className="mb-3 flex shrink-0 items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <span className="text-xs font-bold uppercase tracking-widest text-white/80">Pad Preview</span>
+        <span className="text-xs text-white/40">
+          {pad.pageSize === "Custom" ? `${pad.customWidth}×${pad.customHeight} in` : pad.pageSize}
+          &nbsp;·&nbsp;{Math.round(scale * 100)}%
+        </span>
+        <button
+          type="button"
+          className="ml-2 flex items-center gap-1.5 rounded bg-white/15 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25"
+          onClick={onClose}
+        >
+          <X className="h-3.5 w-3.5" /> Close
+        </button>
+      </div>
+
+      {/* Scrollable paper */}
+      <div
+        className="overflow-auto rounded-sm shadow-2xl ring-1 ring-white/10"
+        style={{ maxHeight: "calc(100vh - 80px)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ width: PREVIEW_W, height: previewH, position: "relative", overflow: "hidden" }}>
+          <div style={{
+            width: pageW, height: pageH,
+            transform: `scale(${scale})`, transformOrigin: "top left",
+            position: "absolute", top: 0, left: 0, background: "white",
+          }}>
+            <style>{`.rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}.rxp ul,.rxp ol{margin:0;padding-left:1.4em}.rxp li{margin:0;padding:0}.rxp *{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word}`}</style>
+
+            {/* Content inside margins */}
+            <div style={{
+              position: "absolute",
+              top: mTop, bottom: mBottom, left: mLeft, right: mRight,
+              display: "flex", flexDirection: "column", overflow: "hidden",
+            }}>
+              {/* Header */}
+              <div style={{ height: hdrH, flexShrink: 0, display: "flex", alignItems: "stretch", borderBottom: "1.5px solid #94a3b8", overflow: "hidden" }}>
+                <div className="rxp" style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px" }}
+                  dangerouslySetInnerHTML={{ __html: pad.headerEnLines || "" }} />
+                {hasMid && (
+                  <div style={{ width: "30%", maxWidth: 220, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "6px 8px", overflow: "hidden", borderLeft: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0" }}>
+                    {pad.headerLogo && <img src={pad.headerLogo} alt="" style={{ maxHeight: hdrH * 0.55, maxWidth: 140, objectFit: "contain" }} />}
+                    {pad.headerMidLines && <div className="rxp" style={{ textAlign: "center", width: "100%", marginTop: pad.headerLogo ? 4 : 0 }} dangerouslySetInnerHTML={{ __html: pad.headerMidLines }} />}
+                  </div>
+                )}
+                <div className="rxp" style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px", textAlign: "right" }}
+                  dangerouslySetInnerHTML={{ __html: pad.headerBnLines || "" }} />
+              </div>
+
+              {/* Body — column layout indicator */}
+              <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+                <div style={{ width: `${bodyLeft}%`, flexShrink: 0, borderRight: "1px solid #cbd5e1", display: "flex", flexDirection: "column", gap: 9, padding: "10px 8px", overflow: "hidden" }}>
+                  {["Patient Name","Age / Sex","Weight / BP","Chief Complaints","On Examination","Investigation","Diagnosis","Follow Up"].map((label) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>{label}</div>
+                      <div style={{ borderBottom: "1px solid #e2e8f0", paddingBottom: 10 }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ flex: 1, padding: "10px 12px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                  <div style={{ fontSize: 34, fontFamily: "serif", fontWeight: 700, color: "#1e293b", lineHeight: 1, marginBottom: 10 }}>℞</div>
+                  {Array.from({ length: 7 }).map((_, i) => (
+                    <div key={i} style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: 5 }}>
+                        <span style={{ fontSize: 10, color: "#94a3b8", minWidth: 16, lineHeight: 1 }}>{i + 1}.</span>
+                        <div style={{ flex: 1, borderBottom: "1px dashed #cbd5e1" }} />
+                      </div>
+                      <div style={{ marginLeft: 21, marginTop: 5, borderBottom: "1px dashed #e2e8f0" }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ height: ftrH, flexShrink: 0, borderTop: "1.5px solid #94a3b8", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "center", padding: "5px 10px" }}>
+                {pad.footerShowDivider && <div style={{ borderTop: "1px solid #64748b", marginBottom: 5 }} />}
+                {pad.footerText
+                  ? <div style={{ fontSize: 11, color: "#374151", textAlign: pad.footerAlignment as "left"|"center"|"right", whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{pad.footerText}</div>
+                  : <div style={{ fontSize: 10, color: "#cbd5e1", textAlign: "center", fontStyle: "italic" }}>footer text</div>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PadSettingsPanel({
   pad, updatePad, chambers, selectedChamberId, onChamberChange, onChamberAdd, onChamberRemove, onSave, onCancel,
 }: {
@@ -399,8 +538,12 @@ function PadSettingsPanel({
   onSave: () => void;
   onCancel: () => void;
 }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const chamberSelected = selectedChamberId !== "";
+
   return (
     <div className="flex flex-1 overflow-hidden">
+      {previewOpen && <PadPreviewModal pad={pad} onClose={() => setPreviewOpen(false)} />}
       {/* ── Left column ─────────── */}
       <div className="flex w-72 shrink-0 flex-col border-r bg-card shadow-soft">
 
@@ -530,6 +673,19 @@ function PadSettingsPanel({
             </div>
           </div>
 
+          {/* Preview button */}
+          <div className="border-t px-3 py-2">
+            <button
+              type="button"
+              disabled={!chamberSelected}
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/8 py-2 text-xs font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => setPreviewOpen(true)}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Preview Pad
+            </button>
+          </div>
+
         {/* Save / Cancel */}
         <div className="border-t bg-primary/5 px-3 py-2.5 flex gap-2">
           <button
@@ -550,7 +706,11 @@ function PadSettingsPanel({
       </div>
 
       {/* ── Right: Header + Body + Footer ─────────── */}
-      {/* Force permanently-white / light-mode rendering regardless of theme */}
+      {!chamberSelected ? (
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/60">
+          Select a chamber to edit its header &amp; footer
+        </div>
+      ) : (
       <div
         className="flex flex-1 flex-col overflow-y-auto"
         style={{
@@ -675,6 +835,7 @@ function PadSettingsPanel({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -819,8 +980,14 @@ function AppShellChamberSettingsDialog({
     setPad((prev) => ({ ...prev, ...patch }));
   }
 
+  function handleChamberChange(id: string) {
+    setSelectedChamberId(id);
+    if (id) setPad(loadChamberPad(id));
+  }
+
   function handleSave() {
-    savePadSettings(pad);
+    if (selectedChamberId) saveChamberPad(selectedChamberId, pad);
+    else savePadSettings(pad);
     onClose();
   }
 
@@ -847,7 +1014,7 @@ function AppShellChamberSettingsDialog({
         updatePad={updatePad}
         chambers={localChambers}
         selectedChamberId={selectedChamberId}
-        onChamberChange={setSelectedChamberId}
+        onChamberChange={handleChamberChange}
         onChamberAdd={addChamber}
         onChamberRemove={removeChamber}
         onSave={handleSave}
