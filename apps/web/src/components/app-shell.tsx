@@ -5,24 +5,33 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AlignCenter,
+  AlignJustify,
   AlignLeft,
   AlignRight,
   Bold,
   Briefcase,
   CalendarClock,
   ChevronDown,
+  Eraser,
   Eye,
   FilePlus2,
+  Indent,
   Italic,
   LayoutDashboard,
+  List,
+  ListOrdered,
   Loader2,
   LogOut,
   Menu,
   Microscope,
+  Outdent,
   Pill,
   Printer,
   Plus,
   Settings,
+  Strikethrough,
+  Subscript,
+  Superscript,
   Trash2,
   Underline,
   UsersRound,
@@ -144,6 +153,11 @@ function LogoUpload({ value, onChange }: { value: string; onChange: (v: string) 
 
 // ─── Freeform Editor ─────────────────────────────────────────────────────────
 
+const EDITOR_FONTS = [
+  "Arial", "Times New Roman", "Georgia", "Verdana",
+  "Courier New", "Trebuchet MS", "Tahoma", "Palatino Linotype",
+];
+
 function FreeformEditor({
   initialValue,
   onChange,
@@ -155,7 +169,12 @@ function FreeformEditor({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
-  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, align: "left" as "left" | "center" | "right" });
+  const [fmt, setFmt] = useState({
+    bold: false, italic: false, underline: false,
+    strikethrough: false, subscript: false, superscript: false,
+    orderedList: false, unorderedList: false,
+    align: "left" as "left" | "center" | "right" | "justify",
+  });
 
   useEffect(() => {
     if (ref.current) ref.current.innerHTML = initialValue;
@@ -165,10 +184,19 @@ function FreeformEditor({
   function syncFmt() {
     try {
       setFmt({
-        bold: document.queryCommandState("bold"),
-        italic: document.queryCommandState("italic"),
-        underline: document.queryCommandState("underline"),
-        align: document.queryCommandState("justifyCenter") ? "center" : document.queryCommandState("justifyRight") ? "right" : "left",
+        bold:          document.queryCommandState("bold"),
+        italic:        document.queryCommandState("italic"),
+        underline:     document.queryCommandState("underline"),
+        strikethrough: document.queryCommandState("strikeThrough"),
+        subscript:     document.queryCommandState("subscript"),
+        superscript:   document.queryCommandState("superscript"),
+        orderedList:   document.queryCommandState("insertOrderedList"),
+        unorderedList: document.queryCommandState("insertUnorderedList"),
+        align:
+          document.queryCommandState("justifyFull")   ? "justify"
+          : document.queryCommandState("justifyCenter") ? "center"
+          : document.queryCommandState("justifyRight")  ? "right"
+          : "left",
       });
     } catch {}
   }
@@ -200,9 +228,7 @@ function FreeformEditor({
   function applyFontSize(px: number) {
     if (isNaN(px) || px < 1) return;
     restoreRange();
-    // Mark selected text with a temporary font[size="7"] tag
     document.execCommand("fontSize", false, "7");
-    // Replace every <font size="7"> with <span style="font-size: Xpx">
     ref.current?.querySelectorAll('font[size="7"]').forEach((el) => {
       const span = document.createElement("span");
       span.style.fontSize = `${px}px`;
@@ -212,50 +238,93 @@ function FreeformEditor({
     if (ref.current) onChange(ref.current.innerHTML);
   }
 
-  function tbBtn(active: boolean) {
-    return cn("flex h-6 w-6 items-center justify-center rounded transition hover:bg-primary/10", active && "bg-primary/15 text-primary");
+  function tbBtn(active: boolean, title?: string) {
+    return {
+      type: "button" as const,
+      title,
+      className: cn(
+        "flex h-6 w-6 items-center justify-center rounded text-gray-600 transition",
+        "hover:bg-gray-200 hover:text-gray-900",
+        active && "bg-gray-800 text-white hover:bg-gray-700 hover:text-white",
+      ),
+    };
   }
 
+  const Sep = () => <div className="mx-0.5 h-4 w-px bg-gray-200" />;
+
   return (
-    <div className="flex flex-col overflow-hidden rounded-md border bg-background">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b bg-primary/5 px-1.5 py-1">
-        {/* Font size — free input, press Enter to apply */}
-        <div className="mr-1 flex items-center gap-0.5">
+    <div className="flex flex-col overflow-hidden rounded-md border" style={{ background: "white", color: "#111" }}>
+
+      {/* ── Row 1: Font family · Size · B I U S · X² X₂ · Erase ── */}
+      <div className="flex flex-wrap items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#f3f4f6" }}>
+
+        {/* Font family */}
+        <select
+          className="h-6 rounded border border-gray-300 bg-white px-0.5 text-[10px] text-gray-800"
+          style={{ minWidth: 90 }}
+          defaultValue="Arial"
+          onChange={(e) => exec("fontName", e.target.value)}
+        >
+          {EDITOR_FONTS.map(f => (
+            <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
+          ))}
+        </select>
+
+        {/* Font size */}
+        <div className="mx-0.5 flex items-center gap-0.5">
           <input
-            type="number"
-            min="1"
-            max="200"
-            step="1"
-            title="Font size in px — press Enter to apply"
-            defaultValue="13"
-            className="h-6 w-12 rounded border bg-background px-1 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            type="number" min="1" max="200" step="1" defaultValue="13"
+            title="Font size (px) — press Enter"
+            className="h-6 w-11 rounded border border-gray-300 bg-white px-1 text-center text-[10px] text-gray-800 outline-none focus:ring-1 focus:ring-gray-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             onKeyDown={(e) => {
               e.stopPropagation();
-              if (e.key === "Enter") {
-                e.preventDefault();
-                applyFontSize(parseInt((e.target as HTMLInputElement).value));
-              }
+              if (e.key === "Enter") { e.preventDefault(); applyFontSize(parseInt((e.target as HTMLInputElement).value)); }
             }}
           />
-          <span className="text-[9px] text-muted-foreground/60">px</span>
+          <span className="text-[9px] text-gray-400">px</span>
         </div>
-        <input type="color" title="Text color" className="h-6 w-6 cursor-pointer rounded border p-0.5 mr-1" defaultValue="#000000" onChange={(e) => exec("foreColor", e.target.value)} />
-        <button type="button" className={tbBtn(fmt.bold)}      onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}><Bold className="h-3 w-3" /></button>
-        <button type="button" className={tbBtn(fmt.italic)}    onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}><Italic className="h-3 w-3" /></button>
-        <button type="button" className={cn(tbBtn(fmt.underline), "mr-1")} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
-        <button type="button" className={tbBtn(fmt.align === "left")}   onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}><AlignLeft className="h-3 w-3" /></button>
-        <button type="button" className={tbBtn(fmt.align === "center")} onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}><AlignCenter className="h-3 w-3" /></button>
-        <button type="button" className={tbBtn(fmt.align === "right")}  onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}><AlignRight className="h-3 w-3" /></button>
+
+        <Sep />
+        <button {...tbBtn(fmt.bold,          "Bold (Ctrl+B)")}      onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}><Bold className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.italic,        "Italic (Ctrl+I)")}    onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}><Italic className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.underline,     "Underline (Ctrl+U)")} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.strikethrough, "Strikethrough")}      onMouseDown={(e) => { e.preventDefault(); exec("strikeThrough"); }}><Strikethrough className="h-3 w-3" /></button>
+        <Sep />
+        <button {...tbBtn(fmt.superscript,   "Superscript")}  onMouseDown={(e) => { e.preventDefault(); exec("superscript"); }}><Superscript className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.subscript,     "Subscript")}    onMouseDown={(e) => { e.preventDefault(); exec("subscript"); }}><Subscript className="h-3 w-3" /></button>
+        <Sep />
+        <button {...tbBtn(false, "Clear formatting")} onMouseDown={(e) => { e.preventDefault(); exec("removeFormat"); }}><Eraser className="h-3 w-3" /></button>
       </div>
-      {/* Freeform content area — auto-fits to content */}
+
+      {/* ── Row 2: Colors · Lists · Indent · Alignment ── */}
+      <div className="flex flex-wrap items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#f3f4f6" }}>
+
+        {/* Text color */}
+        <input type="color" title="Text color"      defaultValue="#000000" className="h-6 w-6 cursor-pointer rounded border border-gray-300 p-0.5" onChange={(e) => exec("foreColor",  e.target.value)} />
+        {/* Highlight color */}
+        <input type="color" title="Highlight color" defaultValue="#ffff00" className="h-6 w-6 cursor-pointer rounded border border-gray-300 p-0.5" onChange={(e) => exec("backColor",  e.target.value)} />
+
+        <Sep />
+        <button {...tbBtn(fmt.unorderedList, "Bullet list")}   onMouseDown={(e) => { e.preventDefault(); exec("insertUnorderedList"); }}><List        className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.orderedList,   "Numbered list")} onMouseDown={(e) => { e.preventDefault(); exec("insertOrderedList"); }}>  <ListOrdered className="h-3 w-3" /></button>
+        <Sep />
+        <button {...tbBtn(false, "Decrease indent")} onMouseDown={(e) => { e.preventDefault(); exec("outdent"); }}><Outdent className="h-3 w-3" /></button>
+        <button {...tbBtn(false, "Increase indent")} onMouseDown={(e) => { e.preventDefault(); exec("indent"); }}> <Indent  className="h-3 w-3" /></button>
+        <Sep />
+        <button {...tbBtn(fmt.align === "left",    "Align left")}    onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}>   <AlignLeft    className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.align === "center",  "Align center")}  onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}> <AlignCenter  className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.align === "right",   "Align right")}   onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}>  <AlignRight   className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.align === "justify", "Justify")}       onMouseDown={(e) => { e.preventDefault(); exec("justifyFull"); }}>   <AlignJustify className="h-3 w-3" /></button>
+      </div>
+
+      {/* ── Editor area ── */}
       <div
         ref={ref}
         contentEditable
         suppressContentEditableWarning
-        className="min-h-[72px] p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-muted-foreground/35 empty:before:content-[attr(data-placeholder)]"
+        className="min-h-[80px] p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-gray-300 empty:before:content-[attr(data-placeholder)]"
         data-placeholder={placeholder}
-        style={{ cursor: "text", wordBreak: "break-word" }}
+        style={{ cursor: "text", wordBreak: "break-word", color: "#111" }}
         onKeyUp={saveRange}
         onClick={saveRange}
         onSelect={saveRange}
@@ -364,18 +433,40 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
               </div>
 
               {/* Body */}
-              <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-                <div style={{
-                  width: `${bodyLeft}%`,
-                  borderRight: "1px dashed #d1d5db",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <span style={{ fontSize: 10, color: "#d1d5db", transform: "rotate(-90deg)", whiteSpace: "nowrap" }}>
-                    Left {bodyLeft}%
-                  </span>
+              <div style={{ flex: 1, display: "flex", overflow: "hidden", fontSize: 11 }}>
+                {/* Left column — patient info */}
+                <div style={{ width: `${bodyLeft}%`, borderRight: "1px solid #e5e7eb", padding: "8px 6px", display: "flex", flexDirection: "column", gap: 4 }}>
+                  {[
+                    "Name",
+                    "Age / Sex",
+                    "Weight / BP",
+                    "Chief Complaints",
+                    "On Examination",
+                    "Investigation",
+                    "Diagnosis",
+                    "Follow Up",
+                  ].map((label) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 9, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>{label}</div>
+                      <div style={{ borderBottom: "1px dotted #d1d5db", height: 14 }} />
+                    </div>
+                  ))}
                 </div>
-                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 10, color: "#d1d5db" }}>Right {100 - bodyLeft}%</span>
+                {/* Right column — Rx */}
+                <div style={{ flex: 1, padding: "8px 8px", display: "flex", flexDirection: "column", gap: 3 }}>
+                  <div style={{ fontSize: 22, fontFamily: "serif", fontWeight: 700, color: "#374151", marginBottom: 4 }}>℞</div>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} style={{ marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                        <span style={{ fontSize: 9, color: "#9ca3af", minWidth: 12 }}>{i + 1}.</span>
+                        <div style={{ flex: 1, borderBottom: "1px dotted #d1d5db", height: 14 }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 4, marginTop: 2 }}>
+                        <span style={{ minWidth: 12 }} />
+                        <div style={{ flex: 1, borderBottom: "1px dotted #e5e7eb", height: 11 }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
