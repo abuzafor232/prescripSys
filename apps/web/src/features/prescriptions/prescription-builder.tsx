@@ -7103,7 +7103,7 @@ function PrescriptionOptionTile({
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-xs font-semibold uppercase text-muted-foreground">
+          <h2 className="truncate text-sm font-bold uppercase text-foreground">
             {title}
             {hasContent ? (
               <span
