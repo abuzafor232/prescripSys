@@ -305,7 +305,7 @@ type RxDraft = {
   vision: VisionState;
   referrals: ReferralEntry[];
   followUpDate: string;
-  followUpNoteChips?: string[];
+  followUpNoteChips?: { text: string; active: boolean }[];
   fees?: string;
   rxInvestigations: InvestigationEntry[];
   rxDiagnoses: DiagnosisEntry[];
@@ -896,7 +896,7 @@ export function PrescriptionBuilder() {
     } catch { return []; }
   });
   const [followUpDate, setFollowUpDate] = useState("");
-  const [followUpNoteChips, setFollowUpNoteChips] = useState<string[]>([]);
+  const [followUpNoteChips, setFollowUpNoteChips] = useState<{ text: string; active: boolean }[]>([]);
   const [fees, setFees] = useState("");
   const [activePanel, setActivePanel] = useState<PanelKey | null>(null);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
@@ -2088,15 +2088,15 @@ export function PrescriptionBuilder() {
           dateLabel = `${day} ${month} ${year}${daysText}`;
         }
       }
-      const hasContent = dateLabel !== followUpDate || followUpNoteChips.length > 0 || notes.followUp;
-      if (!hasContent && !dateLabel) return null;
+      const activeChips = followUpNoteChips.filter((c) => c.active);
+      if (!dateLabel && activeChips.length === 0 && !notes.followUp) return null;
       return (
         <div className="mt-0.5 space-y-1">
           {dateLabel && <div className="text-xs text-foreground">{dateLabel}</div>}
-          {followUpNoteChips.length > 0 && (
+          {activeChips.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {followUpNoteChips.map((chip, i) => (
-                <span key={i} className="inline-block rounded-full border border-primary/30 bg-primary/8 px-2 py-0.5 text-[10px] font-medium text-primary">{chip}</span>
+              {activeChips.map((chip, i) => (
+                <span key={i} className="inline-block rounded-full border border-primary/30 bg-primary/8 px-2 py-0.5 text-[10px] font-medium text-primary">{chip.text}</span>
               ))}
             </div>
           )}
@@ -2328,7 +2328,7 @@ export function PrescriptionBuilder() {
     }
 
     if (panel === "followUp") {
-      return Boolean(followUpDate || notes.followUp.trim() || followUpNoteChips.length > 0);
+      return Boolean(followUpDate || notes.followUp.trim() || followUpNoteChips.some((c) => c.active));
     }
 
     if (panel === "referral") {
@@ -6139,12 +6139,12 @@ function TagNoteSidebar({
 type FollowUpSidebarProps = {
   date: string;
   note: string;
-  noteChips: string[];
+  noteChips: { text: string; active: boolean }[];
   fees: string;
   onClose: () => void;
   onDateChange: (value: string) => void;
   onNoteChange: (value: string) => void;
-  onNoteChipsChange: (chips: string[]) => void;
+  onNoteChipsChange: (chips: { text: string; active: boolean }[]) => void;
   onFeesChange: (value: string) => void;
 };
 
@@ -6303,9 +6303,9 @@ function FollowUpNoteBox({
   onNoteChipsChange,
 }: {
   note: string;
-  noteChips: string[];
+  noteChips: { text: string; active: boolean }[];
   onNoteChange: (v: string) => void;
-  onNoteChipsChange: (chips: string[]) => void;
+  onNoteChipsChange: (chips: { text: string; active: boolean }[]) => void;
 }) {
   const [addingChip, setAddingChip] = useState(false);
   const [chipInput, setChipInput] = useState("");
@@ -6319,15 +6319,19 @@ function FollowUpNoteBox({
 
   function submitChip() {
     const text = chipInput.trim();
-    if (text) onNoteChipsChange([...noteChips, text]);
+    if (text) onNoteChipsChange([...noteChips, { text, active: false }]);
     setChipInput("");
     setAddingChip(false);
+  }
+
+  function toggleChip(idx: number) {
+    onNoteChipsChange(noteChips.map((c, i) => i === idx ? { ...c, active: !c.active } : c));
   }
 
   function saveEdit(idx: number) {
     const text = editingText.trim();
     if (!text) return deleteChip(idx);
-    onNoteChipsChange(noteChips.map((c, i) => (i === idx ? text : c)));
+    onNoteChipsChange(noteChips.map((c, i) => i === idx ? { ...c, text } : c));
     setEditingIdx(null);
   }
 
@@ -6340,6 +6344,9 @@ function FollowUpNoteBox({
     <div className="flex shrink-0 flex-col gap-2">
       {(noteChips.length > 0 || addingChip) && (
         <div className="flex flex-col gap-1.5 rounded-md border bg-muted/30 p-2">
+          {noteChips.length > 0 && (
+            <p className="text-[10px] text-muted-foreground">Click a capsule to add it to the prescription</p>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {noteChips.map((chip, idx) =>
               editingIdx === idx ? (
@@ -6369,22 +6376,27 @@ function FollowUpNoteBox({
               ) : (
                 <span
                   key={idx}
-                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-sm"
+                  className={`inline-flex cursor-pointer select-none items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium shadow-sm transition-colors ${
+                    chip.active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-primary/30 bg-background text-foreground hover:border-primary/60 hover:bg-primary/5"
+                  }`}
+                  onClick={() => toggleChip(idx)}
                 >
-                  {chip}
+                  {chip.text}
                   <button
                     type="button"
                     aria-label="Edit note"
-                    className="ml-0.5 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    onClick={() => { setEditingIdx(idx); setEditingText(chip); }}
+                    className={`ml-0.5 rounded p-0.5 ${chip.active ? "hover:bg-primary-foreground/20 text-primary-foreground/70" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                    onClick={(e) => { e.stopPropagation(); setEditingIdx(idx); setEditingText(chip.text); }}
                   >
                     <Pencil className="h-2.5 w-2.5" />
                   </button>
                   <button
                     type="button"
                     aria-label="Remove note"
-                    className="rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => deleteChip(idx)}
+                    className={`rounded p-0.5 ${chip.active ? "hover:bg-primary-foreground/20 text-primary-foreground/70" : "text-muted-foreground hover:bg-destructive/10 hover:text-destructive"}`}
+                    onClick={(e) => { e.stopPropagation(); deleteChip(idx); }}
                   >
                     <X className="h-2.5 w-2.5" />
                   </button>
