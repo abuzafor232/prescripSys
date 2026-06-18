@@ -305,6 +305,7 @@ type RxDraft = {
   vision: VisionState;
   referrals: ReferralEntry[];
   followUpDate: string;
+  followUpNoteChips?: string[];
   fees?: string;
   rxInvestigations: InvestigationEntry[];
   rxDiagnoses: DiagnosisEntry[];
@@ -895,6 +896,7 @@ export function PrescriptionBuilder() {
     } catch { return []; }
   });
   const [followUpDate, setFollowUpDate] = useState("");
+  const [followUpNoteChips, setFollowUpNoteChips] = useState<string[]>([]);
   const [fees, setFees] = useState("");
   const [activePanel, setActivePanel] = useState<PanelKey | null>(null);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
@@ -1421,6 +1423,7 @@ export function PrescriptionBuilder() {
     setVision(createInitialVision());
     setReferrals([]);
     setFollowUpDate("");
+    setFollowUpNoteChips([]);
     setPatientNote("");
     setNoteEditing(false);
     setPrevRxOpen(false);
@@ -1452,6 +1455,7 @@ export function PrescriptionBuilder() {
       vision,
       referrals,
       followUpDate,
+      followUpNoteChips,
       fees,
       rxInvestigations,
       rxDiagnoses
@@ -1545,6 +1549,7 @@ export function PrescriptionBuilder() {
     setVision(draft.vision);
     setReferrals(draft.referrals);
     setFollowUpDate(draft.followUpDate);
+    setFollowUpNoteChips(draft.followUpNoteChips ?? []);
     setFees(draft.fees ?? "");
     setRxInvestigations(draft.rxInvestigations ?? []);
     setRxDiagnoses((draft.rxDiagnoses ?? []).map((d) => ({ ...d, value: d.value ?? "" })));
@@ -2083,8 +2088,21 @@ export function PrescriptionBuilder() {
           dateLabel = `${day} ${month} ${year}${daysText}`;
         }
       }
-      const display = [dateLabel, notes.followUp].filter(Boolean).join(" — ");
-      return display ? <div className="mt-0.5 line-clamp-2 text-xs text-foreground">{display}</div> : null;
+      const hasContent = dateLabel !== followUpDate || followUpNoteChips.length > 0 || notes.followUp;
+      if (!hasContent && !dateLabel) return null;
+      return (
+        <div className="mt-0.5 space-y-1">
+          {dateLabel && <div className="text-xs text-foreground">{dateLabel}</div>}
+          {followUpNoteChips.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {followUpNoteChips.map((chip, i) => (
+                <span key={i} className="inline-block rounded-full border border-primary/30 bg-primary/8 px-2 py-0.5 text-[10px] font-medium text-primary">{chip}</span>
+              ))}
+            </div>
+          )}
+          {notes.followUp && <div className="text-xs text-foreground">{notes.followUp}</div>}
+        </div>
+      );
     }
 
     if (panel === "complaint" && complaints.length > 0) {
@@ -2310,7 +2328,7 @@ export function PrescriptionBuilder() {
     }
 
     if (panel === "followUp") {
-      return Boolean(followUpDate || notes.followUp.trim());
+      return Boolean(followUpDate || notes.followUp.trim() || followUpNoteChips.length > 0);
     }
 
     if (panel === "referral") {
@@ -2953,10 +2971,12 @@ export function PrescriptionBuilder() {
         <FollowUpSidebar
           date={followUpDate}
           note={notes.followUp}
+          noteChips={followUpNoteChips}
           fees={fees}
           onClose={() => setActivePanel(null)}
           onDateChange={setFollowUpDate}
           onNoteChange={(value) => updateNote("followUp", value)}
+          onNoteChipsChange={setFollowUpNoteChips}
           onFeesChange={setFees}
         />
       ) : activePanel === "referral" ? (
@@ -6119,20 +6139,24 @@ function TagNoteSidebar({
 type FollowUpSidebarProps = {
   date: string;
   note: string;
+  noteChips: string[];
   fees: string;
   onClose: () => void;
   onDateChange: (value: string) => void;
   onNoteChange: (value: string) => void;
+  onNoteChipsChange: (chips: string[]) => void;
   onFeesChange: (value: string) => void;
 };
 
 function FollowUpSidebar({
   date,
   note,
+  noteChips,
   fees,
   onClose,
   onDateChange,
   onNoteChange,
+  onNoteChipsChange,
   onFeesChange
 }: FollowUpSidebarProps) {
   const selectedDate = date ? new Date(`${date}T00:00:00`) : new Date();
@@ -6261,14 +6285,160 @@ function FollowUpSidebar({
           ))}
         </div>
 
+        <FollowUpNoteBox
+          note={note}
+          noteChips={noteChips}
+          onNoteChange={onNoteChange}
+          onNoteChipsChange={onNoteChipsChange}
+        />
+      </div>
+    </RightDrawer>
+  );
+}
+
+function FollowUpNoteBox({
+  note,
+  noteChips,
+  onNoteChange,
+  onNoteChipsChange,
+}: {
+  note: string;
+  noteChips: string[];
+  onNoteChange: (v: string) => void;
+  onNoteChipsChange: (chips: string[]) => void;
+}) {
+  const [addingChip, setAddingChip] = useState(false);
+  const [chipInput, setChipInput] = useState("");
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const addRef = useRef<HTMLTextAreaElement>(null);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { if (addingChip) addRef.current?.focus(); }, [addingChip]);
+  useEffect(() => { if (editingIdx !== null) editRef.current?.focus(); }, [editingIdx]);
+
+  function submitChip() {
+    const text = chipInput.trim();
+    if (text) onNoteChipsChange([...noteChips, text]);
+    setChipInput("");
+    setAddingChip(false);
+  }
+
+  function saveEdit(idx: number) {
+    const text = editingText.trim();
+    if (!text) return deleteChip(idx);
+    onNoteChipsChange(noteChips.map((c, i) => (i === idx ? text : c)));
+    setEditingIdx(null);
+  }
+
+  function deleteChip(idx: number) {
+    onNoteChipsChange(noteChips.filter((_, i) => i !== idx));
+    setEditingIdx(null);
+  }
+
+  return (
+    <div className="flex shrink-0 flex-col gap-2">
+      {(noteChips.length > 0 || addingChip) && (
+        <div className="flex flex-col gap-1.5 rounded-md border bg-muted/30 p-2">
+          <div className="flex flex-wrap gap-1.5">
+            {noteChips.map((chip, idx) =>
+              editingIdx === idx ? (
+                <div key={idx} className="flex w-full items-center gap-1">
+                  <textarea
+                    ref={editRef}
+                    className="min-h-[32px] flex-1 resize-none rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+                    rows={1}
+                    value={editingText}
+                    onChange={(e) => setEditingText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(idx); }
+                      if (e.key === "Escape") setEditingIdx(null);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90"
+                    onClick={() => saveEdit(idx)}
+                  >Save</button>
+                  <button
+                    type="button"
+                    className="rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-muted/80"
+                    onClick={() => setEditingIdx(null)}
+                  >Cancel</button>
+                </div>
+              ) : (
+                <span
+                  key={idx}
+                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-sm"
+                >
+                  {chip}
+                  <button
+                    type="button"
+                    aria-label="Edit note"
+                    className="ml-0.5 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={() => { setEditingIdx(idx); setEditingText(chip); }}
+                  >
+                    <Pencil className="h-2.5 w-2.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Remove note"
+                    className="rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => deleteChip(idx)}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </span>
+              )
+            )}
+          </div>
+
+          {addingChip && (
+            <div className="flex items-start gap-1">
+              <textarea
+                ref={addRef}
+                className="min-h-[32px] flex-1 resize-none rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Type a note..."
+                rows={1}
+                value={chipInput}
+                onChange={(e) => setChipInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitChip(); }
+                  if (e.key === "Escape") { setAddingChip(false); setChipInput(""); }
+                }}
+              />
+              <button
+                type="button"
+                className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90"
+                onClick={submitChip}
+              >Add</button>
+              <button
+                type="button"
+                className="rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-muted/80"
+                onClick={() => { setAddingChip(false); setChipInput(""); }}
+              >Cancel</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="relative">
+        <button
+          type="button"
+          aria-label="Add note chip"
+          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary hover:bg-primary/20"
+          onClick={() => { setAddingChip((o) => !o); setChipInput(""); }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
         <Textarea
-          className="shrink-0 min-h-16 bg-background"
+          className="min-h-16 bg-background pr-9"
           placeholder="Follow-up note"
           value={note}
           onChange={(event) => onNoteChange(event.target.value)}
         />
       </div>
-    </RightDrawer>
+    </div>
   );
 }
 
