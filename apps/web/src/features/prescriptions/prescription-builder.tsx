@@ -1978,7 +1978,7 @@ export function PrescriptionBuilder() {
   function renderPanelPreview(panel: PanelKey) {
     if (panel === "medication") {
       return medicines.length ? (
-        <div className="mt-0.5 max-h-12 overflow-hidden text-xs text-slate-700">
+        <div className="mt-0.5 max-h-12 overflow-hidden text-xs text-foreground">
           {medicines.map((item) => item.brandName).join(", ")}
         </div>
       ) : null;
@@ -2007,7 +2007,7 @@ export function PrescriptionBuilder() {
                       {side === "right" ? "Right Eye" : "Left Eye"}
                     </div>
                     {(["sphere", "cyl", "axis", "va"] as const).map((f) => (
-                      <div key={f} className="border-r py-0.5 last:border-r-0 text-slate-700">
+                      <div key={f} className="border-r py-0.5 last:border-r-0 text-foreground">
                         {p[side][f] || <span className="text-muted-foreground/30">—</span>}
                       </div>
                     ))}
@@ -2019,14 +2019,14 @@ export function PrescriptionBuilder() {
               <div className="space-y-px text-[10px]">
                 {(p.add || p.ipd) && (
                   <div className="flex gap-3">
-                    {p.add && <div><span className="font-medium text-muted-foreground">Near Add </span><span className="text-slate-700">{p.add} DS</span></div>}
-                    {p.ipd && <div><span className="font-medium text-muted-foreground">IPD </span><span className="text-slate-700">{p.ipd} mm</span></div>}
+                    {p.add && <div><span className="font-medium text-muted-foreground">Near Add </span><span className="text-foreground">{p.add} DS</span></div>}
+                    {p.ipd && <div><span className="font-medium text-muted-foreground">IPD </span><span className="text-foreground">{p.ipd} mm</span></div>}
                   </div>
                 )}
                 {(p.glassFeatures.length > 0 || p.lensType) && (
                   <div>
                     <span className="font-medium text-muted-foreground">Glass Type: </span>
-                    <span className="text-slate-700">
+                    <span className="text-foreground">
                       {[...p.glassFeatures, p.lensType].filter(Boolean).join(" - ")}
                     </span>
                   </div>
@@ -2034,7 +2034,7 @@ export function PrescriptionBuilder() {
                 {p.note && (
                   <div>
                     <span className="font-medium text-muted-foreground">Remarks </span>
-                    <span className="text-slate-700">{p.note}</span>
+                    <span className="text-foreground">{p.note}</span>
                   </div>
                 )}
               </div>
@@ -2053,8 +2053,23 @@ export function PrescriptionBuilder() {
     }
 
     if (panel === "followUp") {
-      const value = [followUpDate, notes.followUp].filter(Boolean).join(" ");
-      return value ? <div className="mt-0.5 line-clamp-2 text-xs text-slate-700">{value}</div> : null;
+      const banglaDigits = (n: number) => String(n).replace(/[0-9]/g, d => "০১২৩৪৫৬৭৮৯"[Number(d)]);
+      const banglaMonths = ["জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","আগস্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর"];
+      let dateLabel = followUpDate;
+      if (followUpDate) {
+        const d = new Date(followUpDate);
+        if (!isNaN(d.getTime())) {
+          const day = banglaDigits(d.getDate());
+          const month = banglaMonths[d.getMonth()];
+          const year = banglaDigits(d.getFullYear());
+          const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
+          const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000);
+          const daysText = diffDays > 0 ? ` (${banglaDigits(diffDays)} দিন পর)` : diffDays === 0 ? " (আজ)" : "";
+          dateLabel = `${day} ${month} ${year}${daysText}`;
+        }
+      }
+      const display = [dateLabel, notes.followUp].filter(Boolean).join(" — ");
+      return display ? <div className="mt-0.5 line-clamp-2 text-xs text-foreground">{display}</div> : null;
     }
 
     if (panel === "complaint" && complaints.length > 0) {
@@ -2240,9 +2255,28 @@ export function PrescriptionBuilder() {
       );
     }
 
+    if (panel === "referral") {
+      const selected = referrals.filter(referralHasContent);
+      if (!selected.length && !notes.referral) return null;
+      return (
+        <div className="mt-1 space-y-2 text-xs text-foreground">
+          {selected.map((r) => (
+            <div key={r.id} className="space-y-0.5">
+              <div className="font-semibold text-muted-foreground">Referred to,</div>
+              <div className="font-semibold">{r.name}</div>
+              {r.specialty && <div>{r.specialty}</div>}
+              {r.additionalInfo && <div>{r.additionalInfo}</div>}
+              {r.phone && <div>Contact: {r.phone}</div>}
+            </div>
+          ))}
+          {notes.referral && <div className="whitespace-pre-line">{notes.referral}</div>}
+        </div>
+      );
+    }
+
     const value = notes[panel];
     return value ? (
-      <div className="mt-0.5 whitespace-pre-line text-xs leading-4 text-slate-700">
+      <div className="mt-0.5 whitespace-pre-line text-xs leading-4 text-foreground">
         {value}
       </div>
     ) : null;
@@ -2392,7 +2426,7 @@ export function PrescriptionBuilder() {
         <div className="flex flex-1 min-h-0 gap-[5px]">
 
         {/* Left sidebar: Patient Queue only */}
-        <div className="no-print hidden lg:flex w-[200px] xl:w-[230px] shrink-0 self-start flex-col gap-3 overflow-y-auto py-[5px]">
+        <div className="no-print hidden lg:flex w-[200px] xl:w-[230px] shrink-0 h-full flex-col gap-3 overflow-y-auto py-[5px]">
 
           {/* Patient Queue */}
           <div className="rounded-xl border bg-card shadow-soft overflow-hidden">
@@ -2777,14 +2811,6 @@ export function PrescriptionBuilder() {
             <Button variant="outline" onClick={() => { setTemplateNameInput(""); setTemplateNamePopupOpen(true); }}>
               <LayoutGrid className="h-4 w-4" />
               Make Template
-            </Button>
-            <Button
-              variant="outline"
-              disabled={isSavingPrescription}
-              onClick={() => saveAction("save-exit")}
-            >
-              <LogOut className="h-4 w-4" />
-              Save & Exit
             </Button>
             <div className="relative flex">
               <Button
@@ -5941,9 +5967,9 @@ function AdviceSidebar({
             </div>
           )}
 
-          {selected && !editing && (
+          {localText && !editingId && (
             <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
-              <span className="shrink-0 pt-1.5 text-sm font-semibold">{selected.name}</span>
+              <span className="shrink-0 pt-1.5 text-sm font-semibold">{selected?.name ?? "Advice"}</span>
               <textarea
                 ref={valueTextareaRef}
                 className="min-h-0 flex-1 resize-none overflow-hidden rounded-md border bg-background px-2 py-1.5 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
@@ -5957,21 +5983,23 @@ function AdviceSidebar({
                   onChange(value.includes(prev) ? value.replace(prev, newText) : newText);
                 }}
               />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                onClick={() => { setEditingId(selected.id); setEditName(selected.name); setEditText(selected.text); }}
-              >
-                Edit
-              </Button>
+              {selected && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => { setEditingId(selected.id); setEditName(selected.name); setEditText(selected.text); }}
+                >
+                  Edit
+                </Button>
+              )}
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
                 className="shrink-0"
-                onClick={() => setSelectedId(null)}
+                onClick={() => { setSelectedId(null); setLocalText(""); onChange(""); }}
               >
                 <X className="h-4 w-4" />
               </Button>
