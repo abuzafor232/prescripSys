@@ -306,24 +306,22 @@ function PadSettingsPanel({
           </div>
 
           {/* Margins */}
-          <div className="border-b px-3 py-2 space-y-1.5">
+          <div className="border-b px-3 py-2 space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Margins (in)</p>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-              {(
-                [["Top","marginTop"],["Bottom","marginBottom"],["Left","marginLeft"],["Right","marginRight"]] as [string, keyof PadSettings][]
-              ).map(([label, key]) => (
-                <div key={key} className="flex items-center gap-1.5">
-                  <span className="w-12 shrink-0 text-xs text-muted-foreground">{label}</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className="h-7 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="0.6"
-                    value={pad[key] as string}
-                    onChange={(e) => updatePad({ [key]: e.target.value })}
-                  />
+            {/* Cross layout: Top / Left·Right / Bottom */}
+            <div className="flex flex-col items-center gap-0.5">
+              {/* Top */}
+              <input type="text" inputMode="numeric" className="h-6 w-16 rounded border bg-background px-1.5 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary" placeholder="Top" value={pad.marginTop} onChange={(e) => updatePad({ marginTop: e.target.value })} />
+              {/* Middle row: Left — spacer — Right */}
+              <div className="flex w-full items-center gap-1">
+                <input type="text" inputMode="numeric" className="h-6 w-16 rounded border bg-background px-1.5 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary" placeholder="Left" value={pad.marginLeft} onChange={(e) => updatePad({ marginLeft: e.target.value })} />
+                <div className="flex flex-1 items-center justify-center">
+                  <div className="h-px w-full border-t border-dashed border-muted-foreground/30" />
                 </div>
-              ))}
+                <input type="text" inputMode="numeric" className="h-6 w-16 rounded border bg-background px-1.5 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary" placeholder="Right" value={pad.marginRight} onChange={(e) => updatePad({ marginRight: e.target.value })} />
+              </div>
+              {/* Bottom */}
+              <input type="text" inputMode="numeric" className="h-6 w-16 rounded border bg-background px-1.5 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary" placeholder="Bottom" value={pad.marginBottom} onChange={(e) => updatePad({ marginBottom: e.target.value })} />
             </div>
           </div>
 
