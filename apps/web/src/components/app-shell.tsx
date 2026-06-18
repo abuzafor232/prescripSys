@@ -600,13 +600,16 @@ function PadSettingsPanel({
         className="flex flex-1 flex-col overflow-y-auto"
         style={{
           "--background":        "0 0% 100%",
-          "--foreground":        "220 18% 14%",
+          "--foreground":        "0 0% 0%",
           "--card":              "0 0% 100%",
-          "--card-foreground":   "220 18% 14%",
-          "--muted":             "42 16% 91%",
-          "--muted-foreground":  "222 9% 42%",
-          "--border":            "42 12% 86%",
+          "--card-foreground":   "0 0% 0%",
+          "--muted":             "0 0% 94%",
+          "--muted-foreground":  "0 0% 10%",
+          "--border":            "0 0% 86%",
+          "--primary":           "0 0% 10%",
+          "--primary-foreground":"0 0% 100%",
           background:            "white",
+          color:                 "black",
           colorScheme:           "light",
         } as React.CSSProperties}
       >
