@@ -169,6 +169,8 @@ function FreeformEditor({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [focused, setFocused] = useState(false);
   const [fmt, setFmt] = useState({
     bold: false, italic: false, underline: false,
     strikethrough: false, subscript: false, superscript: false,
@@ -178,6 +180,21 @@ function FreeformEditor({
 
   useEffect(() => {
     if (ref.current) ref.current.innerHTML = initialValue;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Always-current range tracking via native selectionchange event.
+  // This fires on every cursor move / drag-select, even without explicit React handlers.
+  useEffect(() => {
+    function onSelChange() {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && ref.current?.contains(sel.anchorNode ?? null)) {
+        savedRange.current = sel.getRangeAt(0).cloneRange();
+        syncFmt();
+      }
+    }
+    document.addEventListener("selectionchange", onSelChange);
+    return () => document.removeEventListener("selectionchange", onSelChange);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -218,11 +235,19 @@ function FreeformEditor({
     }
   }
 
+  function keepFocus() {
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+    setFocused(true);
+    // Return cursor to editor after toolbar controls steal focus
+    setTimeout(() => ref.current?.focus(), 0);
+  }
+
   function exec(cmd: string, val?: string) {
     restoreRange();
     document.execCommand(cmd, false, val ?? undefined);
     if (ref.current) onChange(ref.current.innerHTML);
     syncFmt();
+    keepFocus();
   }
 
   function applyFontSize(px: number) {
@@ -236,6 +261,7 @@ function FreeformEditor({
       el.replaceWith(span);
     });
     if (ref.current) onChange(ref.current.innerHTML);
+    keepFocus();
   }
 
   function tbBtn(active: boolean, title?: string) {
@@ -253,16 +279,23 @@ function FreeformEditor({
   const Sep = () => <div className="mx-0.5 h-4 w-px bg-gray-200" />;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-md border" style={{ background: "white", color: "#111" }}>
+    <div
+      className={cn(
+        "flex flex-col overflow-hidden rounded-md border transition-shadow",
+        focused ? "border-blue-400 shadow-[0_0_0_2px_rgba(96,165,250,0.25)]" : "border-gray-300"
+      )}
+      style={{ background: "white", color: "#111" }}
+    >
 
       {/* ── Row 1: Font family · Size · B I U S · X² X₂ · Erase ── */}
       <div className="flex flex-wrap items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#f3f4f6" }}>
 
-        {/* Font family */}
+        {/* Font family — onMouseDown saves selection before focus is stolen */}
         <select
           className="h-6 rounded border border-gray-300 bg-white px-0.5 text-[10px] text-gray-800"
           style={{ minWidth: 90 }}
           defaultValue="Arial"
+          onMouseDown={saveRange}
           onChange={(e) => exec("fontName", e.target.value)}
         >
           {EDITOR_FONTS.map(f => (
@@ -299,10 +332,10 @@ function FreeformEditor({
       {/* ── Row 2: Colors · Lists · Indent · Alignment ── */}
       <div className="flex flex-wrap items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#f3f4f6" }}>
 
-        {/* Text color */}
-        <input type="color" title="Text color"      defaultValue="#000000" className="h-6 w-6 cursor-pointer rounded border border-gray-300 p-0.5" onChange={(e) => exec("foreColor",  e.target.value)} />
+        {/* Text color — onMouseDown saves selection before color picker opens */}
+        <input type="color" title="Text color"      defaultValue="#000000" className="h-6 w-6 cursor-pointer rounded border border-gray-300 p-0.5" onMouseDown={saveRange} onChange={(e) => exec("foreColor",  e.target.value)} />
         {/* Highlight color */}
-        <input type="color" title="Highlight color" defaultValue="#ffff00" className="h-6 w-6 cursor-pointer rounded border border-gray-300 p-0.5" onChange={(e) => exec("backColor",  e.target.value)} />
+        <input type="color" title="Highlight color" defaultValue="#ffff00" className="h-6 w-6 cursor-pointer rounded border border-gray-300 p-0.5" onMouseDown={saveRange} onChange={(e) => exec("backColor",  e.target.value)} />
 
         <Sep />
         <button {...tbBtn(fmt.unorderedList, "Bullet list")}   onMouseDown={(e) => { e.preventDefault(); exec("insertUnorderedList"); }}><List        className="h-3 w-3" /></button>
@@ -324,11 +357,19 @@ function FreeformEditor({
         suppressContentEditableWarning
         className="min-h-[80px] p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-gray-300 empty:before:content-[attr(data-placeholder)]"
         data-placeholder={placeholder}
-        style={{ cursor: "text", wordBreak: "break-word", color: "#111" }}
+        style={{ cursor: "text", wordBreak: "break-word", color: "#111", userSelect: "text", WebkitUserSelect: "text" }}
         onKeyUp={saveRange}
         onClick={saveRange}
         onSelect={saveRange}
-        onFocus={syncFmt}
+        onFocus={() => {
+          if (blurTimer.current) clearTimeout(blurTimer.current);
+          setFocused(true);
+          syncFmt();
+        }}
+        onBlur={() => {
+          // Delay so toolbar clicks (select/color) don't flash the ring off
+          blurTimer.current = setTimeout(() => setFocused(false), 200);
+        }}
         onInput={() => { if (ref.current) onChange(ref.current.innerHTML); }}
       />
     </div>
