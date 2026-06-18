@@ -4,10 +4,15 @@ import React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
   Briefcase,
   CalendarClock,
   ChevronDown,
   FilePlus2,
+  Italic,
   LayoutDashboard,
   Loader2,
   LogOut,
@@ -18,6 +23,7 @@ import {
   Plus,
   Settings,
   Trash2,
+  Underline,
   UsersRound,
   X,
 } from "lucide-react";
@@ -52,22 +58,10 @@ type PadSettings = {
   newPatientFees: string;
   followUpFees: string;
   reportFees: string;
-  // Header – English (left column)
-  headerEnDoctorName: string;
-  headerEnDegrees: string;
-  headerEnDesignation: string;
-  headerEnInstitute: string;
-  headerEnContact: string;
-  // Header – Middle (logo + specialty)
-  headerLogo: string;       // base64 or URL
-  headerSpecialty: string;
-  // Header – Bengali (right column)
-  headerBnDoctorName: string;
-  headerBnDegrees: string;
-  headerBnDesignation: string;
-  headerBnInstitute: string;
-  headerBnContact: string;
-  // Footer
+  headerEnHtml: string;
+  headerLogo: string;
+  headerMidHtml: string;
+  headerBnHtml: string;
   footerText: string;
   footerAlignment: "left" | "center" | "right";
   footerShowDivider: boolean;
@@ -77,11 +71,7 @@ const DEFAULT_PAD: PadSettings = {
   pageSize: "A4",
   customWidth: "210", customHeight: "297",
   newPatientFees: "", followUpFees: "", reportFees: "",
-  headerEnDoctorName: "", headerEnDegrees: "", headerEnDesignation: "",
-  headerEnInstitute: "", headerEnContact: "",
-  headerLogo: "", headerSpecialty: "",
-  headerBnDoctorName: "", headerBnDegrees: "", headerBnDesignation: "",
-  headerBnInstitute: "", headerBnContact: "",
+  headerEnHtml: "", headerLogo: "", headerMidHtml: "", headerBnHtml: "",
   footerText: "", footerAlignment: "center", footerShowDivider: true,
 };
 
@@ -141,24 +131,87 @@ function LogoUpload({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
-// ─── Inline pad input ────────────────────────────────────────────────────────
+// ─── Rich Text Editor ────────────────────────────────────────────────────────
 
-function PadInput({ label, value, onChange, placeholder, font }: {
-  label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; font?: "bangla";
+function RichTextEditor({
+  initialValue,
+  onChange,
+  placeholder = "Click to edit…",
+  minHeight = "100px",
+}: {
+  initialValue: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+  minHeight?: string;
 }) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const savedRange = useRef<Range | null>(null);
+
+  useEffect(() => {
+    if (editorRef.current) editorRef.current.innerHTML = initialValue;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function saveRange() {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+  }
+
+  function exec(cmd: string, val?: string) {
+    const sel = window.getSelection();
+    if (savedRange.current) {
+      editorRef.current?.focus();
+      sel?.removeAllRanges();
+      sel?.addRange(savedRange.current);
+    }
+    document.execCommand(cmd, false, val ?? undefined);
+    if (editorRef.current) onChange(editorRef.current.innerHTML);
+  }
+
   return (
-    <div className="flex items-center gap-1 border-b border-border/40 py-1 last:border-b-0">
-      <span className="w-24 shrink-0 text-xs text-muted-foreground">{label}</span>
-      <input
-        type="text"
-        className={cn(
-          "flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/40 focus:bg-primary/5 rounded px-1",
-          font === "bangla" && "font-[inherit]"
-        )}
-        value={value}
-        placeholder={placeholder ?? label}
-        onChange={(e) => onChange(e.target.value)}
+    <div className="flex flex-col overflow-hidden rounded-md border bg-background">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-0.5 border-b bg-muted/30 px-1.5 py-1">
+        {/* Font size */}
+        <select
+          className="h-6 rounded border bg-background px-1 text-[10px] mr-1"
+          defaultValue="3"
+          onChange={(e) => { exec("fontSize", e.target.value); editorRef.current?.focus(); }}
+        >
+          {[["1","8pt"],["2","10pt"],["3","12pt"],["4","14pt"],["5","18pt"],["6","24pt"],["7","36pt"]].map(([v, l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
+        {/* Color */}
+        <input
+          type="color"
+          title="Text color"
+          className="h-6 w-6 cursor-pointer rounded border p-0.5 mr-1"
+          defaultValue="#000000"
+          onChange={(e) => exec("foreColor", e.target.value)}
+        />
+        {/* B I U */}
+        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Bold" onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}><Bold className="h-3 w-3" /></button>
+        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Italic" onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}><Italic className="h-3 w-3" /></button>
+        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted mr-1" title="Underline" onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
+        {/* Alignment */}
+        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Align Left" onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}><AlignLeft className="h-3 w-3" /></button>
+        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Align Center" onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}><AlignCenter className="h-3 w-3" /></button>
+        <button type="button" className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted" title="Align Right" onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}><AlignRight className="h-3 w-3" /></button>
+      </div>
+      {/* ContentEditable area */}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        className="flex-1 p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-muted-foreground/40 empty:before:content-[attr(data-placeholder)]"
+        data-placeholder={placeholder}
+        style={{ minHeight, cursor: "text" }}
+        onKeyUp={saveRange}
+        onClick={saveRange}
+        onInput={() => { if (editorRef.current) onChange(editorRef.current.innerHTML); }}
       />
     </div>
   );
@@ -167,7 +220,7 @@ function PadInput({ label, value, onChange, placeholder, font }: {
 // ─── Pad Settings Panel ──────────────────────────────────────────────────────
 
 function PadSettingsPanel({
-  pad, updatePad, chambers, selectedChamberId, onChamberChange, onChamberAdd, onChamberRemove,
+  pad, updatePad, chambers, selectedChamberId, onChamberChange, onChamberAdd, onChamberRemove, onSave, onCancel,
 }: {
   pad: PadSettings;
   updatePad: (p: Partial<PadSettings>) => void;
@@ -176,13 +229,15 @@ function PadSettingsPanel({
   onChamberChange: (id: string) => void;
   onChamberAdd: (name: string) => void;
   onChamberRemove: (id: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
 }) {
   return (
     <div className="flex flex-1 overflow-hidden">
-      {/* ── Left: Select Chamber sidebar ─────────── */}
-      <div className="flex w-72 shrink-0 flex-col border-r">
+      {/* ── Left column ─────────── */}
+      <div className="flex w-80 shrink-0 flex-col border-r">
         {/* Chamber dropdown */}
-        <div className="border-b bg-muted/50 px-4 py-2.5 text-center text-sm font-bold uppercase tracking-wide">
+        <div className="border-b bg-muted/50 px-4 py-3 text-center text-sm font-bold uppercase tracking-wide">
           Select Chamber
         </div>
         <div className="border-b p-4">
@@ -197,19 +252,21 @@ function PadSettingsPanel({
 
         {/* Fees */}
         <div className="border-b p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Consultation Fees</p>
           {(
             [
-              ["New Patient Fees", "newPatientFees"],
-              ["Follow-Up Fees",   "followUpFees"],
-              ["Report Fees",      "reportFees"],
+              ["New Patient", "newPatientFees"],
+              ["Follow-Up",   "followUpFees"],
+              ["Report",      "reportFees"],
             ] as [string, keyof PadSettings][]
           ).map(([label, key]) => (
             <div key={key} className="flex items-center gap-3">
-              <span className="w-36 shrink-0 text-right text-sm text-muted-foreground">{label}:</span>
+              <span className="w-28 shrink-0 text-sm text-muted-foreground">{label}</span>
               <input
                 type="text"
-                className="h-8 w-24 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-                placeholder="0"
+                inputMode="numeric"
+                className="h-9 w-28 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+                placeholder="৳ 0"
                 value={pad[key] as string}
                 onChange={(e) => updatePad({ [key]: e.target.value })}
               />
@@ -218,25 +275,23 @@ function PadSettingsPanel({
         </div>
 
         {/* Page Size */}
-        <div className="border-b p-4">
-          <div className="flex items-center gap-3">
-            <span className="w-36 shrink-0 text-right text-sm text-muted-foreground">Page Size:</span>
-            <select
-              className="h-8 flex-1 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-              value={pad.pageSize}
-              onChange={(e) => updatePad({ pageSize: e.target.value as PadSettings["pageSize"] })}
-            >
-              <option value="A4">A4</option>
-              <option value="A5">A5</option>
-              <option value="Letter">Letter</option>
-              <option value="Custom">Custom</option>
-            </select>
-          </div>
+        <div className="border-b p-4 space-y-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Page Size</p>
+          <select
+            className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+            value={pad.pageSize}
+            onChange={(e) => updatePad({ pageSize: e.target.value as PadSettings["pageSize"] })}
+          >
+            <option value="A4">A4</option>
+            <option value="A5">A5</option>
+            <option value="Letter">Letter</option>
+            <option value="Custom">Custom</option>
+          </select>
           {pad.pageSize === "Custom" && (
-            <div className="mt-2.5 flex items-center gap-2 pl-2">
-              <input className="h-8 w-20 rounded border bg-background px-2 text-center text-sm outline-none focus:ring-1 focus:ring-primary" value={pad.customWidth} placeholder="Width" onChange={(e) => updatePad({ customWidth: e.target.value })} />
-              <span className="text-muted-foreground">×</span>
-              <input className="h-8 w-20 rounded border bg-background px-2 text-center text-sm outline-none focus:ring-1 focus:ring-primary" value={pad.customHeight} placeholder="Height" onChange={(e) => updatePad({ customHeight: e.target.value })} />
+            <div className="flex items-center gap-2">
+              <input className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary" value={pad.customWidth} placeholder="Width" onChange={(e) => updatePad({ customWidth: e.target.value })} />
+              <span className="text-sm text-muted-foreground">×</span>
+              <input className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary" value={pad.customHeight} placeholder="Height" onChange={(e) => updatePad({ customHeight: e.target.value })} />
               <span className="text-sm text-muted-foreground">mm</span>
             </div>
           )}
@@ -244,101 +299,122 @@ function PadSettingsPanel({
 
         {/* Prescription body spacer */}
         <div className="flex flex-1 items-center justify-center">
-          <span className="rotate-90 whitespace-nowrap text-xs text-muted-foreground/40">Prescription Body</span>
+          <span className="rotate-90 whitespace-nowrap text-xs text-muted-foreground/30">Prescription Body</span>
+        </div>
+
+        {/* Save / Cancel */}
+        <div className="shrink-0 border-t p-4 flex gap-3">
+          <button
+            type="button"
+            className="flex-1 rounded-md border py-2.5 text-sm font-semibold hover:bg-muted"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="flex-1 rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            onClick={onSave}
+          >
+            Save
+          </button>
         </div>
       </div>
 
       {/* ── Right: Header + Body + Footer ─────────── */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-y-auto">
 
         {/* Header section */}
         <div className="shrink-0 border-b">
-          <div className="border-b bg-muted/50 px-3 py-2.5 text-center text-sm font-bold uppercase tracking-wide">
+          <div className="border-b bg-muted/50 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide">
             Header
           </div>
           {/* 3-column header editor */}
           <div className="grid grid-cols-3 divide-x">
             {/* English column */}
-            <div className="p-2">
-              <p className="mb-1.5 text-xs font-semibold text-muted-foreground">Doctor's Info (English)</p>
-              <PadInput label="Doctor Name" value={pad.headerEnDoctorName} onChange={(v) => updatePad({ headerEnDoctorName: v })} placeholder="Dr. Abdullah" />
-              <PadInput label="Degrees" value={pad.headerEnDegrees} onChange={(v) => updatePad({ headerEnDegrees: v })} placeholder="MBBS, MS" />
-              <PadInput label="Designation" value={pad.headerEnDesignation} onChange={(v) => updatePad({ headerEnDesignation: v })} placeholder="Consultant" />
-              <PadInput label="Institute" value={pad.headerEnInstitute} onChange={(v) => updatePad({ headerEnInstitute: v })} placeholder="Eye Hospital" />
-              <PadInput label="Contact" value={pad.headerEnContact} onChange={(v) => updatePad({ headerEnContact: v })} placeholder="+880..." />
+            <div className="p-3">
+              <p className="mb-2 text-xs font-semibold text-muted-foreground">Doctor's Info (English)</p>
+              <RichTextEditor
+                key="en"
+                initialValue={pad.headerEnHtml}
+                onChange={(html) => updatePad({ headerEnHtml: html })}
+                placeholder="Dr. Name, MBBS, Designation…"
+                minHeight="120px"
+              />
             </div>
 
-            {/* Logo + Specialty column */}
-            <div className="flex flex-col items-center gap-2 p-2">
-              <p className="text-[10px] font-semibold text-muted-foreground">Logo / Specialty</p>
+            {/* Logo + Middle column */}
+            <div className="flex flex-col gap-2 p-3">
+              <p className="text-xs font-semibold text-muted-foreground">Logo / Specialty</p>
               <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
-              <input
-                type="text"
-                className="mt-1 h-7 w-full rounded border bg-background px-2 text-center text-xs outline-none focus:ring-1 focus:ring-primary"
-                value={pad.headerSpecialty}
-                placeholder="Specialty"
-                onChange={(e) => updatePad({ headerSpecialty: e.target.value })}
+              <RichTextEditor
+                key="mid"
+                initialValue={pad.headerMidHtml}
+                onChange={(html) => updatePad({ headerMidHtml: html })}
+                placeholder="Specialty, clinic name…"
+                minHeight="80px"
               />
             </div>
 
             {/* Bengali column */}
-            <div className="p-2">
-              <p className="mb-1.5 text-xs font-semibold text-muted-foreground">ডাক্তারের তথ্য (বাংলা)</p>
-              <PadInput label="ডাক্তারের নাম" value={pad.headerBnDoctorName} onChange={(v) => updatePad({ headerBnDoctorName: v })} placeholder="ডাঃ আবদুল্লাহ" font="bangla" />
-              <PadInput label="ডিগ্রী" value={pad.headerBnDegrees} onChange={(v) => updatePad({ headerBnDegrees: v })} placeholder="এমবিবিএস" font="bangla" />
-              <PadInput label="পদবী" value={pad.headerBnDesignation} onChange={(v) => updatePad({ headerBnDesignation: v })} placeholder="পরামর্শদাতা" font="bangla" />
-              <PadInput label="প্রতিষ্ঠান" value={pad.headerBnInstitute} onChange={(v) => updatePad({ headerBnInstitute: v })} placeholder="চক্ষু হাসপাতাল" font="bangla" />
-              <PadInput label="যোগাযোগ" value={pad.headerBnContact} onChange={(v) => updatePad({ headerBnContact: v })} placeholder="+৮৮০..." font="bangla" />
+            <div className="p-3">
+              <p className="mb-2 text-xs font-semibold text-muted-foreground">ডাক্তারের তথ্য (বাংলা)</p>
+              <RichTextEditor
+                key="bn"
+                initialValue={pad.headerBnHtml}
+                onChange={(html) => updatePad({ headerBnHtml: html })}
+                placeholder="ডাঃ নাম, এমবিবিএস…"
+                minHeight="120px"
+              />
             </div>
           </div>
         </div>
 
         {/* Prescription body area */}
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/50">
-          (Prescription according to selected size)
+        <div className="flex min-h-32 flex-1 items-center justify-center text-sm text-muted-foreground/40">
+          (Prescription body — according to selected page size)
         </div>
 
         {/* Footer section */}
         <div className="shrink-0 border-t">
-          <div className="border-b bg-muted/50 px-3 py-2.5 text-center text-sm font-bold uppercase tracking-wide">
+          <div className="border-b bg-muted/50 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide">
             Footer
           </div>
-          <div className="p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
-                  className="h-3.5 w-3.5 rounded"
+                  className="h-4 w-4 rounded"
                   checked={pad.footerShowDivider}
                   onChange={(e) => updatePad({ footerShowDivider: e.target.checked })}
                 />
                 Divider line
               </label>
-              <span className="ml-auto text-[10px] text-muted-foreground">Alignment:</span>
-              <div className="flex rounded-md border overflow-hidden">
-                {(["left", "center", "right"] as const).map((a) => (
+              <div className="ml-auto flex rounded-md border overflow-hidden">
+                {([
+                  ["left",   <AlignLeft   key="l" className="h-3.5 w-3.5" />],
+                  ["center", <AlignCenter key="c" className="h-3.5 w-3.5" />],
+                  ["right",  <AlignRight  key="r" className="h-3.5 w-3.5" />],
+                ] as [string, React.ReactNode][]).map(([a, icon]) => (
                   <button
                     key={a}
                     type="button"
-                    className={cn("px-2 py-0.5 text-[10px] capitalize transition", pad.footerAlignment === a ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
-                    onClick={() => updatePad({ footerAlignment: a })}
-                  >{a}</button>
+                    className={cn("flex items-center justify-center px-2.5 py-1.5 transition", pad.footerAlignment === a ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
+                    onClick={() => updatePad({ footerAlignment: a as PadSettings["footerAlignment"] })}
+                  >{icon}</button>
                 ))}
               </div>
             </div>
             <textarea
               className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
               rows={2}
-              placeholder="Any info — visiting hours, address, website…"
+              placeholder="Visiting hours, address, website…"
               value={pad.footerText}
               style={{ textAlign: pad.footerAlignment }}
               onChange={(e) => updatePad({ footerText: e.target.value })}
             />
           </div>
-        </div>
-
-        <div className="shrink-0 border-t px-4 py-1.5">
-          <p className="text-[10px] text-muted-foreground">Changes are saved automatically</p>
         </div>
       </div>
     </div>
@@ -357,7 +433,9 @@ function ChamberDropdown({
   onRemove: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const addInputRef = useRef<HTMLInputElement>(null);
   const ref = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -375,6 +453,12 @@ function ChamberDropdown({
     if (!name) return;
     onAdd(name);
     setNewName("");
+    setAdding(false);
+  }
+
+  function startAdding() {
+    setAdding(true);
+    setTimeout(() => addInputRef.current?.focus(), 0);
   }
 
   return (
@@ -394,7 +478,7 @@ function ChamberDropdown({
             {chambers.map((c) => (
               <div
                 key={c.id}
-                className={cn("flex items-center gap-2 px-3 py-2.5 transition hover:bg-muted", c.id === selectedId && "bg-primary/8")}
+                className={cn("flex items-center gap-2 px-3 py-2.5 transition hover:bg-muted", c.id === selectedId && "bg-primary/10")}
               >
                 <button
                   type="button"
@@ -404,7 +488,7 @@ function ChamberDropdown({
                   {c.name}
                 </button>
                 {c.id === selectedId && (
-                  <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">Active</span>
+                  <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-bold text-primary">Active</span>
                 )}
                 <button
                   type="button"
@@ -416,24 +500,40 @@ function ChamberDropdown({
               </div>
             ))}
           </div>
+
           <div className="border-t p-2">
-            <div className="flex gap-1.5">
-              <input
-                type="text"
-                className="h-8 flex-1 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-                placeholder="Add new chamber…"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); submit(); } }}
-              />
+            {adding ? (
+              <div className="flex gap-1.5">
+                <input
+                  ref={addInputRef}
+                  type="text"
+                  className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Chamber name…"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.stopPropagation(); submit(); }
+                    if (e.key === "Escape") { setAdding(false); setNewName(""); }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="flex h-9 items-center gap-1 rounded-md border bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+                  onClick={submit}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
-                className="flex h-8 w-8 items-center justify-center rounded border bg-background hover:bg-primary hover:text-primary-foreground transition"
-                onClick={submit}
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed py-2 text-sm font-semibold text-muted-foreground hover:border-primary hover:text-primary transition"
+                onClick={startAdding}
               >
                 <Plus className="h-4 w-4" />
+                Add New Chamber
               </button>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -458,7 +558,12 @@ function AppShellChamberSettingsDialog({
   const [selectedChamberId, setSelectedChamberId] = useState<string>(chambers[0]?.id ?? "");
 
   function updatePad(patch: Partial<PadSettings>) {
-    setPad((prev) => { const next = { ...prev, ...patch }; savePadSettings(next); return next; });
+    setPad((prev) => ({ ...prev, ...patch }));
+  }
+
+  function handleSave() {
+    savePadSettings(pad);
+    onClose();
   }
 
   function addChamber(name: string) {
@@ -479,16 +584,6 @@ function AppShellChamberSettingsDialog({
 
   return (
     <div className="fixed inset-0 z-[60] flex bg-card">
-      {/* Floating close */}
-      <button
-        type="button"
-        aria-label="Close settings"
-        className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground transition"
-        onClick={onClose}
-      >
-        <X className="h-5 w-5" />
-      </button>
-
       <PadSettingsPanel
         pad={pad}
         updatePad={updatePad}
@@ -497,6 +592,8 @@ function AppShellChamberSettingsDialog({
         onChamberChange={setSelectedChamberId}
         onChamberAdd={addChamber}
         onChamberRemove={removeChamber}
+        onSave={handleSave}
+        onCancel={onClose}
       />
     </div>
   );
