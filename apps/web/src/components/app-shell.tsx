@@ -595,7 +595,7 @@ function PadSettingsPanel({
       </div>
 
       {/* ── Right: Header + Body + Footer ─────────── */}
-      <div className="flex flex-1 flex-col overflow-y-auto bg-background">
+      <div className="flex flex-1 flex-col overflow-y-auto bg-card">
 
         {/* Header section */}
         <div className="shrink-0 border-b">
