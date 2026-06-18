@@ -362,9 +362,7 @@ function FreeformEditor({
         style={{
           cursor: "text", wordBreak: "break-word", color: "#111",
           userSelect: "text", WebkitUserSelect: "text",
-          ...(editorHeight
-            ? { height: editorHeight, overflowY: "auto", minHeight: "unset" }
-            : { minHeight: 80 }),
+          minHeight: editorHeight ?? 80,
         }}
         onKeyUp={saveRange}
         onClick={saveRange}
@@ -469,14 +467,12 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
               position: "absolute",
               top: mTop, bottom: mBottom, left: mLeft, right: mRight,
               display: "flex", flexDirection: "column",
-              overflow: "hidden",
             }}>
-              {/* Header */}
+              {/* Header — minHeight so all content is visible; grows if content is taller */}
               <div style={{
-                height: hdrH, flexShrink: 0,
-                display: "flex", alignItems: "stretch",
+                minHeight: hdrH, flexShrink: 0,
+                display: "flex", alignItems: "flex-start",
                 borderBottom: "1px solid #d1d5db",
-                overflow: "hidden",
               }}>
                 {/* English */}
                 <div
