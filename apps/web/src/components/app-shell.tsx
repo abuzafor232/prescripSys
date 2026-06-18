@@ -218,7 +218,7 @@ function LineEditor({
   return (
     <div className="flex flex-col overflow-hidden rounded-md border bg-background">
       {/* Toolbar — shows active line's formatting */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b bg-muted/30 px-1.5 py-1 min-h-[30px]">
+      <div className="flex flex-wrap items-center gap-0.5 border-b bg-primary/5 px-1.5 py-1 min-h-[30px]">
         {active ? (
           <>
             <select
@@ -237,7 +237,7 @@ function LineEditor({
             <button type="button" className={tbBtn(active.align === "right")} onMouseDown={(e) => { e.preventDefault(); upd(active.id, { align: "right" }); refs.current[active.id]?.focus(); }}><AlignRight className="h-3 w-3" /></button>
           </>
         ) : (
-          <span className="px-1 text-[10px] text-muted-foreground/50">Click a line to format</span>
+          <span className="px-1 text-[10px] text-primary/40">Click a line to format</span>
         )}
       </div>
 
@@ -266,7 +266,7 @@ function LineEditor({
             )}
           </div>
         ))}
-        <button type="button" className="mt-0.5 flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50 transition" onClick={() => addAfter(lines[lines.length - 1]?.id ?? "")}>
+        <button type="button" className="mt-0.5 flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-primary/40 hover:text-primary hover:bg-primary/8 transition" onClick={() => addAfter(lines[lines.length - 1]?.id ?? "")}>
           <Plus className="h-3 w-3" /> Add line
         </button>
       </div>
@@ -292,7 +292,7 @@ function PadSettingsPanel({
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* ── Left column ─────────── */}
-      <div className="flex w-72 shrink-0 flex-col border-r">
+      <div className="flex w-72 shrink-0 flex-col border-r bg-card shadow-soft">
 
           {/* Chamber dropdown */}
           <div className="border-b px-3 pt-3 pb-2.5">
@@ -307,7 +307,7 @@ function PadSettingsPanel({
 
           {/* Fees */}
           <div className="border-b px-3 py-2 space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Consultation Fees</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Consultation Fees</p>
             {(
               [
                 ["New Patient", "newPatientFees"],
@@ -331,7 +331,7 @@ function PadSettingsPanel({
 
           {/* Page Size */}
           <div className="border-b px-3 py-2 space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Page Size</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Page Size</p>
             <select
               className="h-7 w-full rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
               value={pad.pageSize}
@@ -354,7 +354,7 @@ function PadSettingsPanel({
 
           {/* Margins */}
           <div className="border-b px-3 py-2 space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Margins (in)</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Margins (in)</p>
             {/* Cross layout: Top / Left·Right / Bottom */}
             <div className="flex flex-col items-center gap-0.5">
               {/* Top */}
@@ -374,7 +374,7 @@ function PadSettingsPanel({
 
           {/* Header / Footer height */}
           <div className="border-b px-3 py-2 space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Section Heights (in)</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Section Heights (in)</p>
             {(
               [["Header","headerHeight"],["Footer","footerHeight"]] as [string, keyof PadSettings][]
             ).map(([label, key]) => (
@@ -395,7 +395,7 @@ function PadSettingsPanel({
 
           {/* Body column split */}
           <div className="px-3 py-2 space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Body Column Split</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Body Column Split</p>
             <div className="flex h-5 overflow-hidden rounded border text-[9px] font-bold">
               <div className="relative flex items-center justify-center bg-primary/15 text-primary transition-all" style={{ width: `${pad.bodyLeftPct}%` }}>
                 {pad.bodyLeftPct}%
@@ -421,7 +421,7 @@ function PadSettingsPanel({
           </div>
 
         {/* Save / Cancel */}
-        <div className="mt-auto border-t px-3 py-2.5 flex gap-2">
+        <div className="mt-auto border-t bg-primary/5 px-3 py-2.5 flex gap-2">
           <button
             type="button"
             className="flex-1 rounded border py-1.5 text-xs font-semibold hover:bg-muted"
@@ -440,18 +440,18 @@ function PadSettingsPanel({
       </div>
 
       {/* ── Right: Header + Body + Footer ─────────── */}
-      <div className="flex flex-1 flex-col overflow-y-auto">
+      <div className="flex flex-1 flex-col overflow-y-auto bg-background">
 
         {/* Header section */}
         <div className="shrink-0 border-b">
-          <div className="border-b bg-muted/50 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide">
+          <div className="border-b bg-primary/5 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide text-primary">
             Header
           </div>
           {/* 3-column header editor */}
-          <div className="grid grid-cols-3 divide-x">
+          <div className="grid grid-cols-3 divide-x bg-card">
             {/* English column */}
             <div className="p-3">
-              <p className="mb-2 text-xs font-semibold text-muted-foreground">Doctor's Info (English)</p>
+              <p className="mb-2 text-xs font-semibold text-primary/70">Doctor's Info (English)</p>
               <LineEditor
                 initialValue={pad.headerEnLines}
                 onChange={(json) => updatePad({ headerEnLines: json })}
@@ -461,7 +461,7 @@ function PadSettingsPanel({
 
             {/* Logo + Middle column */}
             <div className="flex flex-col gap-2 p-3">
-              <p className="text-xs font-semibold text-muted-foreground">Logo / Specialty</p>
+              <p className="text-xs font-semibold text-primary/70">Logo / Specialty</p>
               <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
               <LineEditor
                 initialValue={pad.headerMidLines}
@@ -472,7 +472,7 @@ function PadSettingsPanel({
 
             {/* Bengali column */}
             <div className="p-3">
-              <p className="mb-2 text-xs font-semibold text-muted-foreground">ডাক্তারের তথ্য (বাংলা)</p>
+              <p className="mb-2 text-xs font-semibold text-primary/70">ডাক্তারের তথ্য (বাংলা)</p>
               <LineEditor
                 initialValue={pad.headerBnLines}
                 onChange={(json) => updatePad({ headerBnLines: json })}
@@ -496,8 +496,8 @@ function PadSettingsPanel({
         </div>
 
         {/* Footer section */}
-        <div className="shrink-0 border-t">
-          <div className="border-b bg-muted/50 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide">
+        <div className="shrink-0 border-t bg-card">
+          <div className="border-b bg-primary/5 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide text-primary">
             Footer
           </div>
           <div className="p-4 space-y-3">
@@ -647,7 +647,7 @@ function ChamberDropdown({
             ) : (
               <button
                 type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed py-2 text-sm font-semibold text-muted-foreground hover:border-primary hover:text-primary transition"
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-primary/30 py-2 text-sm font-semibold text-primary/50 hover:border-primary hover:text-primary hover:bg-primary/5 transition"
                 onClick={startAdding}
               >
                 <Plus className="h-4 w-4" />
@@ -703,7 +703,7 @@ function AppShellChamberSettingsDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex bg-card">
+    <div className="fixed inset-0 z-[60] flex bg-background">
       <PadSettingsPanel
         pad={pad}
         updatePad={updatePad}
