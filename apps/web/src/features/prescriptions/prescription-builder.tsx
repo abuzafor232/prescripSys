@@ -5797,13 +5797,16 @@ function AdviceSidebar({
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [newText, setNewText] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [localText, setLocalText] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const lib = loadAdviceLibrary();
+    return lib.find((a) => value && value.includes(a.text))?.id ?? null;
+  });
+  const [localText, setLocalText] = useState(value);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editText, setEditText] = useState("");
   const valueTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const insertedTextRef = useRef("");
+  const insertedTextRef = useRef(value);
 
   useEffect(() => {
     const el = valueTextareaRef.current;
