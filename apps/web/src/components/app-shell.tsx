@@ -729,7 +729,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <div className={cn("transition-all duration-200 lg:pl-[95px]", sidebarCollapsed && "lg:pl-0")}>
-        <header className="no-print sticky top-0 z-30 flex h-16 items-center border-b bg-card px-3 shadow-sm lg:px-5">
+        <header className="no-print sticky top-0 z-50 flex h-16 items-center border-b bg-card px-3 shadow-sm lg:px-5">
           {/* Left: logo + system name */}
           <div className="flex min-w-0 items-center gap-3">
             {sidebarCollapsed && (
