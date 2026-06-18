@@ -362,7 +362,9 @@ function FreeformEditor({
         style={{
           cursor: "text", wordBreak: "break-word", color: "#111",
           userSelect: "text", WebkitUserSelect: "text",
-          minHeight: editorHeight ?? 80,
+          ...(editorHeight
+            ? { height: editorHeight, overflow: "hidden" }
+            : { minHeight: 80 }),
         }}
         onKeyUp={saveRange}
         onClick={saveRange}
@@ -467,12 +469,14 @@ function PadPreview({ pad, onClose }: { pad: PadSettings; onClose: () => void })
               position: "absolute",
               top: mTop, bottom: mBottom, left: mLeft, right: mRight,
               display: "flex", flexDirection: "column",
+              overflow: "hidden",
             }}>
-              {/* Header — minHeight so all content is visible; grows if content is taller */}
+              {/* Header — fixed height matches the editor box exactly */}
               <div style={{
-                minHeight: hdrH, flexShrink: 0,
+                height: hdrH, flexShrink: 0,
                 display: "flex", alignItems: "flex-start",
                 borderBottom: "1px solid #d1d5db",
+                overflow: "hidden",
               }}>
                 {/* English */}
                 <div
@@ -859,10 +863,13 @@ function PadSettingsPanel({
             </div>
             <textarea
               className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-              rows={2}
               placeholder="Visiting hours, address, website…"
               value={pad.footerText}
-              style={{ textAlign: pad.footerAlignment }}
+              style={{
+                textAlign: pad.footerAlignment,
+                height: Math.round((parseFloat(pad.footerHeight) || 0.8) * 96),
+                overflow: "hidden",
+              }}
               onChange={(e) => updatePad({ footerText: e.target.value })}
             />
           </div>
