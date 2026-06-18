@@ -180,16 +180,35 @@ function FreeformEditor({
     syncFmt();
   }
 
-  function exec(cmd: string, val?: string) {
+  function restoreRange() {
     if (savedRange.current) {
       ref.current?.focus();
       const sel = window.getSelection();
       sel?.removeAllRanges();
       sel?.addRange(savedRange.current);
     }
+  }
+
+  function exec(cmd: string, val?: string) {
+    restoreRange();
     document.execCommand(cmd, false, val ?? undefined);
     if (ref.current) onChange(ref.current.innerHTML);
     syncFmt();
+  }
+
+  function applyFontSize(px: number) {
+    if (isNaN(px) || px < 1) return;
+    restoreRange();
+    // Mark selected text with a temporary font[size="7"] tag
+    document.execCommand("fontSize", false, "7");
+    // Replace every <font size="7"> with <span style="font-size: Xpx">
+    ref.current?.querySelectorAll('font[size="7"]').forEach((el) => {
+      const span = document.createElement("span");
+      span.style.fontSize = `${px}px`;
+      span.innerHTML = el.innerHTML;
+      el.replaceWith(span);
+    });
+    if (ref.current) onChange(ref.current.innerHTML);
   }
 
   function tbBtn(active: boolean) {
@@ -200,15 +219,26 @@ function FreeformEditor({
     <div className="flex flex-col overflow-hidden rounded-md border bg-background">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 border-b bg-primary/5 px-1.5 py-1">
-        <select
-          className="h-6 rounded border bg-background px-1 text-[10px] mr-1"
-          defaultValue="3"
-          onChange={(e) => exec("fontSize", e.target.value)}
-        >
-          {[["1","8pt"],["2","10pt"],["3","12pt"],["4","14pt"],["5","18pt"],["6","24pt"],["7","36pt"]].map(([v,l]) => (
-            <option key={v} value={v}>{l}</option>
-          ))}
-        </select>
+        {/* Font size — free input, press Enter to apply */}
+        <div className="mr-1 flex items-center gap-0.5">
+          <input
+            type="number"
+            min="1"
+            max="200"
+            step="1"
+            title="Font size in px — press Enter to apply"
+            defaultValue="13"
+            className="h-6 w-12 rounded border bg-background px-1 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                applyFontSize(parseInt((e.target as HTMLInputElement).value));
+              }
+            }}
+          />
+          <span className="text-[9px] text-muted-foreground/60">px</span>
+        </div>
         <input type="color" title="Text color" className="h-6 w-6 cursor-pointer rounded border p-0.5 mr-1" defaultValue="#000000" onChange={(e) => exec("foreColor", e.target.value)} />
         <button type="button" className={tbBtn(fmt.bold)}      onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}><Bold className="h-3 w-3" /></button>
         <button type="button" className={tbBtn(fmt.italic)}    onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}><Italic className="h-3 w-3" /></button>
