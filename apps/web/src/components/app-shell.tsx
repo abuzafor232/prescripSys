@@ -461,9 +461,10 @@ function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => vo
           <div style={{
             width: pageW, height: pageH,
             transform: `scale(${scale})`, transformOrigin: "top left",
-            position: "absolute", top: 0, left: 0, background: "white",
+            position: "absolute", top: 0, left: 0,
+            background: "white", color: "#111",
           }}>
-            <style>{`.rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}.rxp ul,.rxp ol{margin:0;padding-left:1.4em}.rxp li{margin:0;padding:0}.rxp *{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word}`}</style>
+            <style>{`.rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}.rxp ul,.rxp ol{margin:0;padding-left:1.4em}.rxp li{margin:0;padding:0}.rxp *{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word;color:inherit}`}</style>
 
             {/* Content inside margins */}
             <div style={{
