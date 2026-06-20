@@ -563,11 +563,11 @@ const chamberRows: { label: string; value: number | null; unit: string }[] = [
 ];
 
 // All-time demo totals (sum from 2022-01-01 to today)
-function getAllTimeSummary(): { patients: number; prescriptions: number } {
+function getAllTimeSummary(): { patients: number; prescriptions: number; income: number } {
   const start = "2022-01-01";
   const end   = getDateInputValue(new Date());
   const s     = getRangeSummary(start, end);
-  return { patients: s.patients, prescriptions: s.prescriptions };
+  return { patients: s.patients, prescriptions: s.prescriptions, income: s.income };
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -582,8 +582,9 @@ export function Dashboard() {
   const selectedDays = getDaysInRange(startDate, endDate);
   const summary      = useMemo(() => getRangeSummary(startDate, endDate), [startDate, endDate]);
   const allTime      = useMemo(() => getAllTimeSummary(), []);
-  const totalPatients     = isDefaultRange ? allTime.patients      : summary.patients;
+  const totalPatients      = isDefaultRange ? allTime.patients      : summary.patients;
   const totalPrescriptions = isDefaultRange ? allTime.prescriptions : summary.prescriptions;
+  const totalIncome        = isDefaultRange ? allTime.income        : summary.income;
   const rangeLabel   = `${formatDisplayDate(startDate)} — ${formatDisplayDate(endDate)}`;
 
   const chartData = useMemo<ChartPoint[]>(() => {
@@ -738,12 +739,19 @@ export function Dashboard() {
                 </div>
                 <span className="text-sm font-semibold">{totalPatients.toLocaleString("en-US")}</span>
               </div>
-              <div className="flex items-center justify-between px-6 py-3">
+              <div className="flex items-center justify-between border-b px-6 py-3">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-rose-600" />
                   <span className="text-sm font-medium text-muted-foreground">Total Prescriptions</span>
                 </div>
                 <span className="text-sm font-semibold">{totalPrescriptions.toLocaleString("en-US")}</span>
+              </div>
+              <div className="flex items-center justify-between px-6 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold text-emerald-600">৳</span>
+                  <span className="text-sm font-medium text-muted-foreground">All Time Income</span>
+                </div>
+                <span className="text-sm font-semibold text-emerald-600">{totalIncome.toLocaleString("en-US")}</span>
               </div>
             </CardContent>
           </Card>

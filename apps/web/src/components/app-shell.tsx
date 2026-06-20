@@ -12,26 +12,17 @@ import {
   Briefcase,
   CalendarClock,
   ChevronDown,
-  Eraser,
   Eye,
   FilePlus2,
-  Indent,
   Italic,
   LayoutDashboard,
-  List,
-  ListOrdered,
   Loader2,
   LogOut,
   Menu,
   Microscope,
-  Outdent,
   Pill,
-  Printer,
   Plus,
   Settings,
-  Strikethrough,
-  Subscript,
-  Superscript,
   Trash2,
   Underline,
   UsersRound,
@@ -110,43 +101,63 @@ function savePadSettings(s: PadSettings) {
 
 function LogoUpload({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function processFile(file: File | undefined) {
+    if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
     reader.onload = () => onChange(reader.result as string);
     reader.readAsDataURL(file);
+  }
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    processFile(e.target.files?.[0]);
     e.target.value = "";
   }
 
   return (
-    <div className="flex flex-col items-center gap-1.5">
+    <div className="flex w-full flex-col items-center gap-1">
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+
       {value ? (
-        <div className="relative">
-          <img src={value} alt="Logo" className="max-h-14 max-w-full rounded border object-contain" />
+        <div className="relative flex w-full items-center justify-center">
+          <img src={value} alt="Logo" className="max-h-10 max-w-full rounded border bg-white object-contain p-0.5 shadow-sm" />
           <button
             type="button"
-            className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow"
+            title="Remove logo"
+            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow hover:opacity-90"
             onClick={() => onChange("")}
           >
             <X className="h-2.5 w-2.5" />
           </button>
         </div>
       ) : (
-        <div className="flex h-12 w-full items-center justify-center rounded-md border-2 border-dashed border-muted-foreground/25 bg-muted/20 text-[10px] text-muted-foreground">
-          No logo
+        <div
+          className={cn(
+            "flex w-full cursor-pointer items-center justify-center gap-1 rounded border border-dashed py-1.5 transition-colors",
+            dragging
+              ? "border-blue-400 bg-blue-50 text-blue-500"
+              : "border-gray-200 bg-gray-50 text-gray-400 hover:border-gray-300 hover:bg-gray-100",
+          )}
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); processFile(e.dataTransfer.files[0]); }}
+        >
+          <Plus className="h-3 w-3" />
+          <span className="text-[9px] font-medium">{dragging ? "Drop here" : "Logo"}</span>
         </div>
       )}
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
-        onClick={() => inputRef.current?.click()}
-      >
-        <Plus className="h-3 w-3" />
-        {value ? "Change" : "Add Logo"}
-      </button>
+
+      {value && (
+        <button
+          type="button"
+          className="text-[9px] text-gray-400 underline hover:text-gray-600"
+          onClick={() => inputRef.current?.click()}
+        >
+          Change
+        </button>
+      )}
     </div>
   );
 }
@@ -158,21 +169,27 @@ const EDITOR_FONTS = [
   "Courier New", "Trebuchet MS", "Tahoma", "Palatino Linotype",
 ];
 
+
 function FreeformEditor({
   initialValue,
   onChange,
   placeholder = "Type here…",
   editorHeight,
+  noToolbar = false,
 }: {
   initialValue: string;
   onChange: (html: string) => void;
   placeholder?: string;
-  editorHeight?: number;   // content area height in px — matches the printed header height
+  editorHeight?: number;
+  noToolbar?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sizeInputActive = useRef(false);
   const [focused, setFocused] = useState(false);
+  const [currentFontSize, setCurrentFontSize] = useState("13");
+  const [currentFontFamily, setCurrentFontFamily] = useState("Arial");
   const [fmt, setFmt] = useState({
     bold: false, italic: false, underline: false,
     strikethrough: false, subscript: false, superscript: false,
@@ -181,18 +198,36 @@ function FreeformEditor({
   });
 
   useEffect(() => {
-    if (ref.current) ref.current.innerHTML = initialValue;
+    if (!ref.current) return;
+    const cleaned = sanitizeHtmlColors(initialValue);
+    ref.current.innerHTML = cleaned;
+    if (cleaned !== initialValue) onChange(cleaned);
+    try {
+      ref.current.focus();
+      document.execCommand("foreColor", false, "#000000");
+      ref.current.blur();
+    } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Always-current range tracking via native selectionchange event.
-  // This fires on every cursor move / drag-select, even without explicit React handlers.
   useEffect(() => {
     function onSelChange() {
+      if (sizeInputActive.current) return;
       const sel = window.getSelection();
       if (sel && sel.rangeCount > 0 && ref.current?.contains(sel.anchorNode ?? null)) {
         savedRange.current = sel.getRangeAt(0).cloneRange();
         syncFmt();
+        // Read font-size and font-family at cursor from computed style
+        const node = sel.getRangeAt(0).startContainer;
+        const el = (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) as HTMLElement | null;
+        if (el && ref.current.contains(el)) {
+          const cs = window.getComputedStyle(el);
+          const sz = parseFloat(cs.fontSize);
+          if (!isNaN(sz)) setCurrentFontSize(String(Math.round(sz)));
+          const fm = cs.fontFamily.split(",")[0].trim().replace(/['"]/g, "");
+          const matched = EDITOR_FONTS.find(f => f.toLowerCase() === fm.toLowerCase());
+          if (matched) setCurrentFontFamily(matched);
+        }
       }
     }
     document.addEventListener("selectionchange", onSelChange);
@@ -240,18 +275,19 @@ function FreeformEditor({
   function keepFocus() {
     if (blurTimer.current) clearTimeout(blurTimer.current);
     setFocused(true);
-    // Return cursor to editor after toolbar controls steal focus
     setTimeout(() => ref.current?.focus(), 0);
   }
 
   function exec(cmd: string, val?: string) {
     restoreRange();
     document.execCommand(cmd, false, val ?? undefined);
-    if (ref.current) onChange(ref.current.innerHTML);
+    if (ref.current) onChange(sanitizeHtmlColors(ref.current.innerHTML));
     syncFmt();
     keepFocus();
   }
 
+  // Apply font size by wrapping selection in a span, then stripping any
+  // conflicting font-size from descendants so the outer size always wins.
   function applyFontSize(px: number) {
     if (isNaN(px) || px < 1) return;
     restoreRange();
@@ -260,9 +296,14 @@ function FreeformEditor({
       const span = document.createElement("span");
       span.style.fontSize = `${px}px`;
       span.innerHTML = el.innerHTML;
+      // Strip font-size from every descendant so inner spans cannot override.
+      span.querySelectorAll<HTMLElement>("[style]").forEach((child) => {
+        child.style.removeProperty("font-size");
+      });
       el.replaceWith(span);
     });
-    if (ref.current) onChange(ref.current.innerHTML);
+    if (ref.current) onChange(sanitizeHtmlColors(ref.current.innerHTML));
+    setCurrentFontSize(String(px));
     keepFocus();
   }
 
@@ -271,14 +312,14 @@ function FreeformEditor({
       type: "button" as const,
       title,
       className: cn(
-        "flex h-6 w-6 items-center justify-center rounded text-gray-600 transition",
-        "hover:bg-gray-200 hover:text-gray-900",
-        active && "bg-gray-800 text-white hover:bg-gray-700 hover:text-white",
+        "flex h-6 w-6 items-center justify-center rounded text-[#444] transition",
+        "hover:bg-[#d8dce0] hover:text-[#111]",
+        active && "bg-[#1a1a1a] text-white hover:bg-[#333] hover:text-white",
       ),
     };
   }
 
-  const Sep = () => <div className="mx-0.5 h-4 w-px bg-gray-200" />;
+  const Sep = () => <div className="mx-0.5 h-4 w-px bg-[#ccc]" />;
 
   return (
     <div
@@ -289,68 +330,114 @@ function FreeformEditor({
       style={{ background: "white", color: "#111" }}
     >
 
-      {/* ── Row 1: Font family · Size · B I U S · X² X₂ · Erase ── */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#f3f4f6" }}>
+      {/* ── Toolbar (hidden when noToolbar) ── */}
+      {!noToolbar && <>
 
-        {/* Font family — onMouseDown saves selection before focus is stolen */}
+      {/* ── Row 1: Font family · Size · A↑ A↓ | B I U ── */}
+      <div className="flex items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#ebebeb" }}>
         <select
           className="h-6 rounded border border-gray-300 bg-white px-0.5 text-[10px] text-gray-800"
           style={{ minWidth: 90 }}
-          defaultValue="Arial"
+          value={currentFontFamily}
           onMouseDown={saveRange}
-          onChange={(e) => exec("fontName", e.target.value)}
+          onChange={(e) => { setCurrentFontFamily(e.target.value); exec("fontName", e.target.value); }}
         >
           {EDITOR_FONTS.map(f => (
             <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
           ))}
         </select>
 
-        {/* Font size */}
-        <div className="mx-0.5 flex items-center gap-0.5">
-          <input
-            type="number" min="1" max="200" step="1" defaultValue="13"
-            title="Font size (px) — press Enter"
-            className="h-6 w-11 rounded border border-gray-300 bg-white px-1 text-center text-[10px] text-gray-800 outline-none focus:ring-1 focus:ring-gray-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Enter") { e.preventDefault(); applyFontSize(parseInt((e.target as HTMLInputElement).value)); }
-            }}
-          />
-          <span className="text-[9px] text-gray-400">px</span>
-        </div>
+        <input
+          type="number" min="1" max="200" step="1"
+          title="Font size (px)"
+          value={currentFontSize}
+          className="mx-0.5 h-6 w-11 rounded border border-gray-300 bg-white px-1 text-center text-[10px] text-gray-800 outline-none focus:ring-1 focus:ring-gray-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          onChange={(e) => setCurrentFontSize(e.target.value)}
+          onFocus={() => { sizeInputActive.current = true; }}
+          onBlur={(e) => { sizeInputActive.current = false; applyFontSize(parseInt(e.target.value)); }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") { e.preventDefault(); applyFontSize(parseInt(currentFontSize)); }
+          }}
+        />
+
+        <button type="button" title="Increase font size"
+          className="flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200"
+          onMouseDown={(e) => { e.preventDefault(); applyFontSize(Math.min(200, parseInt(currentFontSize || "13") + 2)); }}>
+          <span className="font-bold leading-none" style={{ fontSize: 11 }}>A</span>
+          <span className="leading-none" style={{ fontSize: 7 }}>↑</span>
+        </button>
+        <button type="button" title="Decrease font size"
+          className="flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200"
+          onMouseDown={(e) => { e.preventDefault(); applyFontSize(Math.max(1, parseInt(currentFontSize || "13") - 2)); }}>
+          <span className="font-bold leading-none" style={{ fontSize: 9 }}>A</span>
+          <span className="leading-none" style={{ fontSize: 7 }}>↓</span>
+        </button>
 
         <Sep />
-        <button {...tbBtn(fmt.bold,          "Bold (Ctrl+B)")}      onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}><Bold className="h-3 w-3" /></button>
-        <button {...tbBtn(fmt.italic,        "Italic (Ctrl+I)")}    onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}><Italic className="h-3 w-3" /></button>
-        <button {...tbBtn(fmt.underline,     "Underline (Ctrl+U)")} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
-        <button {...tbBtn(fmt.strikethrough, "Strikethrough")}      onMouseDown={(e) => { e.preventDefault(); exec("strikeThrough"); }}><Strikethrough className="h-3 w-3" /></button>
-        <Sep />
-        <button {...tbBtn(fmt.superscript,   "Superscript")}  onMouseDown={(e) => { e.preventDefault(); exec("superscript"); }}><Superscript className="h-3 w-3" /></button>
-        <button {...tbBtn(fmt.subscript,     "Subscript")}    onMouseDown={(e) => { e.preventDefault(); exec("subscript"); }}><Subscript className="h-3 w-3" /></button>
-        <Sep />
-        <button {...tbBtn(false, "Clear formatting")} onMouseDown={(e) => { e.preventDefault(); exec("removeFormat"); }}><Eraser className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.bold,      "Bold (Ctrl+B)")}      onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}>      <Bold      className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.italic,    "Italic (Ctrl+I)")}    onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}>    <Italic    className="h-3 w-3" /></button>
+        <button {...tbBtn(fmt.underline, "Underline (Ctrl+U)")} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
       </div>
 
-      {/* ── Row 2: Colors · Lists · Indent · Alignment ── */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#f3f4f6" }}>
+      {/* ── Row 2: Highlight · Text color | Alignment · Line spacing ── */}
+      <div className="flex items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#ebebeb" }}>
+        <label title="Highlight color"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100">
+          <span className="select-none text-[12px] leading-none">🖊</span>
+          <input type="color" defaultValue="#ffff00" className="sr-only"
+            onMouseDown={saveRange}
+            onChange={(e) => exec("backColor", e.target.value)} />
+        </label>
+        <label title="Text color"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100">
+          <span className="select-none text-[11px] font-bold leading-none" style={{ textDecoration: "underline", textDecorationColor: "#e53e3e" }}>A</span>
+          <input type="color" defaultValue="#000000" className="sr-only"
+            onMouseDown={saveRange}
+            onChange={(e) => exec("foreColor", e.target.value)} />
+        </label>
 
-        {/* Text color — onMouseDown saves selection before color picker opens */}
-        <input type="color" title="Text color"      defaultValue="#000000" className="h-6 w-6 cursor-pointer rounded border border-gray-300 p-0.5" onMouseDown={saveRange} onChange={(e) => exec("foreColor",  e.target.value)} />
-        {/* Highlight color */}
-        <input type="color" title="Highlight color" defaultValue="#ffff00" className="h-6 w-6 cursor-pointer rounded border border-gray-300 p-0.5" onMouseDown={saveRange} onChange={(e) => exec("backColor",  e.target.value)} />
-
-        <Sep />
-        <button {...tbBtn(fmt.unorderedList, "Bullet list")}   onMouseDown={(e) => { e.preventDefault(); exec("insertUnorderedList"); }}><List        className="h-3 w-3" /></button>
-        <button {...tbBtn(fmt.orderedList,   "Numbered list")} onMouseDown={(e) => { e.preventDefault(); exec("insertOrderedList"); }}>  <ListOrdered className="h-3 w-3" /></button>
-        <Sep />
-        <button {...tbBtn(false, "Decrease indent")} onMouseDown={(e) => { e.preventDefault(); exec("outdent"); }}><Outdent className="h-3 w-3" /></button>
-        <button {...tbBtn(false, "Increase indent")} onMouseDown={(e) => { e.preventDefault(); exec("indent"); }}> <Indent  className="h-3 w-3" /></button>
         <Sep />
         <button {...tbBtn(fmt.align === "left",    "Align left")}    onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}>   <AlignLeft    className="h-3 w-3" /></button>
         <button {...tbBtn(fmt.align === "center",  "Align center")}  onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}> <AlignCenter  className="h-3 w-3" /></button>
         <button {...tbBtn(fmt.align === "right",   "Align right")}   onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}>  <AlignRight   className="h-3 w-3" /></button>
         <button {...tbBtn(fmt.align === "justify", "Justify")}       onMouseDown={(e) => { e.preventDefault(); exec("justifyFull"); }}>   <AlignJustify className="h-3 w-3" /></button>
+
+        <Sep />
+        <select
+          title="Line spacing"
+          className="h-6 rounded border border-gray-300 bg-white px-0.5 text-[10px] text-gray-800"
+          defaultValue="1.2"
+          onMouseDown={saveRange}
+          onChange={(e) => {
+            restoreRange();
+            const val = e.target.value;
+            if (!ref.current) return;
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return;
+            const range = sel.getRangeAt(0);
+            const walker = document.createTreeWalker(ref.current, NodeFilter.SHOW_ELEMENT);
+            let node: Node | null = walker.currentNode;
+            while (node) {
+              if (node instanceof HTMLElement && range.intersectsNode(node)) {
+                const display = getComputedStyle(node).display;
+                if (display === "block" || display === "list-item") {
+                  node.style.lineHeight = val;
+                }
+              }
+              node = walker.nextNode();
+            }
+            if (ref.current) onChange(sanitizeHtmlColors(ref.current.innerHTML));
+          }}
+        >
+          <option value="1">1.0</option>
+          <option value="1.2">1.2</option>
+          <option value="1.5">1.5</option>
+          <option value="2">2.0</option>
+        </select>
       </div>
+
+      </>}
 
       {/* ── Editor area ── */}
       <div
@@ -366,19 +453,18 @@ function FreeformEditor({
             ? { height: editorHeight, overflow: "hidden" }
             : { minHeight: 80 }),
         }}
-        onKeyUp={saveRange}
-        onClick={saveRange}
-        onSelect={saveRange}
+        onKeyUp={() => { saveRange(); syncFmt(); }}
+        onClick={() => { saveRange(); syncFmt(); }}
+        onSelect={() => { saveRange(); syncFmt(); }}
         onFocus={() => {
           if (blurTimer.current) clearTimeout(blurTimer.current);
           setFocused(true);
           syncFmt();
         }}
         onBlur={() => {
-          // Delay so toolbar clicks (select/color) don't flash the ring off
           blurTimer.current = setTimeout(() => setFocused(false), 200);
         }}
-        onInput={() => { if (ref.current) onChange(ref.current.innerHTML); }}
+        onInput={() => { if (ref.current) onChange(sanitizeHtmlColors(ref.current.innerHTML)); }}
       />
     </div>
   );
@@ -401,6 +487,24 @@ function saveChamberPad(id: string, pad: PadSettings) {
   } catch {}
 }
 
+// Strips gray/neutral inline color styles from rich-text HTML so unintentionally
+// gray content falls back to the container's black default.
+// Low saturation + medium-or-higher lightness = accidental gray → removed.
+// High saturation = intentional accent (orange, red, blue…) → kept.
+function sanitizeHtmlColors(html: string): string {
+  if (!html) return html;
+  return html.replace(
+    /color:\s*rgb\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)\s*;?/g,
+    (match, rs, gs, bs) => {
+      const [r, g, b] = [+rs, +gs, +bs];
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const saturation = max - min;        // 0 = pure gray, 255 = fully vivid
+      const lightness  = (max + min) / 2; // 0 = black, 255 = white
+      return saturation < 40 && lightness > 80 ? "" : match;
+    }
+  );
+}
+
 // Page-size constants for preview
 const _PX_IN = 96;
 const _PX_MM = _PX_IN / 25.4;
@@ -418,17 +522,22 @@ function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => vo
     ? (parseFloat(pad.customHeight) || 11)  * _PX_IN
     : _PAGE_W[pad.pageSize]?.h ?? _PAGE_W.A4.h;
 
-  const PREVIEW_W = 700;
+  const PREVIEW_W = 780;
   const scale    = PREVIEW_W / pageW;
   const previewH = Math.round(pageH * scale);
 
   const ip = (v: string, fb: number) => (parseFloat(v) || fb) * _PX_IN;
-  const mTop = ip(pad.marginTop, 0.6),   mBottom = ip(pad.marginBottom, 0.6);
-  const mLeft = ip(pad.marginLeft, 0.6), mRight  = ip(pad.marginRight,  0.6);
-  const hdrH = ip(pad.headerHeight, 1.7);
-  const ftrH = ip(pad.footerHeight, 0.8);
+  const mTop    = ip(pad.marginTop,    0.6);
+  const mBottom = ip(pad.marginBottom, 0.6);
+  const mLeft   = ip(pad.marginLeft,   0.6);
+  const mRight  = ip(pad.marginRight,  0.6);
+  const hdrH    = ip(pad.headerHeight, 1.7);
+  const ftrH    = ip(pad.footerHeight, 0.8);
   const bodyLeft = parseInt(pad.bodyLeftPct) || 35;
   const hasMid   = !!(pad.headerLogo || pad.headerMidLines);
+
+  // thin underline helper used for blank fields
+  const uline: React.CSSProperties = { borderBottom: "1px solid #111", display: "inline-block", minWidth: 120, marginBottom: -1 };
 
   return (
     <div
@@ -453,70 +562,135 @@ function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => vo
 
       {/* Scrollable paper */}
       <div
-        className="overflow-auto rounded-sm shadow-2xl ring-1 ring-white/10"
+        className="overflow-auto rounded shadow-2xl ring-1 ring-white/10"
         style={{ maxHeight: "calc(100vh - 80px)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ width: PREVIEW_W, height: previewH, position: "relative", overflow: "hidden" }}>
+          {/* Full-size page scaled down */}
           <div style={{
             width: pageW, height: pageH,
             transform: `scale(${scale})`, transformOrigin: "top left",
             position: "absolute", top: 0, left: 0,
             background: "white", color: "#111",
+            fontFamily: "Arial, sans-serif",
           }}>
-            <style>{`.rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}.rxp ul,.rxp ol{margin:0;padding-left:1.4em}.rxp li{margin:0;padding:0}.rxp *{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word;color:inherit}`}</style>
+            <style>{`
+              .rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}
+              .rxp ul,.rxp ol{margin:0;padding-left:1.2em}
+              .rxp li{margin:0;padding:0}
+              .rxp *{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word}
+            `}</style>
 
-            {/* Content inside margins */}
+            {/* ── Content inside margins ── */}
             <div style={{
               position: "absolute",
               top: mTop, bottom: mBottom, left: mLeft, right: mRight,
               display: "flex", flexDirection: "column", overflow: "hidden",
             }}>
-              {/* Header */}
-              <div style={{ height: hdrH, flexShrink: 0, display: "flex", alignItems: "stretch", borderBottom: "1.5px solid #94a3b8", overflow: "hidden" }}>
-                <div className="rxp" style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px" }}
-                  dangerouslySetInnerHTML={{ __html: pad.headerEnLines || "" }} />
+
+              {/* ── HEADER: Bengali | Logo | English ── */}
+              <div style={{
+                height: hdrH, flexShrink: 0,
+                display: "flex", alignItems: "stretch",
+                borderBottom: "2px solid #222",
+                overflow: "hidden",
+              }}>
+                {/* Left: Bengali */}
+                <div className="rxp" style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 10px", color: "#111" }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtmlColors(pad.headerBnLines || "") }} />
+
+                {/* Centre: Logo + mid text — auto-width so text columns reach the edges */}
                 {hasMid && (
-                  <div style={{ width: "30%", maxWidth: 220, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "6px 8px", overflow: "hidden", borderLeft: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0" }}>
-                    {pad.headerLogo && <img src={pad.headerLogo} alt="" style={{ maxHeight: hdrH * 0.55, maxWidth: 140, objectFit: "contain" }} />}
-                    {pad.headerMidLines && <div className="rxp" style={{ textAlign: "center", width: "100%", marginTop: pad.headerLogo ? 4 : 0 }} dangerouslySetInnerHTML={{ __html: pad.headerMidLines }} />}
+                  <div style={{
+                    flexShrink: 0,
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    padding: "0 6px", overflow: "hidden",
+                  }}>
+                    {pad.headerLogo && (
+                      <img src={pad.headerLogo} alt="" style={{ maxHeight: hdrH * 0.6, maxWidth: 130, objectFit: "contain" }} />
+                    )}
+                    {pad.headerMidLines && (
+                      <div className="rxp" style={{ textAlign: "center", width: "100%", marginTop: pad.headerLogo ? 4 : 0, color: "#111" }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtmlColors(pad.headerMidLines) }} />
+                    )}
                   </div>
                 )}
-                <div className="rxp" style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 8px", textAlign: "right" }}
-                  dangerouslySetInnerHTML={{ __html: pad.headerBnLines || "" }} />
+
+                {/* Right: English */}
+                <div className="rxp" style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 10px", color: "#111" }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtmlColors(pad.headerEnLines || "") }} />
               </div>
 
-              {/* Body — column layout indicator */}
+              {/* ── Patient info row ── */}
+              <div style={{
+                flexShrink: 0,
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "5px 4px",
+                borderBottom: "1px solid #aaa",
+                fontSize: 12, color: "#111",
+              }}>
+                <span style={{ fontWeight: 600 }}>Name:</span>
+                <span style={{ ...uline, flex: 2 }} />
+                <span style={{ fontWeight: 600, marginLeft: 8 }}>Age:</span>
+                <span style={{ ...uline, minWidth: 60, flex: "none" }} />
+                <span style={{ fontWeight: 600, marginLeft: 8 }}>Date:</span>
+                <span style={{ ...uline, minWidth: 90, flex: "none" }} />
+              </div>
+
+              {/* ── Body ── */}
               <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-                <div style={{ width: `${bodyLeft}%`, flexShrink: 0, borderRight: "1px solid #cbd5e1", display: "flex", flexDirection: "column", gap: 9, padding: "10px 8px", overflow: "hidden" }}>
-                  {["Patient Name","Age / Sex","Weight / BP","Chief Complaints","On Examination","Investigation","Diagnosis","Follow Up"].map((label) => (
+
+                {/* Left patient info column */}
+                <div style={{
+                  width: `${bodyLeft}%`, flexShrink: 0,
+                  borderRight: "1px solid #bbb",
+                  display: "flex", flexDirection: "column",
+                  padding: "8px 8px",
+                  overflow: "hidden", gap: 7,
+                }}>
+                  {[
+                    ["Weight", "kg"], ["BP", "mmHg"], ["Chief Complaints", ""],
+                    ["On Examination", ""], ["Investigation", ""], ["Diagnosis", ""],
+                  ].map(([label, unit]) => (
                     <div key={label}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>{label}</div>
-                      <div style={{ borderBottom: "1px solid #e2e8f0", paddingBottom: 10 }} />
+                      <div style={{ fontSize: 9.5, fontWeight: 700, color: "#444", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+                        {label}{unit ? ` (${unit})` : ""}
+                      </div>
+                      <div style={{ borderBottom: "1px solid #ccc", paddingBottom: 7 }} />
                     </div>
                   ))}
                 </div>
-                <div style={{ flex: 1, padding: "10px 12px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                  <div style={{ fontSize: 34, fontFamily: "serif", fontWeight: 700, color: "#1e293b", lineHeight: 1, marginBottom: 10 }}>℞</div>
-                  {Array.from({ length: 7 }).map((_, i) => (
-                    <div key={i} style={{ marginBottom: 16 }}>
-                      <div style={{ display: "flex", alignItems: "flex-end", gap: 5 }}>
-                        <span style={{ fontSize: 10, color: "#94a3b8", minWidth: 16, lineHeight: 1 }}>{i + 1}.</span>
-                        <div style={{ flex: 1, borderBottom: "1px dashed #cbd5e1" }} />
+
+                {/* Right: Rx area */}
+                <div style={{ flex: 1, padding: "8px 12px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                  <div style={{ fontSize: 30, fontFamily: "serif", fontWeight: 700, color: "#111", lineHeight: 1, marginBottom: 8 }}>℞</div>
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
+                        <span style={{ fontSize: 10, color: "#888", minWidth: 14, lineHeight: 1 }}>{i + 1}.</span>
+                        <div style={{ flex: 1, borderBottom: "1px solid #bbb" }} />
                       </div>
-                      <div style={{ marginLeft: 21, marginTop: 5, borderBottom: "1px dashed #e2e8f0" }} />
+                      <div style={{ marginLeft: 18, marginTop: 4, borderBottom: "1px dashed #ddd" }} />
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Footer */}
-              <div style={{ height: ftrH, flexShrink: 0, borderTop: "1.5px solid #94a3b8", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "center", padding: "5px 10px" }}>
-                {pad.footerShowDivider && <div style={{ borderTop: "1px solid #64748b", marginBottom: 5 }} />}
-                {pad.footerText
-                  ? <div style={{ fontSize: 11, color: "#374151", textAlign: pad.footerAlignment as "left"|"center"|"right", whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{pad.footerText}</div>
-                  : <div style={{ fontSize: 10, color: "#cbd5e1", textAlign: "center", fontStyle: "italic" }}>footer text</div>
-                }
+              {/* ── Footer ── */}
+              <div style={{
+                height: ftrH, flexShrink: 0,
+                borderTop: "2px solid #222",
+                overflow: "hidden", display: "flex", flexDirection: "column",
+                justifyContent: "center", padding: "4px 10px",
+              }}>
+                {pad.footerShowDivider && <div style={{ borderTop: "1px solid #555", marginBottom: 4 }} />}
+                {pad.footerText ? (
+                  <div className="rxp" style={{ fontSize: 11, color: "#111", lineHeight: 1.5 }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtmlColors(pad.footerText) }} />
+                ) : (
+                  <div style={{ fontSize: 10, color: "#bbb", textAlign: "center", fontStyle: "italic" }}>footer text here</div>
+                )}
               </div>
             </div>
           </div>
@@ -525,6 +699,157 @@ function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => vo
     </div>
   );
 }
+
+// ─── Live A4 Preview ─────────────────────────────────────────────────────────
+
+function PadLivePreview({ pad }: { pad: PadSettings }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.45);
+
+  const pageW = pad.pageSize === "Custom"
+    ? (parseFloat(pad.customWidth) || 8.5) * _PX_IN
+    : _PAGE_W[pad.pageSize]?.w ?? _PAGE_W.A4.w;
+  const pageH = pad.pageSize === "Custom"
+    ? (parseFloat(pad.customHeight) || 11) * _PX_IN
+    : _PAGE_W[pad.pageSize]?.h ?? _PAGE_W.A4.h;
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => setScale((el.clientWidth - 24) / pageW);
+    update();
+    const obs = new ResizeObserver(update);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [pageW]);
+
+  const ip  = (v: string, fb: number) => (parseFloat(v) || fb) * _PX_IN;
+  const mT  = ip(pad.marginTop,    0.6);
+  const mB  = ip(pad.marginBottom, 0.6);
+  const mL  = ip(pad.marginLeft,   0.6);
+  const mR  = ip(pad.marginRight,  0.6);
+  const hdrH = ip(pad.headerHeight, 1.7);
+  const ftrH = ip(pad.footerHeight, 0.8);
+  const bodyLeft = parseInt(pad.bodyLeftPct) || 35;
+  const hasMid   = !!(pad.headerLogo || pad.headerMidLines);
+  const uline: React.CSSProperties = { borderBottom: "1px solid #999", display: "inline-block", minWidth: 80 };
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-soft">
+      {/* Title bar */}
+      <div className="flex shrink-0 items-center gap-2 border-b bg-muted/40 px-3 py-2">
+        <Eye className="h-3.5 w-3.5 text-primary/60" />
+        <span className="text-xs font-semibold text-foreground/70">Live Preview</span>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+            {Math.round(scale * 100)}%
+          </span>
+          <span className="text-[10px] text-muted-foreground/60">
+            {pad.pageSize === "Custom" ? `${pad.customWidth}×${pad.customHeight}in` : pad.pageSize}
+          </span>
+        </div>
+      </div>
+
+      {/* Paper container */}
+      <div ref={wrapRef} className="bg-muted/10 p-3">
+        <div style={{ width: Math.round(pageW * scale), height: Math.round(pageH * scale), position: "relative", overflow: "hidden", margin: "0 auto" }}>
+          {/* Full-size page scaled down */}
+          <div style={{
+            width: pageW, height: pageH,
+            transform: `scale(${scale})`, transformOrigin: "top left",
+            position: "absolute", top: 0, left: 0,
+            background: "white", color: "#111",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+            fontFamily: "Arial, sans-serif",
+          }}>
+            <style>{`
+              .rxpv p,.rxpv h1,.rxpv h2,.rxpv h3{margin:0;padding:0}
+              .rxpv ul,.rxpv ol{margin:0;padding-left:1.2em}
+              .rxpv li{margin:0;padding:0}
+              .rxpv *{box-sizing:border-box;word-break:break-word;overflow-wrap:break-word}
+            `}</style>
+
+            <div style={{ position: "absolute", top: mT, bottom: mB, left: mL, right: mR, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              {/* Header */}
+              <div style={{ height: hdrH, flexShrink: 0, display: "flex", alignItems: "stretch", borderBottom: "2px solid #222", overflow: "hidden" }}>
+                <div className="rxpv" style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 10px", color: "#111" }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtmlColors(pad.headerBnLines || "") }} />
+                {hasMid && (
+                  <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 6px", overflow: "hidden" }}>
+                    {pad.headerLogo && <img src={pad.headerLogo} alt="" style={{ maxHeight: hdrH * 0.6, maxWidth: 130, objectFit: "contain" }} />}
+                    {pad.headerMidLines && (
+                      <div className="rxpv" style={{ textAlign: "center", width: "100%", marginTop: pad.headerLogo ? 4 : 0, color: "#111" }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtmlColors(pad.headerMidLines) }} />
+                    )}
+                  </div>
+                )}
+                <div className="rxpv" style={{ flex: 1, minWidth: 0, overflow: "hidden", padding: "6px 10px", color: "#111" }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtmlColors(pad.headerEnLines || "") }} />
+              </div>
+
+              {/* Patient info row */}
+              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6, padding: "5px 4px", borderBottom: "1px solid #aaa", fontSize: 12, color: "#111" }}>
+                <span style={{ fontWeight: 600 }}>Name:</span><span style={{ ...uline, flex: 2 }} />
+                <span style={{ fontWeight: 600, marginLeft: 8 }}>Age:</span><span style={{ ...uline, minWidth: 60, flex: "none" as const }} />
+                <span style={{ fontWeight: 600, marginLeft: 8 }}>Date:</span><span style={{ ...uline, minWidth: 90, flex: "none" as const }} />
+              </div>
+
+              {/* Body */}
+              <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+                <div style={{ width: `${bodyLeft}%`, flexShrink: 0, borderRight: "1px solid #bbb", padding: "8px", display: "flex", flexDirection: "column", gap: 7, overflow: "hidden" }}>
+                  {["Weight (kg)", "BP (mmHg)", "Chief Complaints", "On Examination", "Investigation", "Diagnosis"].map((label) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 9.5, fontWeight: 700, color: "#444", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 2 }}>{label}</div>
+                      <div style={{ borderBottom: "1px solid #ccc", paddingBottom: 7 }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ flex: 1, padding: "8px 12px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                  <div style={{ fontSize: 30, fontFamily: "serif", fontWeight: 700, color: "#111", lineHeight: 1, marginBottom: 8 }}>℞</div>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
+                        <span style={{ fontSize: 10, color: "#888", minWidth: 14 }}>{i + 1}.</span>
+                        <div style={{ flex: 1, borderBottom: "1px solid #bbb" }} />
+                      </div>
+                      <div style={{ marginLeft: 18, marginTop: 4, borderBottom: "1px dashed #ddd" }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ height: ftrH, flexShrink: 0, borderTop: "2px solid #222", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "center", padding: "4px 10px" }}>
+                {pad.footerText ? (
+                  <div className="rxpv" style={{ fontSize: 11, color: "#111", lineHeight: 1.5 }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtmlColors(pad.footerText) }} />
+                ) : (
+                  <div style={{ fontSize: 10, color: "#bbb", textAlign: "center", fontStyle: "italic" }}>footer text here…</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Dimension info bar */}
+      <div className="flex shrink-0 flex-wrap gap-x-3 gap-y-0.5 border-t bg-muted/20 px-3 py-1.5">
+        {([
+          ["Header", `${pad.headerHeight || "1.7"}in`],
+          ["Footer", `${pad.footerHeight || "0.8"}in`],
+          ["Margins", `${pad.marginTop || "0.6"}/${pad.marginLeft || "0.6"}in`],
+          ["Body", `${pad.bodyLeftPct || "35"}/${100 - parseInt(pad.bodyLeftPct || "35")}%`],
+        ] as [string, string][]).map(([k, v]) => (
+          <span key={k} className="text-[9px] text-muted-foreground">
+            <span className="font-semibold text-foreground/50">{k}</span> {v}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Pad Settings Panel ───────────────────────────────────────────────────────
 
 function PadSettingsPanel({
   pad, updatePad, chambers, selectedChamberId, onChamberChange, onChamberAdd, onChamberRemove, onSave, onCancel,
@@ -539,117 +864,108 @@ function PadSettingsPanel({
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const chamberSelected = selectedChamberId !== "";
+  const hdrPx = Math.round((parseFloat(pad.headerHeight) || 1.7) * _PX_IN);
+
+  const settingLabel = "text-[10px] font-bold uppercase tracking-wide text-primary mb-0.5";
+  const inp = "h-6 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary";
+
+  // Light-theme CSS vars for editor cards
+  const lightTheme: React.CSSProperties = {
+    "--background": "0 0% 100%", "--foreground": "0 0% 0%",
+    "--card": "0 0% 100%", "--card-foreground": "0 0% 0%",
+    "--muted": "0 0% 94%", "--muted-foreground": "0 0% 12%",
+    "--border": "0 0% 86%", "--primary": "0 0% 10%",
+    "--primary-foreground": "0 0% 100%",
+    colorScheme: "light",
+  } as React.CSSProperties;
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      {previewOpen && <PadPreviewModal pad={pad} onClose={() => setPreviewOpen(false)} />}
-      {/* ── Left column ─────────── */}
-      <div className="flex w-72 shrink-0 flex-col border-r bg-card shadow-soft">
+    <div className="space-y-4">
+      {/* ── Chamber selector ── */}
+      <ChamberDropdown
+        chambers={chambers} selectedId={selectedChamberId}
+        onChange={onChamberChange} onAdd={onChamberAdd} onRemove={onChamberRemove}
+      />
 
-          {/* Chamber dropdown */}
-          <div className="border-b px-3 pt-3 pb-2.5">
-            <ChamberDropdown
-              chambers={chambers}
-              selectedId={selectedChamberId}
-              onChange={onChamberChange}
-              onAdd={onChamberAdd}
-              onRemove={onChamberRemove}
-            />
-          </div>
+      {/* ── 3-column main grid ── */}
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[168px_1fr_355px] xl:items-start">
 
-          {/* Fees */}
-          <div className="border-b px-3 py-2 space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Consultation Fees</p>
-            {(
-              [
-                ["New Patient", "newPatientFees"],
-                ["Follow-Up",   "followUpFees"],
-                ["Report",      "reportFees"],
-              ] as [string, keyof PadSettings][]
-            ).map(([label, key]) => (
-              <div key={key} className="flex items-center gap-2">
-                <span className="w-24 shrink-0 text-xs text-muted-foreground">{label}</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  className="h-7 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-                  placeholder="৳ 0"
-                  value={pad[key] as string}
-                  onChange={(e) => updatePad({ [key]: e.target.value })}
-                />
+        {/* ── LEFT: Settings ── */}
+        <div className="space-y-1.5">
+
+          {/* Consultation Fees */}
+          <div className="rounded-xl border bg-card p-2.5 shadow-soft space-y-1.5">
+            <p className={settingLabel}>Consultation Fees (৳)</p>
+            {([
+              ["New Patient", "newPatientFees"],
+              ["Follow-Up",  "followUpFees"],
+              ["Report",     "reportFees"],
+            ] as [string, keyof PadSettings][]).map(([label, key]) => (
+              <div key={key} className="flex items-center justify-between gap-1">
+                <span className="shrink-0 text-[10px] text-muted-foreground">{label}</span>
+                <input type="text" inputMode="numeric" className={cn(inp, "w-14 text-center")}
+                  placeholder="0" value={pad[key] as string}
+                  onChange={(e) => updatePad({ [key]: e.target.value })} />
               </div>
             ))}
           </div>
 
           {/* Page Size */}
-          <div className="border-b px-3 py-2 space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Page Size</p>
-            <select
-              className="h-7 w-full rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-              value={pad.pageSize}
-              onChange={(e) => updatePad({ pageSize: e.target.value as PadSettings["pageSize"] })}
-            >
+          <div className="rounded-xl border bg-card p-2.5 shadow-soft space-y-1.5">
+            <p className={settingLabel}>Page Size</p>
+            <select className={cn(inp, "w-full")} value={pad.pageSize}
+              onChange={(e) => updatePad({ pageSize: e.target.value as PadSettings["pageSize"] })}>
               <option value="A4">A4</option>
               <option value="A5">A5</option>
               <option value="Letter">Letter</option>
               <option value="Custom">Custom</option>
             </select>
             {pad.pageSize === "Custom" && (
-              <div className="flex items-center gap-1.5">
-                <input className="h-7 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary" value={pad.customWidth} placeholder="W" onChange={(e) => updatePad({ customWidth: e.target.value })} />
-                <span className="text-xs text-muted-foreground">×</span>
-                <input className="h-7 flex-1 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary" value={pad.customHeight} placeholder="H" onChange={(e) => updatePad({ customHeight: e.target.value })} />
-                <span className="text-xs text-muted-foreground">in</span>
+              <div className="flex items-center gap-1">
+                <input className={cn(inp, "flex-1")} value={pad.customWidth} placeholder="W (in)"
+                  onChange={(e) => updatePad({ customWidth: e.target.value })} />
+                <span className="text-[10px] text-muted-foreground">×</span>
+                <input className={cn(inp, "flex-1")} value={pad.customHeight} placeholder="H (in)"
+                  onChange={(e) => updatePad({ customHeight: e.target.value })} />
               </div>
             )}
           </div>
 
-          {/* Margins */}
-          <div className="border-b px-3 py-2 space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Margins (in)</p>
-            {/* Cross layout: Top / Left·Right / Bottom */}
-            <div className="flex flex-col items-center gap-0.5">
-              {/* Top */}
-              <input type="text" inputMode="numeric" className="h-6 w-16 rounded border bg-background px-1.5 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary" placeholder="Top" value={pad.marginTop} onChange={(e) => updatePad({ marginTop: e.target.value })} />
-              {/* Middle row: Left — spacer — Right */}
-              <div className="flex w-full items-center gap-1">
-                <input type="text" inputMode="numeric" className="h-6 w-16 rounded border bg-background px-1.5 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary" placeholder="Left" value={pad.marginLeft} onChange={(e) => updatePad({ marginLeft: e.target.value })} />
-                <div className="flex flex-1 items-center justify-center">
-                  <div className="h-px w-full border-t border-dashed border-muted-foreground/30" />
-                </div>
-                <input type="text" inputMode="numeric" className="h-6 w-16 rounded border bg-background px-1.5 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary" placeholder="Right" value={pad.marginRight} onChange={(e) => updatePad({ marginRight: e.target.value })} />
-              </div>
-              {/* Bottom */}
-              <input type="text" inputMode="numeric" className="h-6 w-16 rounded border bg-background px-1.5 text-center text-[10px] outline-none focus:ring-1 focus:ring-primary" placeholder="Bottom" value={pad.marginBottom} onChange={(e) => updatePad({ marginBottom: e.target.value })} />
-            </div>
-          </div>
-
-          {/* Header / Footer height */}
-          <div className="border-b px-3 py-2 space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Section Heights (in)</p>
-            {(
-              [["Header","headerHeight"],["Footer","footerHeight"]] as [string, keyof PadSettings][]
-            ).map(([label, key]) => (
-              <div key={key} className="flex items-center gap-2">
-                <span className="w-24 shrink-0 text-xs text-muted-foreground">{label} Height</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  className="h-7 w-16 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-                  placeholder="1.5"
-                  value={pad[key] as string}
-                  onChange={(e) => updatePad({ [key]: e.target.value })}
-                />
-                <span className="text-xs text-muted-foreground">in</span>
+          {/* Section Heights */}
+          <div className="rounded-xl border bg-card p-2.5 shadow-soft space-y-1.5">
+            <p className={settingLabel}>Header Height (in)</p>
+            {([["Header", "headerHeight"], ["Footer", "footerHeight"]] as [string, keyof PadSettings][]).map(([label, key]) => (
+              <div key={key} className="flex items-center gap-1">
+                <span className="w-12 shrink-0 text-[10px] text-muted-foreground">{label}</span>
+                <input type="text" inputMode="numeric" className={cn(inp, "w-12 text-center")}
+                  placeholder="1.5" value={pad[key] as string}
+                  onChange={(e) => updatePad({ [key]: e.target.value })} />
+                <span className="text-[10px] text-muted-foreground">in</span>
               </div>
             ))}
           </div>
 
-          {/* Body column split */}
-          <div className="px-3 py-2 space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Body Column Split</p>
+          {/* Margins */}
+          <div className="rounded-xl border bg-card p-2.5 shadow-soft space-y-1.5">
+            <p className={settingLabel}>Margins (in)</p>
+            <div className="flex flex-col items-center gap-1">
+              <input type="text" inputMode="numeric" className={cn(inp, "w-14 text-center text-[10px]")}
+                placeholder="Top" value={pad.marginTop} onChange={(e) => updatePad({ marginTop: e.target.value })} />
+              <div className="flex w-full items-center gap-1">
+                <input type="text" inputMode="numeric" className={cn(inp, "w-14 text-center text-[10px]")}
+                  placeholder="Left" value={pad.marginLeft} onChange={(e) => updatePad({ marginLeft: e.target.value })} />
+                <div className="h-px flex-1 border-t border-dashed border-muted-foreground/30" />
+                <input type="text" inputMode="numeric" className={cn(inp, "w-14 text-center text-[10px]")}
+                  placeholder="Right" value={pad.marginRight} onChange={(e) => updatePad({ marginRight: e.target.value })} />
+              </div>
+              <input type="text" inputMode="numeric" className={cn(inp, "w-14 text-center text-[10px]")}
+                placeholder="Bottom" value={pad.marginBottom} onChange={(e) => updatePad({ marginBottom: e.target.value })} />
+            </div>
+          </div>
+
+          {/* Body Column Split */}
+          <div className="rounded-xl border bg-card p-2.5 shadow-soft space-y-1.5">
+            <p className={settingLabel}>Body Split</p>
             <div className="flex h-5 overflow-hidden rounded border text-[9px] font-bold">
               <div className="relative flex items-center justify-center bg-primary/15 text-primary transition-all" style={{ width: `${pad.bodyLeftPct}%` }}>
                 {pad.bodyLeftPct}%
@@ -659,184 +975,113 @@ function PadSettingsPanel({
                 {100 - parseInt(pad.bodyLeftPct || "35")}%
               </div>
             </div>
-            <input
-              type="range"
-              min="15"
-              max="60"
-              step="1"
-              className="w-full accent-primary"
-              value={pad.bodyLeftPct}
-              onChange={(e) => updatePad({ bodyLeftPct: e.target.value })}
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Left column</span>
-              <span>Right column</span>
+            <input type="range" min="15" max="60" step="1" className="w-full accent-primary"
+              value={pad.bodyLeftPct} onChange={(e) => updatePad({ bodyLeftPct: e.target.value })} />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Patient info</span><span>Rx</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── MIDDLE: Header + Footer editors ── */}
+        <div key={selectedChamberId} className="space-y-4" style={lightTheme}>
+
+          {/* ── Header section ── */}
+          <div className="overflow-hidden rounded-xl border bg-white shadow-soft" style={{ color: "black" }}>
+            <div className="flex items-center gap-2 border-b bg-gray-50 px-4 py-2.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Header</span>
+              <span className="ml-auto text-[10px] text-gray-400">{pad.headerHeight || "1.7"} in tall</span>
+            </div>
+
+            {/* 3-column editors: Bengali | Logo+Centre | English */}
+            <div className="flex divide-x">
+
+              {/* Bengali — fills all remaining left space */}
+              <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
+                <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  বাংলা — বাম
+                </p>
+                <FreeformEditor
+                  initialValue={pad.headerBnLines}
+                  onChange={(v) => updatePad({ headerBnLines: v })}
+                  placeholder="ডাঃ নাম, এমবিবিএস…"
+                  editorHeight={hdrPx}
+                />
+              </div>
+
+              {/* Logo + centre text — auto-sized to content */}
+              <div className="flex shrink-0 flex-col items-center gap-1 p-2"
+                style={{ minWidth: 100, maxWidth: 160 }}>
+                <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  Logo / Centre
+                </p>
+                <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
+                <FreeformEditor
+                  initialValue={pad.headerMidLines}
+                  onChange={(v) => updatePad({ headerMidLines: v })}
+                  placeholder="Clinic name…"
+                  editorHeight={Math.max(hdrPx - 48, 36)}
+                  noToolbar
+                />
+              </div>
+
+              {/* English — fills all remaining right space */}
+              <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
+                <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  English — ডান
+                </p>
+                <FreeformEditor
+                  initialValue={pad.headerEnLines}
+                  onChange={(v) => updatePad({ headerEnLines: v })}
+                  placeholder="Dr. Name, MBBS…"
+                  editorHeight={hdrPx}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Preview button */}
-          <div className="border-t px-3 py-2">
-            <button
-              type="button"
-              disabled={!chamberSelected}
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/8 py-2 text-xs font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => setPreviewOpen(true)}
-            >
-              <Eye className="h-3.5 w-3.5" />
-              Preview Pad
-            </button>
-          </div>
-
-        {/* Save / Cancel */}
-        <div className="border-t bg-primary/5 px-3 py-2.5 flex gap-2">
-          <button
-            type="button"
-            className="flex-1 rounded border py-1.5 text-xs font-semibold hover:bg-muted"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="flex-1 rounded bg-primary py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-            onClick={onSave}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-
-      {/* ── Right: Header + Body + Footer ─────────── */}
-      {!chamberSelected ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/60">
-          Select a chamber to edit its header &amp; footer
-        </div>
-      ) : (
-      <div
-        className="flex flex-1 flex-col overflow-y-auto"
-        style={{
-          "--background":        "0 0% 100%",
-          "--foreground":        "0 0% 0%",
-          "--card":              "0 0% 100%",
-          "--card-foreground":   "0 0% 0%",
-          "--muted":             "0 0% 94%",
-          "--muted-foreground":  "0 0% 10%",
-          "--border":            "0 0% 86%",
-          "--primary":           "0 0% 10%",
-          "--primary-foreground":"0 0% 100%",
-          background:            "white",
-          color:                 "black",
-          colorScheme:           "light",
-        } as React.CSSProperties}
-      >
-
-        {/* Header section */}
-        <div className="shrink-0 border-b">
-          <div className="border-b bg-primary/5 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide text-primary">
-            Header
-          </div>
-          {/* 3-column header editor — height locked to headerHeight inches */}
-          {(() => {
-            const hdrPx = Math.round((parseFloat(pad.headerHeight) || 1.7) * 96);
-            return (
-              <div className="grid grid-cols-3 divide-x bg-card">
-                {/* English column */}
-                <div className="p-3">
-                  <p className="mb-2 text-xs font-semibold text-primary/70">Doctor's Info (English)</p>
-                  <FreeformEditor
-                    initialValue={pad.headerEnLines}
-                    onChange={(json) => updatePad({ headerEnLines: json })}
-                    placeholder="Dr. Name, MBBS…"
-                    editorHeight={hdrPx}
-                  />
-                </div>
-
-                {/* Logo + Middle column */}
-                <div className="flex flex-col gap-2 p-3">
-                  <p className="text-xs font-semibold text-primary/70">Logo / Specialty</p>
-                  <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
-                  <FreeformEditor
-                    initialValue={pad.headerMidLines}
-                    onChange={(json) => updatePad({ headerMidLines: json })}
-                    placeholder="Specialty, clinic name…"
-                    editorHeight={hdrPx}
-                  />
-                </div>
-
-                {/* Bengali column */}
-                <div className="p-3">
-                  <p className="mb-2 text-xs font-semibold text-primary/70">ডাক্তারের তথ্য (বাংলা)</p>
-                  <FreeformEditor
-                    initialValue={pad.headerBnLines}
-                    onChange={(json) => updatePad({ headerBnLines: json })}
-                    placeholder="ডাঃ নাম, এমবিবিএস…"
-                    editorHeight={hdrPx}
-                  />
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* Prescription body area — shows column split */}
-        <div className="flex min-h-32 flex-1">
-          <div
-            className="flex items-center justify-center border-r border-dashed border-muted-foreground/30 text-xs text-muted-foreground/30 transition-all"
-            style={{ width: `${pad.bodyLeftPct}%` }}
-          >
-            Left {pad.bodyLeftPct}%
-          </div>
-          <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground/30">
-            Right {100 - parseInt(pad.bodyLeftPct || "35")}%
-          </div>
-        </div>
-
-        {/* Footer section */}
-        <div className="shrink-0 border-t bg-card">
-          <div className="border-b bg-primary/5 px-3 py-3 text-center text-sm font-bold uppercase tracking-wide text-primary">
-            Footer
-          </div>
-          <div className="p-4 space-y-3">
-            <div className="flex items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded"
+          {/* ── Footer section ── */}
+          <div className="overflow-hidden rounded-xl border bg-white shadow-soft" style={{ color: "black" }}>
+            <div className="flex items-center gap-3 border-b bg-gray-50 px-4 py-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Footer</span>
+              <label className="ml-2 flex cursor-pointer items-center gap-1.5 text-xs text-gray-500">
+                <input type="checkbox" className="h-3.5 w-3.5 rounded"
                   checked={pad.footerShowDivider}
-                  onChange={(e) => updatePad({ footerShowDivider: e.target.checked })}
-                />
+                  onChange={(e) => updatePad({ footerShowDivider: e.target.checked })} />
                 Divider line
               </label>
-              <div className="ml-auto flex rounded-md border overflow-hidden">
-                {([
-                  ["left",   <AlignLeft   key="l" className="h-3.5 w-3.5" />],
-                  ["center", <AlignCenter key="c" className="h-3.5 w-3.5" />],
-                  ["right",  <AlignRight  key="r" className="h-3.5 w-3.5" />],
-                ] as [string, React.ReactNode][]).map(([a, icon]) => (
-                  <button
-                    key={a}
-                    type="button"
-                    className={cn("flex items-center justify-center px-2.5 py-1.5 transition", pad.footerAlignment === a ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
-                    onClick={() => updatePad({ footerAlignment: a as PadSettings["footerAlignment"] })}
-                  >{icon}</button>
-                ))}
-              </div>
+              <span className="ml-auto text-[10px] text-gray-400">{pad.footerHeight || "0.8"} in</span>
             </div>
-            <textarea
-              className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-              placeholder="Visiting hours, address, website…"
-              value={pad.footerText}
-              style={{
-                textAlign: pad.footerAlignment,
-                height: Math.round((parseFloat(pad.footerHeight) || 0.8) * 96),
-                overflow: "hidden",
-              }}
-              onChange={(e) => updatePad({ footerText: e.target.value })}
-            />
+            <div className="p-3">
+              <FreeformEditor
+                initialValue={pad.footerText}
+                onChange={(v) => updatePad({ footerText: v })}
+                placeholder="Visiting hours · Address · Phone · Website…"
+                editorHeight={Math.round((parseFloat(pad.footerHeight) || 0.8) * _PX_IN)}
+              />
+            </div>
           </div>
         </div>
+
+        {/* ── RIGHT: Live preview (sticky) ── */}
+        <div className="xl:sticky xl:top-4 xl:self-start">
+          <PadLivePreview pad={pad} />
+        </div>
       </div>
-      )}
+
+      {/* ── Action bar ── */}
+      <div className="flex flex-wrap items-center justify-end gap-2 rounded-xl border bg-card px-5 py-3 shadow-soft">
+        <button type="button"
+          className="rounded-lg border px-4 py-1.5 text-xs font-semibold transition hover:bg-muted"
+          onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button"
+          className="rounded-lg bg-primary px-5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+          onClick={onSave}>
+          Save Changes
+        </button>
+      </div>
     </div>
   );
 }
@@ -882,18 +1127,18 @@ function ChamberDropdown({
   }
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative inline-flex">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-2 rounded-md border bg-background px-3 py-2.5 text-sm font-semibold hover:bg-muted"
+        className="flex items-center gap-2 rounded-full border bg-background px-4 py-1.5 text-sm font-semibold shadow-sm transition hover:bg-muted"
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="truncate">{selected?.name ?? "Select Chamber"}</span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-180")} />
+        <span className="max-w-[220px] truncate">{selected?.name ?? "Select Chamber"}</span>
+        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 opacity-60 transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border bg-card shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1.5 min-w-[260px] overflow-hidden rounded-xl border bg-card shadow-xl">
           <div className="max-h-52 overflow-y-auto">
             {chambers.map((c) => (
               <div
@@ -965,17 +1210,23 @@ function ChamberDropdown({
 
 function AppShellChamberSettingsDialog({
   chambers,
+  initialChamberId,
   onClose,
   onUpdate,
 }: {
   chambers: Chamber[];
   userEmail: string;
+  initialChamberId?: string;
   onClose: () => void;
   onUpdate: (chambers: Chamber[]) => void;
 }) {
-  const [pad, setPad] = useState<PadSettings>(() => loadPadSettings());
   const [localChambers, setLocalChambers] = useState<Chamber[]>(chambers);
-  const [selectedChamberId, setSelectedChamberId] = useState<string>("");
+  const [selectedChamberId, setSelectedChamberId] = useState<string>(initialChamberId ?? "");
+  const [pad, setPad] = useState<PadSettings>(() =>
+    initialChamberId ? loadChamberPad(initialChamberId) : loadPadSettings()
+  );
+  const [savedToast, setSavedToast] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function updatePad(patch: Partial<PadSettings>) {
     setPad((prev) => ({ ...prev, ...patch }));
@@ -989,7 +1240,9 @@ function AppShellChamberSettingsDialog({
   function handleSave() {
     if (selectedChamberId) saveChamberPad(selectedChamberId, pad);
     else savePadSettings(pad);
-    onClose();
+    setSavedToast(true);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setSavedToast(false), 3000);
   }
 
   function addChamber(name: string) {
@@ -1009,7 +1262,7 @@ function AppShellChamberSettingsDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex bg-background">
+    <>
       <PadSettingsPanel
         pad={pad}
         updatePad={updatePad}
@@ -1021,7 +1274,18 @@ function AppShellChamberSettingsDialog({
         onSave={handleSave}
         onCancel={onClose}
       />
-    </div>
+
+      {/* ── Saved toast ── */}
+      <div
+        className={cn(
+          "fixed bottom-6 right-6 z-[300] flex items-center gap-2 rounded-xl border bg-card px-5 py-3 shadow-2xl transition-all duration-300",
+          savedToast ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0 pointer-events-none"
+        )}
+      >
+        <span className="text-base">✓</span>
+        <span className="text-sm font-semibold">Settings saved</span>
+      </div>
+    </>
   );
 }
 
@@ -1029,13 +1293,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<"checking" | "ready">("checking");
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [chambers, setChambers] = useState<Chamber[]>(DEFAULT_CHAMBERS);
   const [selectedChamber, setSelectedChamber] = useState<Chamber>(DEFAULT_CHAMBERS[0]);
   const [chamberOpen, setChamberOpen] = useState(false);
   const [chamberSettingsOpen, setChamberSettingsOpen] = useState(false);
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [verifyPassword, setVerifyPassword] = useState("");
+  const [verifyError, setVerifyError] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const verifyCallback = useRef<() => void>(() => {});
   const avatarRef = useRef<HTMLDivElement>(null);
   const chamberRef = useRef<HTMLDivElement>(null);
   const hydrated = useSessionHydrated();
@@ -1158,6 +1426,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (token) void logoutSession(token).catch(() => undefined);
   }
 
+  function openVerify(onSuccess: () => void) {
+    verifyCallback.current = onSuccess;
+    setVerifyPassword("");
+    setVerifyError("");
+    setVerifyOpen(true);
+  }
+
+  async function doVerify() {
+    if (!verifyPassword.trim()) { setVerifyError("পাসওয়ার্ড দিন"); return; }
+    setVerifying(true);
+    setVerifyError("");
+    try {
+      await loginWithPassword(user?.email ?? "", verifyPassword);
+      setVerifyOpen(false);
+      verifyCallback.current();
+    } catch {
+      setVerifyError("পাসওয়ার্ড সঠিক নয়");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   if (!hydrated || sessionStatus === "checking") {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
@@ -1180,6 +1470,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen">
       <CommandPalette />
 
+      {/* ── Access verification modal ── */}
+      {verifyOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setVerifyOpen(false); }}>
+          <div className="w-full max-w-sm rounded-2xl border bg-card p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Settings className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-bold">Verify Access</p>
+                <p className="text-xs text-muted-foreground">Enter your password to verify</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <input
+                type="password"
+                autoFocus
+                placeholder="Current password"
+                value={verifyPassword}
+                className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                onChange={(e) => { setVerifyPassword(e.target.value); setVerifyError(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") void doVerify(); if (e.key === "Escape") setVerifyOpen(false); }}
+              />
+              {verifyError && <p className="text-xs text-destructive">{verifyError}</p>}
+              <div className="flex gap-2">
+                <button type="button"
+                  className="flex-1 rounded-lg border px-4 py-1.5 text-sm font-medium hover:bg-muted"
+                  onClick={() => setVerifyOpen(false)}>
+                  Cancel
+                </button>
+                <button type="button"
+                  disabled={verifying}
+                  className="flex-1 rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-60 hover:bg-primary/90"
+                  onClick={() => void doVerify()}>
+                  {verifying ? "Verifying…" : "Verify"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
@@ -1194,24 +1527,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           "no-print fixed inset-y-0 left-0 z-40 flex w-[95px] flex-col border-r bg-card transition-all duration-200",
           // Mobile: slide in/out
           mobileOpen ? "translate-x-0" : "-translate-x-full",
-          // Desktop: collapse hides it
+          // Desktop: always visible
           "lg:translate-x-0",
-          sidebarCollapsed && "lg:-translate-x-full"
         )}
       >
-        {/* Logo / collapse button — same height as topbar */}
-        <button
-          type="button"
-          aria-label="Collapse sidebar"
-          className="flex h-16 w-full shrink-0 items-center justify-center border-b transition-colors hover:bg-muted/40"
-          onClick={() => setSidebarCollapsed(true)}
+        {/* Logo */}
+        <div
+          className="flex h-16 w-full shrink-0 items-center justify-center border-b"
         >
           <svg viewBox="0 0 40 40" className="h-7 w-7 shrink-0" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="20" cy="20" r="20" className="fill-primary/10" />
             <path d="M10 27 C13 17 23 12 33 17 C25 20 17 24 21 31 C17 25 12 23 10 27Z" className="fill-primary" />
             <path d="M21 31 C19 25 25 21 33 17 C30 24 26 28 21 31Z" fill="currentColor" className="text-primary/60" />
           </svg>
-        </button>
+        </div>
 
         {/* Nav items */}
         <nav className="flex flex-1 flex-col items-center gap-0.5 overflow-y-auto py-3 px-2">
@@ -1221,19 +1550,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               item.href === "/"
                 ? pathname === "/"
                 : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href as never}
-                title={item.label}
-                className={cn(
-                  "flex w-full flex-col items-center gap-1.5 rounded-xl px-1 py-2.5 transition-colors",
-                  active
-                    ? "text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                )}
-                onClick={() => setMobileOpen(false)}
-              >
+            const isPrescription = item.href === "/prescriptions/new";
+            const innerContent = (
+              <>
                 <div
                   className={cn(
                     "flex h-11 w-11 items-center justify-center rounded-xl border-2 transition-colors",
@@ -1247,6 +1566,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span className={cn("text-center text-[10px] font-medium leading-tight", active ? "text-primary" : "")}>
                   {item.label}
                 </span>
+              </>
+            );
+            const sharedClass = cn(
+              "flex w-full flex-col items-center gap-1.5 rounded-xl px-1 py-2.5 transition-colors",
+              active ? "text-primary-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            );
+            if (isPrescription) {
+              return (
+                <button
+                  key={item.href}
+                  type="button"
+                  title={item.label}
+                  className={sharedClass}
+                  onClick={() => { setMobileOpen(false); openVerify(() => router.push("/prescriptions/new")); }}
+                >
+                  {innerContent}
+                </button>
+              );
+            }
+            return (
+              <Link
+                key={item.href}
+                href={item.href as never}
+                title={item.label}
+                className={sharedClass}
+                onClick={() => setMobileOpen(false)}
+              >
+                {innerContent}
               </Link>
             );
           })}
@@ -1254,35 +1601,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <div className={cn("transition-all duration-200 lg:pl-[95px]", sidebarCollapsed && "lg:pl-0")}>
+      <div className="lg:pl-[95px]">
         <header className="no-print sticky top-0 z-50 flex h-16 items-center border-b bg-card px-3 shadow-sm lg:px-5">
-          {/* Left: logo + system name */}
+          {/* Left: mobile menu + system name */}
           <div className="flex min-w-0 items-center gap-3">
-            {sidebarCollapsed && (
-              <button
-                type="button"
-                aria-label="Expand sidebar"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-muted/60"
-                onClick={() => setSidebarCollapsed(false)}
-              >
-                <svg viewBox="0 0 40 40" className="h-7 w-7" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="20" cy="20" r="20" className="fill-primary/10" />
-                  <path d="M10 27 C13 17 23 12 33 17 C25 20 17 24 21 31 C17 25 12 23 10 27Z" className="fill-primary" />
-                  <path d="M21 31 C19 25 25 21 33 17 C30 24 26 28 21 31Z" fill="currentColor" className="text-primary/60" />
-                </svg>
-              </button>
-            )}
-            {!sidebarCollapsed && (
-              <Button
-                aria-label="Open menu"
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 shrink-0 lg:hidden"
-                onClick={() => setMobileOpen((o) => !o)}
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-            )}
+            <Button
+              aria-label="Open menu"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 shrink-0 lg:hidden"
+              onClick={() => setMobileOpen((o) => !o)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
             <span className="truncate text-xl font-extrabold leading-none tracking-tight text-primary">
               Trust Prescription System
             </span>
@@ -1333,7 +1664,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                      onClick={() => { setChamberOpen(false); setChamberSettingsOpen(true); }}
+                      onClick={() => { setChamberOpen(false); openVerify(() => setChamberSettingsOpen(true)); }}
                     >
                       <Settings className="h-3.5 w-3.5" />
                       Manage Chambers
@@ -1382,26 +1713,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-[1440px] px-4 pt-3 pb-4 lg:px-5">{children}</main>
+        <main className={cn("mx-auto w-full max-w-[1440px] pt-3 pb-6", chamberSettingsOpen ? "px-2 lg:px-2" : "px-4 lg:px-5")}>
+          {chamberSettingsOpen ? (
+            <AppShellChamberSettingsDialog
+              chambers={chambers}
+              userEmail={user?.email ?? ""}
+              initialChamberId={selectedChamber.id}
+              onClose={() => setChamberSettingsOpen(false)}
+              onUpdate={(updated) => {
+                const withDefault = updated.length === 0 ? DEFAULT_CHAMBERS : updated;
+                setChambers(withDefault);
+                try { localStorage.setItem("rx-chambers", JSON.stringify(withDefault)); } catch {}
+                if (!updated.find((c) => c.id === selectedChamber.id)) {
+                  const first = withDefault[0] ?? DEFAULT_CHAMBERS[0];
+                  setSelectedChamber(first);
+                  try { localStorage.setItem("rx-selected-chamber", JSON.stringify(first)); } catch {}
+                }
+              }}
+            />
+          ) : children}
+        </main>
       </div>
-
-      {chamberSettingsOpen && (
-        <AppShellChamberSettingsDialog
-          chambers={chambers}
-          userEmail={user?.email ?? ""}
-          onClose={() => setChamberSettingsOpen(false)}
-          onUpdate={(updated) => {
-            const withDefault = updated.length === 0 ? DEFAULT_CHAMBERS : updated;
-            setChambers(withDefault);
-            try { localStorage.setItem("rx-chambers", JSON.stringify(withDefault)); } catch {}
-            if (!updated.find((c) => c.id === selectedChamber.id)) {
-              const first = withDefault[0] ?? DEFAULT_CHAMBERS[0];
-              setSelectedChamber(first);
-              try { localStorage.setItem("rx-selected-chamber", JSON.stringify(first)); } catch {}
-            }
-          }}
-        />
-      )}
     </div>
   );
 }
