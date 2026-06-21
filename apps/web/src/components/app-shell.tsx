@@ -626,22 +626,25 @@ function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => vo
               <div style={{
                 flexShrink: 0,
                 display: "flex", alignItems: "center", gap: 6,
-                padding: "5px 4px",
+                padding: "5px 6px",
                 borderBottom: "1px solid #aaa",
-                fontSize: 12, color: "#111",
+                fontSize: 11, color: "#111",
               }}>
-                <span style={{ fontWeight: 600 }}>Name:</span>
+                <span style={{ fontWeight: 600 }}>Patient Name:</span>
                 <span style={{ ...uline, flex: 2 }} />
+                <span style={{ fontSize: 10, color: "#888", marginLeft: 4 }}>(No.:</span>
+                <span style={{ ...uline, minWidth: 55, flex: "none" }} />
+                <span style={{ fontSize: 10, color: "#888" }}>)</span>
                 <span style={{ fontWeight: 600, marginLeft: 8 }}>Age:</span>
-                <span style={{ ...uline, minWidth: 60, flex: "none" }} />
+                <span style={{ ...uline, minWidth: 50, flex: "none" }} />
                 <span style={{ fontWeight: 600, marginLeft: 8 }}>Date:</span>
-                <span style={{ ...uline, minWidth: 90, flex: "none" }} />
+                <span style={{ ...uline, minWidth: 80, flex: "none" }} />
               </div>
 
               {/* ── Body ── */}
               <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
-                {/* Left patient info column */}
+                {/* Left: clinical fields */}
                 <div style={{
                   width: `${bodyLeft}%`, flexShrink: 0,
                   borderRight: "1px solid #bbb",
@@ -649,29 +652,24 @@ function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => vo
                   padding: "8px 8px",
                   overflow: "hidden", gap: 7,
                 }}>
-                  {[
-                    ["Weight", "kg"], ["BP", "mmHg"], ["Chief Complaints", ""],
-                    ["On Examination", ""], ["Investigation", ""], ["Diagnosis", ""],
-                  ].map(([label, unit]) => (
+                  {["Complaint", "History", "Findings", "Investigation", "Diagnosis"].map((label) => (
                     <div key={label}>
                       <div style={{ fontSize: 9.5, fontWeight: 700, color: "#444", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
-                        {label}{unit ? ` (${unit})` : ""}
+                        {label}
                       </div>
                       <div style={{ borderBottom: "1px solid #ccc", paddingBottom: 7 }} />
                     </div>
                   ))}
                 </div>
 
-                {/* Right: Rx area */}
-                <div style={{ flex: 1, padding: "8px 12px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                  <div style={{ fontSize: 30, fontFamily: "serif", fontWeight: 700, color: "#111", lineHeight: 1, marginBottom: 8 }}>℞</div>
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} style={{ marginBottom: 14 }}>
-                      <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
-                        <span style={{ fontSize: 10, color: "#888", minWidth: 14, lineHeight: 1 }}>{i + 1}.</span>
-                        <div style={{ flex: 1, borderBottom: "1px solid #bbb" }} />
+                {/* Right: prescription fields */}
+                <div style={{ flex: 1, padding: "8px 10px", display: "flex", flexDirection: "column", overflow: "hidden", gap: 7 }}>
+                  {["Medication", "Glass Prescription", "Advice", "Follow-Up", "Referral"].map((label) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 9.5, fontWeight: 700, color: "#444", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+                        {label}
                       </div>
-                      <div style={{ marginLeft: 18, marginTop: 4, borderBottom: "1px dashed #ddd" }} />
+                      <div style={{ borderBottom: "1px solid #ccc", paddingBottom: 7 }} />
                     </div>
                   ))}
                 </div>
@@ -788,31 +786,30 @@ function PadLivePreview({ pad }: { pad: PadSettings }) {
               </div>
 
               {/* Patient info row */}
-              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6, padding: "5px 4px", borderBottom: "1px solid #aaa", fontSize: 12, color: "#111" }}>
-                <span style={{ fontWeight: 600 }}>Name:</span><span style={{ ...uline, flex: 2 }} />
-                <span style={{ fontWeight: 600, marginLeft: 8 }}>Age:</span><span style={{ ...uline, minWidth: 60, flex: "none" as const }} />
-                <span style={{ fontWeight: 600, marginLeft: 8 }}>Date:</span><span style={{ ...uline, minWidth: 90, flex: "none" as const }} />
+              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", borderBottom: "1px solid #aaa", fontSize: 11, color: "#111" }}>
+                <span style={{ fontWeight: 600 }}>Patient Name:</span><span style={{ ...uline, flex: 2 }} />
+                <span style={{ fontSize: 10, color: "#888", marginLeft: 4 }}>(No.:</span><span style={{ ...uline, minWidth: 55, flex: "none" as const }} /><span style={{ fontSize: 10, color: "#888" }}>)</span>
+                <span style={{ fontWeight: 600, marginLeft: 8 }}>Age:</span><span style={{ ...uline, minWidth: 50, flex: "none" as const }} />
+                <span style={{ fontWeight: 600, marginLeft: 8 }}>Date:</span><span style={{ ...uline, minWidth: 80, flex: "none" as const }} />
               </div>
 
               {/* Body */}
               <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+                {/* Left: clinical fields */}
                 <div style={{ width: `${bodyLeft}%`, flexShrink: 0, borderRight: "1px solid #bbb", padding: "8px", display: "flex", flexDirection: "column", gap: 7, overflow: "hidden" }}>
-                  {["Weight (kg)", "BP (mmHg)", "Chief Complaints", "On Examination", "Investigation", "Diagnosis"].map((label) => (
+                  {["Complaint", "History", "Findings", "Investigation", "Diagnosis"].map((label) => (
                     <div key={label}>
                       <div style={{ fontSize: 9.5, fontWeight: 700, color: "#444", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 2 }}>{label}</div>
                       <div style={{ borderBottom: "1px solid #ccc", paddingBottom: 7 }} />
                     </div>
                   ))}
                 </div>
-                <div style={{ flex: 1, padding: "8px 12px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                  <div style={{ fontSize: 30, fontFamily: "serif", fontWeight: 700, color: "#111", lineHeight: 1, marginBottom: 8 }}>℞</div>
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} style={{ marginBottom: 14 }}>
-                      <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
-                        <span style={{ fontSize: 10, color: "#888", minWidth: 14 }}>{i + 1}.</span>
-                        <div style={{ flex: 1, borderBottom: "1px solid #bbb" }} />
-                      </div>
-                      <div style={{ marginLeft: 18, marginTop: 4, borderBottom: "1px dashed #ddd" }} />
+                {/* Right: prescription fields */}
+                <div style={{ flex: 1, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 7, overflow: "hidden" }}>
+                  {["Medication", "Glass Prescription", "Advice", "Follow-Up", "Referral"].map((label) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 9.5, fontWeight: 700, color: "#444", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 2 }}>{label}</div>
+                      <div style={{ borderBottom: "1px solid #ccc", paddingBottom: 7 }} />
                     </div>
                   ))}
                 </div>
@@ -1434,7 +1431,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   async function doVerify() {
-    if (!verifyPassword.trim()) { setVerifyError("পাসওয়ার্ড দিন"); return; }
+    if (!verifyPassword.trim()) { setVerifyError("Please enter your password"); return; }
     setVerifying(true);
     setVerifyError("");
     try {
@@ -1442,7 +1439,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setVerifyOpen(false);
       verifyCallback.current();
     } catch {
-      setVerifyError("পাসওয়ার্ড সঠিক নয়");
+      setVerifyError("Incorrect password. Please try again.");
     } finally {
       setVerifying(false);
     }
@@ -1574,15 +1571,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
             if (isPrescription) {
               return (
-                <button
-                  key={item.href}
-                  type="button"
-                  title={item.label}
-                  className={sharedClass}
-                  onClick={() => { setMobileOpen(false); openVerify(() => router.push("/prescriptions/new")); }}
-                >
+                <Link key={item.href} href={item.href} title={item.label} className={sharedClass}
+                  onClick={() => setMobileOpen(false)}>
                   {innerContent}
-                </button>
+                </Link>
               );
             }
             return (
