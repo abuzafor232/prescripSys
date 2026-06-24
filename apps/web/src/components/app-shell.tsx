@@ -784,7 +784,7 @@ function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => vo
 
 // ─── Live A4 Preview ─────────────────────────────────────────────────────────
 
-function PadLivePreview({ pad }: { pad: PadSettings }) {
+function PadLivePreview({ pad, className }: { pad: PadSettings; className?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.45);
 
@@ -798,12 +798,17 @@ function PadLivePreview({ pad }: { pad: PadSettings }) {
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const update = () => setScale((el.clientWidth - 24) / pageW);
+    const update = () => {
+      const pad = 24;
+      const scaleW = (el.clientWidth  - pad) / pageW;
+      const scaleH = (el.clientHeight - pad) / pageH;
+      setScale(Math.min(scaleW, scaleH));
+    };
     update();
     const obs = new ResizeObserver(update);
     obs.observe(el);
     return () => obs.disconnect();
-  }, [pageW]);
+  }, [pageW, pageH]);
 
   const ip  = (v: string, fb: number) => (parseFloat(v) || fb) * _PX_IN;
   const mT  = ip(pad.marginTop,    0.6);
@@ -817,7 +822,7 @@ function PadLivePreview({ pad }: { pad: PadSettings }) {
   const uline: React.CSSProperties = { borderBottom: "1px solid #999", display: "inline-block", minWidth: 80 };
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-soft">
+    <div className={cn("flex flex-col overflow-hidden rounded-xl border bg-card shadow-soft", className)}>
       {/* Title bar */}
       <div className="flex shrink-0 items-center gap-2 border-b bg-muted/40 px-3 py-2">
         <Eye className="h-3.5 w-3.5 text-primary/60" />
@@ -832,9 +837,9 @@ function PadLivePreview({ pad }: { pad: PadSettings }) {
         </div>
       </div>
 
-      {/* Paper container */}
-      <div ref={wrapRef} className="bg-muted/10 p-3">
-        <div style={{ width: Math.round(pageW * scale), height: Math.round(pageH * scale), position: "relative", overflow: "hidden", margin: "0 auto" }}>
+      {/* Paper container — stretches to fill available card height */}
+      <div ref={wrapRef} className="flex-1 min-h-0 bg-muted/10 p-3 flex items-start justify-center overflow-hidden">
+        <div style={{ width: Math.round(pageW * scale), height: Math.round(pageH * scale), position: "relative", overflow: "hidden", flexShrink: 0 }}>
           {/* Full-size page scaled down */}
           <div style={{
             width: pageW, height: pageH,
@@ -969,7 +974,7 @@ function PadSettingsPanel({
       />
 
       {/* ── 3-column main grid ── */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[168px_1fr_355px] xl:items-start">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[168px_1fr_355px] xl:items-stretch">
 
         {/* ── LEFT: Settings ── */}
         <div className="space-y-1.5">
@@ -1145,8 +1150,8 @@ function PadSettingsPanel({
         </div>
 
         {/* ── RIGHT: Live preview (sticky) ── */}
-        <div className="xl:sticky xl:top-4 xl:self-start">
-          <PadLivePreview pad={pad} />
+        <div className="h-full flex flex-col">
+          <PadLivePreview pad={pad} className="flex-1 min-h-0" />
         </div>
       </div>
 
