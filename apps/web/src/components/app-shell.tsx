@@ -974,7 +974,7 @@ function PadSettingsPanel({
       />
 
       {/* ── 3-column main grid ── */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[168px_1fr_355px] xl:items-stretch">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[168px_1fr_1fr] xl:items-stretch">
 
         {/* ── LEFT: Settings ── */}
         <div className="space-y-1.5">
