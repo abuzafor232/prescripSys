@@ -169,6 +169,12 @@ const EDITOR_FONTS = [
   "Courier New", "Trebuchet MS", "Tahoma", "Palatino Linotype",
 ];
 
+const PRESET_COLORS = [
+  "#000000", "#333333", "#DC2626", "#E85D04",
+  "#F97316", "#15803D", "#0D9488", "#1D4ED8",
+  "#7C3AED", "#92400E", "#0E7490", "#881337",
+];
+
 
 function FreeformEditor({
   initialValue,
@@ -187,6 +193,12 @@ function FreeformEditor({
   const savedRange = useRef<Range | null>(null);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sizeInputActive = useRef(false);
+  const [colorPickerMode, setColorPickerMode] = useState<null | "text" | "bg">(null);
+  const [hexVal, setHexVal] = useState("#000000");
+  const [colorAnchor, setColorAnchor] = useState({ top: 0, left: 0 });
+  const textBtnRef = useRef<HTMLButtonElement>(null);
+  const bgBtnRef = useRef<HTMLButtonElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
   const [currentFontSize, setCurrentFontSize] = useState("13");
   const [currentFontFamily, setCurrentFontFamily] = useState("Arial");
@@ -234,6 +246,29 @@ function FreeformEditor({
     return () => document.removeEventListener("selectionchange", onSelChange);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!colorPickerMode) return;
+    function onDown(e: MouseEvent) {
+      if (textBtnRef.current?.contains(e.target as Node)) return;
+      if (bgBtnRef.current?.contains(e.target as Node)) return;
+      if (pickerRef.current?.contains(e.target as Node)) return;
+      setColorPickerMode(null);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [colorPickerMode]);
+
+  function openPicker(mode: "text" | "bg", defaultHex: string) {
+    const btn = mode === "text" ? textBtnRef.current : bgBtnRef.current;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      setColorAnchor({ top: r.bottom + 4, left: r.left });
+    }
+    if (colorPickerMode === mode) { setColorPickerMode(null); return; }
+    setHexVal(defaultHex);
+    setColorPickerMode(mode);
+  }
 
   function syncFmt() {
     try {
@@ -382,20 +417,19 @@ function FreeformEditor({
 
       {/* ── Row 2: Highlight · Text color | Alignment · Line spacing ── */}
       <div className="flex items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#ebebeb" }}>
-        <label title="Highlight color"
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100">
+        <button ref={bgBtnRef} type="button" title="Highlight color"
+          className="flex h-6 w-6 items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100"
+          onMouseDown={(e) => { e.preventDefault(); saveRange(); }}
+          onClick={() => openPicker("bg", "#ffff00")}>
           <span className="select-none text-[12px] leading-none">🖊</span>
-          <input type="color" defaultValue="#ffff00" className="sr-only"
-            onMouseDown={saveRange}
-            onChange={(e) => exec("backColor", e.target.value)} />
-        </label>
-        <label title="Text color"
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100">
-          <span className="select-none text-[11px] font-bold leading-none" style={{ textDecoration: "underline", textDecorationColor: "#e53e3e" }}>A</span>
-          <input type="color" defaultValue="#000000" className="sr-only"
-            onMouseDown={saveRange}
-            onChange={(e) => exec("foreColor", e.target.value)} />
-        </label>
+        </button>
+        <button ref={textBtnRef} type="button" title="Text color"
+          className="flex h-6 w-6 items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100"
+          onMouseDown={(e) => { e.preventDefault(); saveRange(); }}
+          onClick={() => openPicker("text", "#000000")}>
+          <span className="select-none text-[11px] font-bold leading-none"
+            style={{ textDecoration: "underline", textDecorationColor: "#e53e3e" }}>A</span>
+        </button>
 
         <Sep />
         <button {...tbBtn(fmt.align === "left",    "Align left")}    onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}>   <AlignLeft    className="h-3 w-3" /></button>
@@ -444,11 +478,12 @@ function FreeformEditor({
         ref={ref}
         contentEditable
         suppressContentEditableWarning
-        className="p-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-gray-300 empty:before:content-[attr(data-placeholder)]"
+        className="p-2 outline-none empty:before:pointer-events-none empty:before:text-gray-300 empty:before:content-[attr(data-placeholder)]"
         data-placeholder={placeholder}
         style={{
           cursor: "text", wordBreak: "break-word", color: "#111",
           userSelect: "text", WebkitUserSelect: "text",
+          fontFamily: "Arial, sans-serif", fontSize: 13,
           ...(editorHeight
             ? { height: editorHeight, overflow: "hidden" }
             : { minHeight: 80 }),
@@ -466,6 +501,55 @@ function FreeformEditor({
         }}
         onInput={() => { if (ref.current) onChange(sanitizeHtmlColors(ref.current.innerHTML)); }}
       />
+
+      {/* ── Color picker popup (fixed, escapes overflow-hidden) ── */}
+      {colorPickerMode && (
+        <div ref={pickerRef}
+          className="fixed z-[500] w-[148px] rounded-lg border border-gray-200 bg-white p-2 shadow-xl"
+          style={{ top: colorAnchor.top, left: colorAnchor.left }}>
+          {/* 12 preset swatches in 6-column grid */}
+          <div className="mb-1.5 grid grid-cols-6 gap-1">
+            {PRESET_COLORS.map((c) => (
+              <button key={c} type="button" title={c}
+                className="h-[18px] w-[18px] rounded-sm transition-transform hover:scale-110"
+                style={{ background: c, border: "1px solid rgba(0,0,0,0.22)" }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  restoreRange();
+                  exec(colorPickerMode === "text" ? "foreColor" : "backColor", c);
+                  setColorPickerMode(null);
+                }} />
+            ))}
+          </div>
+          {/* Hex input row */}
+          <div className="flex items-center gap-1 border-t border-gray-200 pt-1.5">
+            <div className="h-4 w-4 shrink-0 rounded"
+              style={{
+                background: /^#[0-9a-fA-F]{6}$/i.test(hexVal) ? hexVal : "#000000",
+                border: "1px solid #ccc",
+              }} />
+            <input
+              type="text"
+              value={hexVal}
+              placeholder="#000000"
+              className="h-5 w-full rounded border border-gray-300 px-1 text-[9px] outline-none focus:ring-1 focus:ring-gray-400"
+              onChange={(e) => setHexVal(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (/^#[0-9a-fA-F]{6}$/i.test(hexVal)) {
+                    restoreRange();
+                    exec(colorPickerMode === "text" ? "foreColor" : "backColor", hexVal);
+                  }
+                  setColorPickerMode(null);
+                }
+                if (e.key === "Escape") setColorPickerMode(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -573,7 +657,7 @@ function PadPreviewModal({ pad, onClose }: { pad: PadSettings; onClose: () => vo
             transform: `scale(${scale})`, transformOrigin: "top left",
             position: "absolute", top: 0, left: 0,
             background: "white", color: "#111",
-            fontFamily: "Arial, sans-serif",
+            fontFamily: "Arial, sans-serif", fontSize: 13,
           }}>
             <style>{`
               .rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}
@@ -758,7 +842,7 @@ function PadLivePreview({ pad }: { pad: PadSettings }) {
             position: "absolute", top: 0, left: 0,
             background: "white", color: "#111",
             boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-            fontFamily: "Arial, sans-serif",
+            fontFamily: "Arial, sans-serif", fontSize: 13,
           }}>
             <style>{`
               .rxpv p,.rxpv h1,.rxpv h2,.rxpv h3{margin:0;padding:0}
