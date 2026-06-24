@@ -1547,7 +1547,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               item.href === "/"
                 ? pathname === "/"
                 : pathname.startsWith(item.href);
-            const isPrescription = item.href === "/prescriptions/new";
             const innerContent = (
               <>
                 <div
@@ -1569,14 +1568,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               "flex w-full flex-col items-center gap-1.5 rounded-xl px-1 py-2.5 transition-colors",
               active ? "text-primary-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
             );
-            if (isPrescription) {
-              return (
-                <Link key={item.href} href={item.href} title={item.label} className={sharedClass}
-                  onClick={() => setMobileOpen(false)}>
-                  {innerContent}
-                </Link>
-              );
-            }
             return (
               <Link
                 key={item.href}
@@ -1656,7 +1647,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                      onClick={() => { setChamberOpen(false); openVerify(() => setChamberSettingsOpen(true)); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={() => {
+                        setChamberOpen(false);
+                        setTimeout(() => openVerify(() => setChamberSettingsOpen(true)), 0);
+                      }}
                     >
                       <Settings className="h-3.5 w-3.5" />
                       Manage Chambers
