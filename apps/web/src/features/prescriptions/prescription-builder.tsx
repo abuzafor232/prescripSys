@@ -1037,7 +1037,7 @@ export function PrescriptionBuilder() {
       completeAttendedAppointment(prescription.id);
       showStatus("success", `Prescription ${prescription.prescriptionNo} saved.`);
       if (variables.printAfterSave) {
-        window.setTimeout(() => window.print(), 0);
+        window.setTimeout(() => printWithPad(prescription), 0);
       }
       if (variables.clearAfterSave) {
         clearPrescriptionPad();
@@ -3214,6 +3214,262 @@ export function PrescriptionBuilder() {
       )}
     </>
   );
+}
+
+// ── Pad Print ─────────────────────────────────────────────────────────────
+
+function escHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function sanitizePrintHtml(html: string): string {
+  if (!html) return html;
+  return html.replace(
+    /color:\s*rgb\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)\s*;?/g,
+    (_m, rs, gs, bs) => {
+      const max = Math.max(+rs, +gs, +bs), min = Math.min(+rs, +gs, +bs);
+      return (max - min) < 40 && (max + min) / 2 > 80 ? "" : _m;
+    }
+  );
+}
+
+function printWithPad(prescription: Prescription): void {
+  // Load pad settings for this chamber
+  let pad: Record<string, unknown> = {};
+  try {
+    const raw = localStorage.getItem(`rx-pad-settings-${prescription.chamberId}`);
+    if (raw) pad = JSON.parse(raw) as Record<string, unknown>;
+  } catch {}
+
+  const pStr = (k: string, fb: string): string => pad[k] != null ? String(pad[k]) : fb;
+  const inToMm = (v: unknown, fb: number) => (parseFloat(String(v ?? "")) || fb) * 25.4;
+
+  // Page size
+  const pageSize = pStr("pageSize", "A4");
+  const PAGE_SIZES: Record<string, { w: number; h: number; css: string }> = {
+    A4:     { w: 210, h: 297, css: "A4" },
+    A5:     { w: 148, h: 210, css: "A5" },
+    Letter: { w: 216, h: 279, css: "letter" },
+  };
+  const ps = PAGE_SIZES[pageSize] ?? PAGE_SIZES.A4;
+  const pageW = pageSize === "Custom" ? (parseFloat(pStr("customWidth", "210")) || 210) : ps.w;
+  const pageH = pageSize === "Custom" ? (parseFloat(pStr("customHeight", "297")) || 297) : ps.h;
+  const pageCss = pageSize === "Custom" ? `${pageW}mm ${pageH}mm` : ps.css;
+
+  const mTop    = inToMm(pad.marginTop,    0.6);
+  const mBottom = inToMm(pad.marginBottom, 0.6);
+  const mLeft   = inToMm(pad.marginLeft,   0.6);
+  const mRight  = inToMm(pad.marginRight,  0.6);
+  const hdrH    = inToMm(pad.headerHeight, 1.7);
+  const ftrH    = inToMm(pad.footerHeight, 0.8);
+  const bodyLeftPct = parseInt(pStr("bodyLeftPct", "35")) || 35;
+
+  const headerBn  = sanitizePrintHtml(pStr("headerBnLines", ""));
+  const headerEn  = sanitizePrintHtml(pStr("headerEnLines", ""));
+  const headerMid = sanitizePrintHtml(pStr("headerMidLines", ""));
+  const headerLogo = pStr("headerLogo", "");
+  const hasMid = !!(headerLogo || headerMid);
+  const footerHtml = sanitizePrintHtml(pStr("footerText", ""));
+  const footerAlign = pStr("footerAlignment", "center");
+  const footerDivider = pad.footerShowDivider !== false;
+
+  // Patient row
+  const pt = prescription.patient;
+  const ageParts = [
+    pt.ageYears  != null ? `${pt.ageYears}Y`  : null,
+    pt.ageMonths != null ? `${pt.ageMonths}M` : null,
+    pt.ageDays   != null ? `${pt.ageDays}D`   : null,
+  ].filter(Boolean);
+  const age = ageParts.length ? ageParts.join(" ") : "—";
+  const date = prescription.createdAt
+    ? new Date(prescription.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const regNo = pt.registrationNo ?? "—";
+
+  // Section builder
+  const sec = (label: string, innerHtml: string) =>
+    innerHtml.trim()
+      ? `<div style="margin-bottom:7px">
+           <div style="font-size:9.5px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">${label}</div>
+           ${innerHtml}
+         </div>`
+      : "";
+
+  // Bullet list from plain-text (newline-separated items)
+  const bullets = (text: string) => {
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+    return lines.length
+      ? `<ul style="margin:0;padding-left:1.1em;font-size:12px">${lines.map(l => `<li>${escHtml(l)}</li>`).join("")}</ul>`
+      : "";
+  };
+
+  // Metadata
+  const meta    = (prescription.metadata ?? {}) as Record<string, unknown>;
+  const content = (meta.content ?? {}) as Record<string, string>;
+
+  // Left column
+  const complaintText   = prescription.chiefComplaints?.trim() ?? "";
+  const historyText     = content.history?.trim() ?? "";
+  const findingsText    = prescription.examination?.trim() ?? "";
+  const investigationText = prescription.investigations?.length
+    ? prescription.investigations.map(i => i.name).join("\n")
+    : (content.investigation?.trim() ?? "");
+  const diagnosisText = prescription.diagnoses?.length
+    ? prescription.diagnoses.map(d => d.name).join("\n")
+    : (content.diagnosis?.trim() ?? "");
+
+  const leftHtml = [
+    sec("Complaints",   bullets(complaintText)),
+    sec("History",      bullets(historyText)),
+    sec("Findings",     bullets(findingsText)),
+    sec("Investigation", bullets(investigationText)),
+    sec("Diagnosis",    bullets(diagnosisText)),
+  ].join("");
+
+  // Right column — Rx (medications)
+  const meds = prescription.medicines ?? [];
+  const medsHtml = meds.length
+    ? `<div style="font-style:italic;font-weight:700;font-size:15px;margin-bottom:4px">Rx</div>` +
+      meds.map((m, i) => {
+        const title = [m.brandName, m.strength].filter(Boolean).join(" ");
+        const detail = [m.dose, m.instruction, m.duration].filter(Boolean).join("  ");
+        return `<div style="margin-bottom:5px">
+          <div style="font-weight:600;font-size:12px">${i + 1}. ${escHtml(title)}</div>
+          ${detail ? `<div style="padding-left:14px;font-size:11.5px">${escHtml(detail)}</div>` : ""}
+          ${m.note ? `<div style="padding-left:14px;font-size:11px;color:#555">※ ${escHtml(m.note)}</div>` : ""}
+        </div>`;
+      }).join("")
+    : "";
+
+  // Right column — Glass Prescription
+  const vision = meta.vision as (VisionState | undefined);
+  let glassBlockHtmlStr = "";
+  if (vision && glassPrescriptionHasContent(vision)) {
+    const sides = ["right", "left"] as const;
+    const hasEyeData = sides.some(s => Object.values(vision[s]).some(Boolean));
+    const eyeTable = hasEyeData
+      ? `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:3px">
+          <thead><tr style="background:#f5f5f5">
+            <th style="border:1px solid #ddd;padding:2px 4px;width:28px"></th>
+            <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">SPH</th>
+            <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">CYL</th>
+            <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">Axis</th>
+            <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">VA</th>
+          </tr></thead>
+          <tbody>
+            ${sides.map(s => `<tr>
+              <td style="border:1px solid #ddd;padding:2px 4px;font-weight:600;text-align:center">${s === "right" ? "RE" : "LE"}</td>
+              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${vision[s].sphere || "—"}</td>
+              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${vision[s].cyl || "—"}</td>
+              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${vision[s].axis || "—"}</td>
+              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${vision[s].va || "—"}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>`
+      : "";
+    const addIpd = [
+      vision.add ? `Add: ${vision.add}` : "",
+      vision.ipd ? `IPD: ${vision.ipd}` : "",
+    ].filter(Boolean);
+    const glassLabel = [vision.lensType, ...(vision.glassFeatures ?? [])].filter(Boolean).join(" ");
+    glassBlockHtmlStr = `
+      ${eyeTable}
+      ${addIpd.length ? `<div style="font-size:11px;display:flex;gap:20px;margin-bottom:2px">${addIpd.map(l => `<span>${escHtml(l)}</span>`).join("")}</div>` : ""}
+      ${glassLabel ? `<div style="font-size:11px">Glass: ${escHtml(glassLabel)}</div>` : ""}
+      ${vision.note ? `<div style="font-size:11px;color:#555">Remarks: ${escHtml(vision.note)}</div>` : ""}
+    `;
+  }
+
+  // Right column — Advice, Follow-Up, Referral
+  const adviceText = prescription.advice?.trim() ?? "";
+  const fuDate = prescription.followUpDate
+    ? new Date(prescription.followUpDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "";
+  const fuNote = content.followUp?.trim() ?? "";
+  const fuText = [fuDate, fuNote].filter(Boolean).join(" — ");
+  const refText = content.referral?.trim() ?? "";
+  const structRefs = (meta.referrals as ReferralEntry[] | undefined)?.filter(r => r.name || r.specialty) ?? [];
+  const refInner = structRefs.length
+    ? structRefs.map((r, i) =>
+        `<div style="font-size:12px">${i + 1}. ${r.direction === "to" ? "Refer To" : "Referred From"}: ${escHtml([r.name, r.specialty, r.phone].filter(Boolean).join(" — "))}</div>`
+      ).join("")
+    : refText
+      ? `<div style="white-space:pre-line;font-size:12px">${escHtml(refText)}</div>`
+      : "";
+
+  const rightHtml = [
+    medsHtml ? `<div style="margin-bottom:7px">${medsHtml}</div>` : "",
+    sec("Glass Prescription", glassBlockHtmlStr),
+    sec("Advice", adviceText ? `<div style="white-space:pre-line;font-size:12px">${escHtml(adviceText)}</div>` : ""),
+    fuText ? sec("Follow-Up", `<div style="font-size:12px">${escHtml(fuText)}</div>`) : "",
+    refInner ? sec("Referral", refInner) : "",
+  ].join("");
+
+  const midColHtml = hasMid
+    ? `<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px;overflow:hidden">
+        ${headerLogo ? `<img src="${headerLogo}" alt="" style="max-height:${(hdrH * 0.6).toFixed(1)}mm;max-width:130px;object-fit:contain" />` : ""}
+        ${headerMid ? `<div class="rxp" style="text-align:center;color:#111;${headerLogo ? "margin-top:4px" : ""}">${headerMid}</div>` : ""}
+      </div>`
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Rx ${escHtml(prescription.prescriptionNo)}</title>
+<style>
+  *{box-sizing:border-box}
+  @page{size:${pageCss};margin:0}
+  body{margin:0;padding:0;font-family:Arial,sans-serif;font-size:13px;color:#111;background:#fff}
+  .page{width:${pageW}mm;height:${pageH}mm;padding:${mTop.toFixed(2)}mm ${mRight.toFixed(2)}mm ${mBottom.toFixed(2)}mm ${mLeft.toFixed(2)}mm;display:flex;flex-direction:column;overflow:hidden}
+  .rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}
+  .rxp ul,.rxp ol{margin:0;padding-left:1.2em}
+  .rxp li{margin:0;padding:0}
+  .rxp *{word-break:break-word;overflow-wrap:break-word}
+</style>
+</head><body>
+<div class="page">
+  <!-- Header -->
+  <div style="height:${hdrH.toFixed(2)}mm;flex-shrink:0;display:flex;align-items:stretch;border-bottom:2px solid #222;overflow:hidden">
+    <div class="rxp" style="flex:1;min-width:0;overflow:hidden;padding:6px 10px;color:#111">${headerBn}</div>
+    ${midColHtml}
+    <div class="rxp" style="flex:1;min-width:0;overflow:hidden;padding:6px 10px;color:#111">${headerEn}</div>
+  </div>
+  <!-- Patient row -->
+  <div style="flex-shrink:0;display:flex;align-items:center;gap:6px;padding:5px 6px;border-bottom:1px solid #aaa;font-size:11px;color:#111">
+    <span style="font-weight:600">Name:</span>
+    <span>${escHtml(pt.name)}</span>
+    <span style="font-size:10px;color:#555">(No.: ${escHtml(regNo)})</span>
+    <span style="font-weight:600;margin-left:8px">Age:</span>
+    <span>${escHtml(age)}</span>
+    <span style="font-weight:600;margin-left:8px">Date:</span>
+    <span>${escHtml(date)}</span>
+  </div>
+  <!-- Body -->
+  <div style="flex:1;display:flex;overflow:hidden">
+    <div style="width:${bodyLeftPct}%;flex-shrink:0;border-right:1px solid #bbb;padding:8px;overflow:hidden">
+      ${leftHtml || "<span></span>"}
+    </div>
+    <div style="flex:1;padding:8px 10px;overflow:hidden">
+      ${rightHtml || "<span></span>"}
+    </div>
+  </div>
+  <!-- Footer -->
+  <div style="height:${ftrH.toFixed(2)}mm;flex-shrink:0;border-top:2px solid #222;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:4px 10px">
+    ${footerDivider ? `<div style="border-top:1px solid #555;margin-bottom:4px"></div>` : ""}
+    ${footerHtml ? `<div class="rxp" style="font-size:11px;color:#111;line-height:1.5;text-align:${footerAlign}">${footerHtml}</div>` : ""}
+  </div>
+</div>
+<script>window.onload=function(){window.print()}</script>
+</body></html>`;
+
+  const win = window.open("", "_blank", "width=900,height=700");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
 }
 
 // ── RxGlassBlock ──────────────────────────────────────────────────────────
