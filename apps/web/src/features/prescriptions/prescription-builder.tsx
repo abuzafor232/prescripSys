@@ -3238,10 +3238,17 @@ function sanitizePrintHtml(html: string): string {
 }
 
 function printWithPad(prescription: Prescription): void {
-  // Load pad settings for this chamber
+  // Load pad settings.
+  // prescription.chamberId is the API UUID; pad settings are keyed by the
+  // LOCAL chamber ID from the sidebar. Read rx-selected-chamber to get it,
+  // fall back to the global rx-pad-settings (always synced on every save).
   let pad: Record<string, unknown> = {};
   try {
-    const raw = localStorage.getItem(`rx-pad-settings-${prescription.chamberId}`);
+    const selRaw = localStorage.getItem("rx-selected-chamber");
+    const localId: string | null = selRaw ? (JSON.parse(selRaw) as { id?: string }).id ?? null : null;
+    const chamberRaw = localId ? localStorage.getItem(`rx-pad-settings-${localId}`) : null;
+    const globalRaw = localStorage.getItem("rx-pad-settings");
+    const raw = chamberRaw ?? globalRaw;
     if (raw) pad = JSON.parse(raw) as Record<string, unknown>;
   } catch {}
 
