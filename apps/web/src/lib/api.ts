@@ -296,3 +296,21 @@ export function fetchPrescriptionById(id: string, token: string) {
 export function fetchPatientPrescriptions(patientId: string, token: string) {
   return apiFetch<Prescription[]>(`/prescriptions?patientId=${encodeURIComponent(patientId)}&limit=20`, { token });
 }
+
+export function sendPrescriptionEmail(
+  payload: {
+    to: string;
+    patientName: string;
+    prescriptionNo: string;
+    doctorName: string;
+    pdfBase64: string;
+    filename: string;
+  },
+  token: string
+) {
+  return apiFetch<{ ok: true }>("/prescriptions/send-email", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}

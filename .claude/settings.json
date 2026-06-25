@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($api = Start-Job -Name \"API\" -ScriptBlock { cd \"C:\\\\Prescription System\\\\Prescription System\\\\apps\\\\api\"; pnpm start:dev 2>&1 }; Write-Output \"API job started \\(ID: $\\($api.Id\\)\\)\")",
+      "PowerShell($web = Start-Job -Name \"Frontend\" -ScriptBlock { cd \"C:\\\\Prescription System\\\\Prescription System\\\\apps\\\\web\"; pnpm dev 2>&1 }; Write-Output \"Frontend job started \\(ID: $\\($web.Id\\)\\)\")",
+      "PowerShell(Get-NetTCPConnection -LocalPort 5432,6379 -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 14924,7364 -ErrorAction SilentlyContinue)",
+      "PowerShell(Set-Location \"c:\\\\Prescription System\\\\Prescription System\"; Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"Set-Location 'c:\\\\Prescription System\\\\Prescription System'; pnpm dev:web\" -WindowStyle Normal)",
+      "PowerShell(Start-Sleep -Seconds 10; try { $api = Invoke-WebRequest -Uri \"http://localhost:4000/api/v1\" -TimeoutSec 5 -ErrorAction Stop; \"API: $\\($api.StatusCode\\)\" } catch { \"API: $_\" }; try { $web = Invoke-WebRequest -Uri \"http://localhost:3000\" -TimeoutSec 5 -ErrorAction Stop; \"Web: $\\($web.StatusCode\\)\" } catch { \"Web: $_\" })",
+      "Bash(git push *)",
+      "Bash(git ls-remote *)",
+      "Bash(git filter-branch *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Prescription System\\\\Prescription System\" -Directory)",
+      "Bash(Select-Object Name)",
+      "PowerShell(Get-ChildItem \"c:\\\\Prescription System\\\\Prescription System\\\\apps\\\\web\" -File | Where-Object {$_.Name -match \"\\(next\\\\.config|tsconfig|postcss\\)\" })",
+      "PowerShell(Head -20)",
+      "Bash(npx next *)",
+      "Bash(git revert *)"
+    ]
+  }
+}

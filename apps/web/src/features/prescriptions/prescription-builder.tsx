@@ -56,7 +56,8 @@ import {
   type CreatePatientInput,
   type MedicineSearchResult,
   type Patient,
-  type PatientGender
+  type PatientGender,
+  sendPrescriptionEmail
 } from "@/lib/api";
 import { DOSE_PATTERNS, MEAL_INSTRUCTIONS } from "@/lib/prescription-constants";
 import { cn, toTitleCase } from "@/lib/utils";
@@ -3639,7 +3640,11 @@ function printWithPad(prescription: Prescription): void {
 
 function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescription: Prescription; onClose: () => void; onEdit: () => void }) {
   const previewHtml = buildPadHtml(prescription, false);
+  const token = useSessionStore((s) => s.accessToken) ?? "";
   const [showSendPanel, setShowSendPanel] = useState(false);
+  const [showEmailDialog, setShowEmailDialog] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [busy, setBusy] = useState<"download" | "wa" | "email" | null>(null);
 
   function handlePrint() {
@@ -3700,14 +3705,47 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     finally { setBusy(null); setShowSendPanel(false); }
   }
 
-  async function handleEmail() {
+  function handleEmail() {
+    setShowSendPanel(false);
+    setEmailTo("");
+    setEmailError("");
+    setShowEmailDialog(true);
+  }
+
+  async function handleSendEmail() {
+    const trimmed = emailTo.trim();
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
     setBusy("email");
+    setEmailError("");
     try {
       const blob = await generatePdfBlob();
-      triggerDownload(blob);
-      window.open("https://mail.google.com/mail/u/1/#inbox?compose=new", "_blank");
-    } catch (e) { console.error(e); }
-    finally { setBusy(null); setShowSendPanel(false); }
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((res, rej) => {
+        reader.onload = () => res((reader.result as string).split(",")[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(blob);
+      });
+      await sendPrescriptionEmail(
+        {
+          to: trimmed,
+          patientName: prescription.patient.name,
+          prescriptionNo: prescription.prescriptionNo,
+          doctorName: prescription.doctor?.displayName ?? "Doctor",
+          pdfBase64: base64,
+          filename: `Rx-${prescription.prescriptionNo}.pdf`
+        },
+        token
+      );
+      setShowEmailDialog(false);
+    } catch (e) {
+      setEmailError("Failed to send email. Please check your mail configuration.");
+      console.error(e);
+    } finally {
+      setBusy(null);
+    }
   }
 
   function handleSMS() {
@@ -3782,7 +3820,7 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
             <div className="w-72 rounded-xl border border-border bg-background p-5 shadow-2xl">
               <p className="mb-1 text-sm font-semibold text-center text-foreground">Send Prescription via</p>
-              <p className="mb-4 text-xs text-center text-muted-foreground">PDF will be generated and shared</p>
+              <p className="mb-4 text-xs text-center text-muted-foreground">PDF will be generated and sent</p>
               <div className="space-y-2">
                 <button type="button" onClick={handleWhatsApp} disabled={!!busy} className={sendOptionCls}>
                   {busy === "wa" ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : <MessageCircle className="h-5 w-5 text-muted-foreground" />}
@@ -3790,9 +3828,8 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
                   {busy === "wa" && <span className="ml-auto text-xs text-muted-foreground">Generating…</span>}
                 </button>
                 <button type="button" onClick={handleEmail} disabled={!!busy} className={sendOptionCls}>
-                  {busy === "email" ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : <Mail className="h-5 w-5 text-muted-foreground" />}
-                  <span>Email (Gmail)</span>
-                  {busy === "email" && <span className="ml-auto text-xs text-muted-foreground">Generating…</span>}
+                  <Mail className="h-5 w-5 text-muted-foreground" />
+                  <span>Email</span>
                 </button>
                 <button type="button" onClick={handleSMS} disabled={!!busy} className={sendOptionCls}>
                   <Smartphone className="h-5 w-5 text-muted-foreground" />
@@ -3806,6 +3843,59 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Email compose dialog */}
+        {showEmailDialog && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
+            <div className="w-80 rounded-xl border border-border bg-background p-5 shadow-2xl">
+              <div className="mb-4 flex items-center gap-2">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm font-semibold text-foreground">Send Prescription via Email</p>
+              </div>
+
+              <div className="mb-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{prescription.patient.name}</span>
+                {" · "}Rx# {prescription.prescriptionNo}
+              </div>
+
+              <label className="mb-1 block text-xs font-medium text-foreground">
+                Recipient Email
+              </label>
+              <input
+                type="email"
+                autoFocus
+                placeholder="patient@example.com"
+                value={emailTo}
+                onChange={e => { setEmailTo(e.target.value); setEmailError(""); }}
+                onKeyDown={e => e.key === "Enter" && handleSendEmail()}
+                className="mb-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              {emailError && (
+                <p className="mb-2 text-xs text-destructive">{emailError}</p>
+              )}
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowEmailDialog(false); setEmailError(""); }}
+                  disabled={busy === "email"}
+                  className="flex-1 rounded-lg border border-border py-2 text-sm text-muted-foreground transition hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <Button
+                  className="flex-1 gap-2"
+                  onClick={handleSendEmail}
+                  disabled={busy === "email"}
+                >
+                  {busy === "email"
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</>
+                    : <><Mail className="h-4 w-4" /> Send</>}
+                </Button>
+              </div>
             </div>
           </div>
         )}
