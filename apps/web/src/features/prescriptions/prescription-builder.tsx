@@ -3446,14 +3446,10 @@ function printWithPad(prescription: Prescription): void {
     <div class="rxp" style="flex:1;min-width:0;overflow:hidden;padding:6px 10px;color:#111">${headerEn}</div>
   </div>
   <!-- Patient row -->
-  <div style="flex-shrink:0;display:flex;align-items:center;gap:6px;padding:5px 6px;border-bottom:1px solid #aaa;font-size:11px;color:#111">
-    <span style="font-weight:600">Name:</span>
-    <span>${escHtml(pt.name)}</span>
-    <span style="font-size:10px;color:#555">(No.: ${escHtml(regNo)})</span>
-    <span style="font-weight:600;margin-left:8px">Age:</span>
-    <span>${escHtml(age)}</span>
-    <span style="font-weight:600;margin-left:8px">Date:</span>
-    <span>${escHtml(date)}</span>
+  <div style="flex-shrink:0;display:flex;align-items:center;padding:5px 6px;border-bottom:1px solid #aaa;font-size:11px;color:#111">
+    <div style="flex:1;text-align:left"><span style="font-weight:600">Name: </span>${escHtml(pt.name)} <span style="font-size:10px;color:#555">(No.: ${escHtml(regNo)})</span></div>
+    <div style="flex:1;text-align:center"><span style="font-weight:600">Age: </span>${escHtml(age)}</div>
+    <div style="flex:1;text-align:right"><span style="font-weight:600">Date: </span>${escHtml(date)}</div>
   </div>
   <!-- Body -->
   <div style="flex:1;display:flex;overflow:hidden">
