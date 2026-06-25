@@ -41,8 +41,8 @@ const nav: { href: string; label: string; icon: React.ElementType }[] = [
   { href: "/appointments",      label: "Appointments", icon: CalendarClock   },
   { href: "/prescriptions/new", label: "Prescription", icon: FilePlus2       },
   { href: "/patients",          label: "Patients",     icon: UsersRound      },
+  { href: "/research",          label: "Old Rx",       icon: Microscope      },
   { href: "/medicines",         label: "Drugs",        icon: Pill            },
-  { href: "/research",          label: "Research",     icon: Microscope      },
 ];
 
 type Chamber = { id: string; name: string };
