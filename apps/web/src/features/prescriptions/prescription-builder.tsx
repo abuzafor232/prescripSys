@@ -1601,6 +1601,55 @@ export function PrescriptionBuilder() {
     showStatus("success", `Template "${template.name}" loaded`);
   }
 
+  function loadSavedPrescription(prescription: Prescription) {
+    const meta = (prescription.metadata ?? {}) as Record<string, unknown>;
+    const raw = (meta.rawSections ?? {}) as Record<string, unknown>;
+    setSelectedPatient(prescription.patient);
+    setNotes({
+      complaint: String(prescription.chiefComplaints ?? ""),
+      history: String(raw.history ?? ""),
+      findings: String(raw.findings ?? ""),
+      investigation: String(raw.investigation ?? ""),
+      diagnosis: String(raw.diagnosis ?? ""),
+      advice: String(prescription.advice ?? ""),
+      followUp: String(raw.followUp ?? ""),
+      referral: String(raw.referral ?? ""),
+    });
+    setMedicines(
+      prescription.medicines.map((m) => ({
+        medicineId: m.medicineId,
+        brandName: m.brandName,
+        genericName: m.genericName,
+        strength: m.strength,
+        dosageForm: m.dosageForm,
+        dose: m.dose,
+        duration: m.duration,
+        instruction: m.instruction ?? "",
+        note: m.note,
+      }))
+    );
+    setMedicationNote(String(raw.medicationNote ?? ""));
+    const storedFindings = meta.findings as FindingsState | undefined;
+    const storedVision = meta.vision as VisionState | undefined;
+    const storedReferrals = meta.referrals as ReferralEntry[] | undefined;
+    if (storedFindings) setFindings(storedFindings);
+    if (storedVision) setVision(storedVision);
+    setReferrals(storedReferrals?.filter(referralHasContent) ?? []);
+    setFollowUpDate(prescription.followUpDate ?? "");
+    const activeChips = Array.isArray(raw.followUpActiveChips)
+      ? (raw.followUpActiveChips as string[]).map((text) => ({ text, active: true }))
+      : [];
+    setFollowUpNoteChips(activeChips);
+    setRxInvestigations(
+      prescription.investigations.map((inv) => ({ id: inv.id, name: inv.name, value: inv.note ?? "" }))
+    );
+    setRxDiagnoses(
+      prescription.diagnoses.map((d) => ({ id: d.id, name: d.name, value: d.note ?? "" }))
+    );
+    setComplaints([]);
+    setHistories([]);
+  }
+
   function deleteTemplate(id: string) {
     const updated = templates.filter((t) => t.id !== id);
     setTemplates(updated);
@@ -3228,6 +3277,10 @@ export function PrescriptionBuilder() {
         <PrescriptionPrintSidebar
           prescription={printSidebarRx}
           onClose={() => setPrintSidebarRx(null)}
+          onEdit={() => {
+            loadSavedPrescription(printSidebarRx);
+            setPrintSidebarRx(null);
+          }}
         />
       )}
     </>
@@ -3581,7 +3634,7 @@ function printWithPad(prescription: Prescription): void {
 
 // ── PrescriptionPrintSidebar ───────────────────────────────────────────────
 
-function PrescriptionPrintSidebar({ prescription, onClose }: { prescription: Prescription; onClose: () => void }) {
+function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescription: Prescription; onClose: () => void; onEdit: () => void }) {
   const previewHtml = buildPadHtml(prescription, false);
 
   function handlePrint() {
@@ -3656,6 +3709,9 @@ function PrescriptionPrintSidebar({ prescription, onClose }: { prescription: Pre
           </Button>
           <Button variant="outline" className="flex-1 gap-2" onClick={handleDownload}>
             <Download className="h-4 w-4" /> Download PDF
+          </Button>
+          <Button variant="secondary" className="flex-1 gap-2" onClick={onEdit}>
+            <PenLine className="h-4 w-4" /> Edit Rx
           </Button>
         </div>
         {/* preview iframe */}
