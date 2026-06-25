@@ -13,6 +13,7 @@ import {
   Phone,
   Search,
   User,
+  UserPlus,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import {
   type PatientProfile,
   type ProfilePrescription,
 } from "@/lib/api";
+import { RegisterPatientDialog } from "./register-patient-dialog";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -305,6 +307,7 @@ export function PatientsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [profilePatientId, setProfilePatientId] = useState<string | null>(null);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
@@ -346,8 +349,14 @@ export function PatientsPage() {
             className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
+
+        <Button onClick={() => setRegistrationOpen(true)} className="shrink-0 gap-2">
+          <UserPlus className="h-4 w-4" />
+          Register New Patient
+        </Button>
+
         {meta && (
-          <span className="text-sm text-muted-foreground">
+          <span className="ml-auto text-sm text-muted-foreground">
             {meta.total} patient{meta.total !== 1 ? "s" : ""}
           </span>
         )}
@@ -443,6 +452,14 @@ export function PatientsPage() {
             Next <ChevronRight className="h-4 w-4" />
           </button>
         </div>
+      )}
+
+      {/* ── Register Patient ── */}
+      {mounted && registrationOpen && (
+        <RegisterPatientDialog
+          onClose={() => setRegistrationOpen(false)}
+          onRegistered={() => setRegistrationOpen(false)}
+        />
       )}
 
       {/* ── Patient Profile Drawer ── */}
