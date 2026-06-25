@@ -85,6 +85,7 @@ type Appointment = {
   bpSystolic: string;
   bpDiastolic: string;
   prescriptionId?: string;
+  completedAt?: string;
 };
 
 type AppointmentFormState = {
@@ -114,6 +115,16 @@ const emptyAppointmentForm: AppointmentFormState = {
 };
 
 const statusColumns: AppointmentStatus[] = ["Pending", "Confirmed", "Completed"];
+const COMPLETED_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function completedTimeRemaining(completedAt?: string): string {
+  if (!completedAt) return "";
+  const remaining = COMPLETED_TTL_MS - (Date.now() - new Date(completedAt).getTime());
+  if (remaining <= 0) return "Expiring…";
+  const h = Math.floor(remaining / 3_600_000);
+  const m = Math.floor((remaining % 3_600_000) / 60_000);
+  return h > 0 ? `Clears in ${h}h${m > 0 ? ` ${m}m` : ""}` : `Clears in ${m}m`;
+}
 const BLOOD_GROUPS = ["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const MONTH_SHORT  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const SLOT_SETTINGS_KEY  = "rx-slot-settings";
@@ -525,6 +536,22 @@ export function AppointmentBoard() {
     try { localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(appointments)); } catch {}
   }, [appointments]);
 
+  // Purge completed appointments older than 24 h — runs on mount and every minute
+  useEffect(() => {
+    function purge() {
+      setAppointments((cur) => {
+        const next = cur.filter((a) => {
+          if (a.status !== "Completed" || !a.completedAt) return true;
+          return Date.now() - new Date(a.completedAt).getTime() < COMPLETED_TTL_MS;
+        });
+        return next.length !== cur.length ? next : cur;
+      });
+    }
+    purge();
+    const interval = setInterval(purge, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Auto-dismiss status messages after 4 seconds
   useEffect(() => {
     if (!statusMessage) return;
@@ -547,7 +574,11 @@ export function AppointmentBoard() {
     () => ({
       Pending:   appointments.filter((a) => a.status === "Pending"),
       Confirmed: appointments.filter((a) => a.status === "Confirmed"),
-      Completed: appointments.filter((a) => a.status === "Completed"),
+      Completed: appointments.filter((a) => {
+        if (a.status !== "Completed") return false;
+        if (!a.completedAt) return true; // legacy entries without timestamp
+        return Date.now() - new Date(a.completedAt).getTime() < COMPLETED_TTL_MS;
+      }),
     }),
     [appointments],
   );
@@ -595,7 +626,13 @@ export function AppointmentBoard() {
   }
 
   function moveAppointment(id: string, status: AppointmentStatus) {
-    setAppointments((cur) => cur.map((a) => (a.id === id ? { ...a, status } : a)));
+    setAppointments((cur) => cur.map((a) =>
+      a.id !== id ? a : {
+        ...a,
+        status,
+        ...(status === "Completed" ? { completedAt: new Date().toISOString() } : {}),
+      }
+    ));
   }
 
   function attendAppointment(apt: Appointment) {
@@ -767,6 +804,7 @@ export function AppointmentBoard() {
               <span className="ml-2 text-xs font-normal text-muted-foreground">
                 ({groupedAppointments["Completed"].length})
               </span>
+              <span className="ml-2 text-[10px] font-normal text-muted-foreground">· clears after 24h</span>
             </div>
             <div className="mt-2 space-y-2">
               {groupedAppointments["Completed"].length ? (
@@ -780,7 +818,7 @@ export function AppointmentBoard() {
                 ))
               ) : (
                 <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                  No records found
+                  Completed prescriptions appear here for 24 hours
                 </div>
               )}
             </div>
@@ -857,7 +895,14 @@ function AppointmentCard({
             <div className="text-xs text-muted-foreground">{appointment.phone}</div>
           )}
         </div>
-        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">{appointment.status}</span>
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">{appointment.status}</span>
+          {appointment.status === "Completed" && appointment.completedAt && (
+            <span className="text-[9px] text-muted-foreground">
+              {completedTimeRemaining(appointment.completedAt)}
+            </span>
+          )}
+        </div>
       </div>
 
       {!compact && appointment.note && (
