@@ -3692,17 +3692,11 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     setBusy("wa");
     try {
       const blob = await generatePdfBlob();
-      const file = new File([blob], pdfFilename(), { type: "application/pdf" });
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: `Prescription ${prescription.prescriptionNo}` });
-      } else {
-        // Desktop fallback: download PDF then open WhatsApp Web
-        triggerDownload(blob);
-        const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
-        const wa = raw ? (raw.startsWith("880") ? raw : `880${raw.replace(/^0/, "")}`) : "";
-        window.open(`https://web.whatsapp.com/${wa ? `send?phone=${wa}` : ""}`, "_blank");
-      }
-    } catch (e) { if ((e as Error).name !== "AbortError") console.error(e); }
+      triggerDownload(blob);
+      const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
+      const wa = raw ? (raw.startsWith("880") ? raw : `880${raw.replace(/^0/, "")}`) : "";
+      window.open(wa ? `https://wa.me/${wa}` : "https://wa.me/", "_blank");
+    } catch (e) { console.error(e); }
     finally { setBusy(null); setShowSendPanel(false); }
   }
 
@@ -3710,17 +3704,9 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     setBusy("email");
     try {
       const blob = await generatePdfBlob();
-      const file = new File([blob], pdfFilename(), { type: "application/pdf" });
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: `Prescription ${prescription.prescriptionNo}` });
-      } else {
-        // Desktop fallback: download PDF then open Gmail compose
-        triggerDownload(blob);
-        const su = encodeURIComponent(`Prescription – ${prescription.patient.name} (${prescription.prescriptionNo})`);
-        const body = encodeURIComponent(`Dear ${prescription.patient.name},\n\nPlease find the prescription PDF attached.\n\nRx No: ${prescription.prescriptionNo}\n\nRegards,\nDr. ${prescription.doctor?.displayName ?? ""}`);
-        window.open(`https://mail.google.com/mail/?view=cm&su=${su}&body=${body}`, "_blank");
-      }
-    } catch (e) { if ((e as Error).name !== "AbortError") console.error(e); }
+      triggerDownload(blob);
+      window.open("https://mail.google.com/mail/u/1/#inbox?compose=new", "_blank");
+    } catch (e) { console.error(e); }
     finally { setBusy(null); setShowSendPanel(false); }
   }
 
