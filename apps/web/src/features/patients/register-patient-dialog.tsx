@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useSessionStore } from "@/stores/session-store";
-import { createPatient, searchPatients, type Patient, type PatientGender } from "@/lib/api";
+import { createPatient, getApiErrorMessage, searchPatients, type Patient, type PatientGender } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -263,9 +263,7 @@ export function RegisterPatientDialog({
       onClose();
     },
     onError: (e: unknown) => {
-      setError(typeof e === "object" && e !== null && "error" in e
-        ? String((e as { error: unknown }).error)
-        : "Failed to register patient. Please try again.");
+      setError(getApiErrorMessage(e) || "Failed to register patient. Please try again.");
     },
   });
 

@@ -50,16 +50,27 @@ export async function apiFetch<T>(
   return response.json() as Promise<T>;
 }
 
-export function getApiErrorMessage(error: unknown) {
-  if (typeof error === "object" && error !== null && "error" in error) {
-    const body = (error as ApiError).error;
-    if (typeof body === "string") return body;
-    if (typeof body === "object" && body !== null && "message" in body) {
-      const message = (body as { message?: unknown }).message;
-      if (Array.isArray(message)) return message.join(", ");
-      if (typeof message === "string") return message;
-    }
+export function getApiErrorMessage(error: unknown): string {
+  if (typeof error !== "object" || error === null) return "Something went wrong. Please try again.";
+  const e = error as Record<string, unknown>;
+
+  // Nested error object: { error: { message: [...] } }
+  if (typeof e.error === "object" && e.error !== null) {
+    const body = e.error as Record<string, unknown>;
+    const msg = body.message;
+    if (Array.isArray(msg)) return msg.join(", ");
+    if (typeof msg === "string") return msg;
   }
+
+  // NestJS class-validator standard: { statusCode, message: [...], error: "Bad Request" }
+  if ("message" in e) {
+    const msg = e.message;
+    if (Array.isArray(msg)) return msg.join(", ");
+    if (typeof msg === "string") return msg;
+  }
+
+  // Simple string error
+  if (typeof e.error === "string") return e.error;
 
   return "Something went wrong. Please try again.";
 }
