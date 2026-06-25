@@ -28,15 +28,27 @@ export class PatientsService {
         : {})
     };
 
-    const [data, total] = await this.prisma.$transaction([
+    const [rawData, total] = await this.prisma.$transaction([
       this.prisma.patient.findMany({
         where,
         orderBy: { updatedAt: "desc" },
         skip: (page - 1) * limit,
-        take: limit
+        take: limit,
+        include: {
+          prescriptions: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { createdAt: true }
+          }
+        }
       }),
       this.prisma.patient.count({ where })
     ]);
+
+    const data = rawData.map(({ prescriptions, ...p }) => ({
+      ...p,
+      lastVisitAt: prescriptions[0]?.createdAt ?? null
+    }));
 
     return {
       data,

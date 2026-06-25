@@ -127,6 +127,37 @@ export type Patient = {
   address?: string | null;
   allergies?: string | null;
   chronicDiseaseHistory?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  lastVisitAt?: string | null;
+};
+
+export type ProfilePrescription = {
+  id: string;
+  prescriptionNo: string;
+  createdAt: string;
+  status: "DRAFT" | "SIGNED" | "CANCELLED";
+  chiefComplaints?: string | null;
+  examination?: string | null;
+  advice?: string | null;
+  followUpDate?: string | null;
+  doctor: { displayName: string };
+  chamber: { name: string };
+  medicines: Array<{
+    id: string;
+    brandName: string;
+    genericName?: string | null;
+    strength?: string | null;
+    dosageForm?: string | null;
+    dose: string;
+    duration: string;
+    instruction?: string | null;
+    note?: string | null;
+  }>;
+};
+
+export type PatientProfile = Patient & {
+  prescriptions: ProfilePrescription[];
 };
 
 export type PatientListResponse = {
@@ -158,6 +189,18 @@ export function searchPatients(q: string, token: string) {
     `/patients?q=${encodeURIComponent(q)}&limit=8`,
     { token }
   );
+}
+
+export function fetchPatients(params: { q?: string; page?: number; limit?: number }, token: string) {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.limit) qs.set("limit", String(params.limit));
+  return apiFetch<PatientListResponse>(`/patients?${qs.toString()}`, { token });
+}
+
+export function fetchPatientProfile(id: string, token: string) {
+  return apiFetch<PatientProfile>(`/patients/${id}`, { token });
 }
 
 export function createPatient(input: CreatePatientInput, token: string) {

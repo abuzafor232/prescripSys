@@ -2414,6 +2414,17 @@ export function PrescriptionBuilder() {
   useEffect(() => {
     clearPrescriptionPad();
 
+    // Pre-select patient coming from the Patients page "Follow Up" button
+    const followUpPatientRaw = typeof window !== "undefined" ? localStorage.getItem("rx-followup-patient") : null;
+    if (followUpPatientRaw) {
+      localStorage.removeItem("rx-followup-patient");
+      try {
+        const p = JSON.parse(followUpPatientRaw) as Patient;
+        setSelectedPatient(p);
+      } catch {}
+      return;
+    }
+
     // Prefer the URL param; fall back to the localStorage relay written by attendAppointment()
     const aptId =
       searchParams.get("attend") ??
