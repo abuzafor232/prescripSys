@@ -13,6 +13,9 @@ import {
   Copy,
   Download,
   Eraser,
+  Mail,
+  MessageCircle,
+  Smartphone,
   FileText,
   Eye,
   History,
@@ -3636,6 +3639,8 @@ function printWithPad(prescription: Prescription): void {
 
 function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescription: Prescription; onClose: () => void; onEdit: () => void }) {
   const previewHtml = buildPadHtml(prescription, false);
+  const [showSendPanel, setShowSendPanel] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   function handlePrint() {
     const html = buildPadHtml(prescription, true);
@@ -3645,29 +3650,84 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     win.document.close();
   }
 
-  function handleDownload() {
-    const html = buildPadHtml(prescription, false);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Rx-${prescription.prescriptionNo}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  async function handleDownload() {
+    setIsDownloading(true);
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import("jspdf"),
+        import("html2canvas"),
+      ]);
+
+      const html = buildPadHtml(prescription, false);
+      const parsed = new DOMParser().parseFromString(html, "text/html");
+
+      // Build an off-screen container that mirrors the pad HTML
+      const wrapper = document.createElement("div");
+      wrapper.style.cssText = "position:fixed;top:0;left:-10000px;z-index:-1;width:794px;background:#fff;";
+      const styleEl = document.createElement("style");
+      styleEl.textContent = Array.from(parsed.querySelectorAll("style")).map(s => s.textContent ?? "").join("\n");
+      wrapper.appendChild(styleEl);
+      for (const child of Array.from(parsed.body.children)) {
+        wrapper.appendChild(document.importNode(child, true));
+      }
+      document.body.appendChild(wrapper);
+
+      await document.fonts.ready;
+      await new Promise(r => setTimeout(r, 400));
+
+      const canvas = await html2canvas(wrapper, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        width: 794,
+      });
+
+      document.body.removeChild(wrapper);
+
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
+      pdf.save(`Rx-${prescription.prescriptionNo}.pdf`);
+    } catch {
+      handlePrint(); // fallback to print dialog
+    } finally {
+      setIsDownloading(false);
+    }
   }
 
-  function handleSend() {
-    const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
-    const waPhone = raw
-      ? raw.startsWith("880") ? raw : `880${raw.replace(/^0/, "")}`
+  function sendText() {
+    const fuDate = prescription.followUpDate
+      ? new Date(prescription.followUpDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
       : "";
-    const text = `Prescription\nPatient: ${prescription.patient.name}\nRx#: ${prescription.prescriptionNo}`;
-    const url = waPhone
-      ? `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, "_blank");
+    return `Prescription\nPatient: ${prescription.patient.name}\nRx No: ${prescription.prescriptionNo}${fuDate ? `\nFollow-up: ${fuDate}` : ""}`;
+  }
+
+  function waPhone() {
+    const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
+    return raw ? (raw.startsWith("880") ? raw : `880${raw.replace(/^0/, "")}`) : "";
+  }
+
+  function handleWhatsApp() {
+    const wa = waPhone();
+    window.open(
+      `https://wa.me/${wa}?text=${encodeURIComponent(sendText())}`,
+      "_blank"
+    );
+    setShowSendPanel(false);
+  }
+
+  function handleSMS() {
+    const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
+    const phone = raw ? (raw.startsWith("880") ? `+${raw}` : `+880${raw.replace(/^0/, "")}`) : "";
+    window.open(`sms:${phone}?body=${encodeURIComponent(sendText())}`, "_blank");
+    setShowSendPanel(false);
+  }
+
+  function handleEmail() {
+    const subject = encodeURIComponent(`Prescription – ${prescription.patient.name} (${prescription.prescriptionNo})`);
+    const body = encodeURIComponent(`Dear ${prescription.patient.name},\n\nPlease find your prescription details below.\n\nPrescription No: ${prescription.prescriptionNo}\nDate: ${new Date(prescription.createdAt ?? Date.now()).toLocaleDateString("en-GB")}\n\nRegards,\nDr. ${prescription.doctor?.displayName ?? ""}`);
+    window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+    setShowSendPanel(false);
   }
 
   // Auto-trigger print dialog when sidebar first opens
@@ -3682,7 +3742,7 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
       {/* dark overlay */}
       <div className="flex-1 bg-black/50" onClick={onClose} />
       {/* sidebar */}
-      <div className="flex h-full w-1/2 flex-col bg-white shadow-2xl">
+      <div className="relative flex h-full w-1/2 flex-col bg-white shadow-2xl">
         {/* header */}
         <div className="flex shrink-0 items-center gap-3 border-b bg-muted/30 px-4 py-3">
           <div>
@@ -3699,21 +3759,24 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
             <X className="h-4 w-4" />
           </button>
         </div>
+
         {/* action buttons — top */}
         <div className="flex shrink-0 gap-2 border-b bg-muted/20 px-4 py-2">
-          <Button className="flex-1 gap-2" onClick={handlePrint}>
-            <Printer className="h-4 w-4" /> Print
+          <Button className="flex-1 gap-1.5 text-xs" onClick={handlePrint}>
+            <Printer className="h-3.5 w-3.5" /> Print
           </Button>
-          <Button variant="outline" className="flex-1 gap-2" onClick={handleSend}>
-            <Share2 className="h-4 w-4" /> Send
+          <Button variant="outline" className="flex-1 gap-1.5 text-xs" onClick={() => setShowSendPanel(true)}>
+            <Share2 className="h-3.5 w-3.5" /> Send
           </Button>
-          <Button variant="outline" className="flex-1 gap-2" onClick={handleDownload}>
-            <Download className="h-4 w-4" /> Download PDF
+          <Button variant="outline" className="flex-1 gap-1.5 text-xs" onClick={handleDownload} disabled={isDownloading}>
+            {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {isDownloading ? "Generating…" : "Download PDF"}
           </Button>
-          <Button variant="secondary" className="flex-1 gap-2" onClick={onEdit}>
-            <PenLine className="h-4 w-4" /> Edit Rx
+          <Button variant="secondary" className="flex-1 gap-1.5 text-xs" onClick={onEdit}>
+            <PenLine className="h-3.5 w-3.5" /> Edit Rx
           </Button>
         </div>
+
         {/* preview iframe */}
         <div className="flex-1 overflow-hidden bg-gray-100 p-3">
           <iframe
@@ -3723,6 +3786,48 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
             sandbox="allow-same-origin"
           />
         </div>
+
+        {/* Send channel picker overlay */}
+        {showSendPanel && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
+            <div className="w-72 rounded-xl bg-white p-5 shadow-2xl">
+              <p className="mb-4 text-sm font-semibold text-center">Send Prescription via</p>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handleWhatsApp}
+                  className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium transition hover:bg-green-50 hover:border-green-400"
+                >
+                  <MessageCircle className="h-5 w-5 text-green-600" />
+                  <span>WhatsApp</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSMS}
+                  className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium transition hover:bg-blue-50 hover:border-blue-400"
+                >
+                  <Smartphone className="h-5 w-5 text-blue-600" />
+                  <span>SMS</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEmail}
+                  className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium transition hover:bg-purple-50 hover:border-purple-400"
+                >
+                  <Mail className="h-5 w-5 text-purple-600" />
+                  <span>Email</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSendPanel(false)}
+                className="mt-4 w-full rounded-lg py-2 text-xs text-muted-foreground transition hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>,
     document.body
