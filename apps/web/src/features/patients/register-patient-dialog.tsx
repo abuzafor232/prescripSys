@@ -50,6 +50,12 @@ function parseOptionalInteger(value: string) {
 
 function parsePatientDate(value: string) {
   if (!value) return undefined;
+  // YYYY-MM-DD (from DatePickerInput calendar)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const d = new Date(`${value}T00:00:00`);
+    return isNaN(d.getTime()) ? undefined : value;
+  }
+  // DD/MM/YYYY (manual text entry)
   const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
   if (!match) return undefined;
   const day = Number.parseInt(match[1], 10);
@@ -57,7 +63,7 @@ function parsePatientDate(value: string) {
   const year = Number.parseInt(match[3], 10);
   const date = new Date(Date.UTC(year, month - 1, day));
   if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return undefined;
-  return date.toISOString();
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function calcAgeFromDOB(dob: string): { ageYears: string; ageMonths: string; ageDays: string } {
@@ -274,7 +280,7 @@ export function RegisterPatientDialog({
     const ageYears = parseOptionalInteger(form.ageYears);
     const ageMonths = parseOptionalInteger(form.ageMonths);
     const ageDays = parseOptionalInteger(form.ageDays);
-    if (!ageYears && !ageMonths && !ageDays) { setError("Enter patient age."); return; }
+    if (ageYears === undefined && ageMonths === undefined && ageDays === undefined) { setError("Enter patient age."); return; }
 
     mutation.mutate({
       name,
