@@ -3392,19 +3392,19 @@ function printWithPad(prescription: Prescription): void {
     const eyeTable = hasEyeData
       ? `<table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead><tr style="background:#f5f5f5">
-            <th style="border:1px solid #ddd;padding:2px 4px;width:28px"></th>
-            <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">SPH</th>
-            <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">CYL</th>
-            <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">Axis</th>
-            <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">VA</th>
+            <th style="border:1px solid #ddd;padding:5px 4px;width:28px"></th>
+            <th style="border:1px solid #ddd;padding:5px 6px;text-align:center">SPH</th>
+            <th style="border:1px solid #ddd;padding:5px 6px;text-align:center">CYL</th>
+            <th style="border:1px solid #ddd;padding:5px 6px;text-align:center">Axis</th>
+            <th style="border:1px solid #ddd;padding:5px 6px;text-align:center">VA</th>
           </tr></thead>
           <tbody>
             ${sides.map(s => `<tr>
-              <td style="border:1px solid #ddd;padding:2px 4px;font-weight:600;text-align:center">${s === "right" ? "RE" : "LE"}</td>
-              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${escHtml(vision[s].sphere || "")}</td>
-              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${escHtml(vision[s].cyl || "")}</td>
-              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${escHtml(vision[s].axis || "")}</td>
-              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${escHtml(vision[s].va || "")}</td>
+              <td style="border:1px solid #ddd;padding:5px 4px;font-weight:600;text-align:center">${s === "right" ? "RE" : "LE"}</td>
+              <td style="border:1px solid #ddd;padding:5px 4px;text-align:center">${escHtml(vision[s].sphere || "")}</td>
+              <td style="border:1px solid #ddd;padding:5px 4px;text-align:center">${escHtml(vision[s].cyl || "")}</td>
+              <td style="border:1px solid #ddd;padding:5px 4px;text-align:center">${escHtml(vision[s].axis || "")}</td>
+              <td style="border:1px solid #ddd;padding:5px 4px;text-align:center">${escHtml(vision[s].va || "")}</td>
             </tr>`).join("")}
           </tbody>
         </table>`
@@ -3417,11 +3417,11 @@ function printWithPad(prescription: Prescription): void {
       ? `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:0">
           <tbody>
             <tr>
-              <td style="border:1px solid #ddd;padding:2px 8px"><strong>Near Add:</strong> ${nearAdd || "—"}</td>
-              <td style="border:1px solid #ddd;padding:2px 8px"><strong>IPD:</strong> ${ipd || "—"}</td>
+              <td style="border:1px solid #ddd;padding:5px 8px"><strong>Near Add:</strong> ${nearAdd || "—"}</td>
+              <td style="border:1px solid #ddd;padding:5px 8px"><strong>IPD:</strong> ${ipd || "—"}</td>
             </tr>
             <tr>
-              <td colspan="2" style="border:1px solid #ddd;padding:2px 8px"><strong>Glass:</strong> ${glassLabel || "—"}</td>
+              <td colspan="2" style="border:1px solid #ddd;padding:5px 8px"><strong>Glass:</strong> ${glassLabel || "—"}</td>
             </tr>
           </tbody>
         </table>`
@@ -3429,8 +3429,7 @@ function printWithPad(prescription: Prescription): void {
     const noteRow = vision.note
       ? `<div style="font-size:11px;color:#555;padding:2px 0">Remarks: ${escHtml(vision.note)}</div>`
       : "";
-    // Fixed 1.8in height for entire glass block
-    glassBlockHtmlStr = `<div style="height:1.8in;overflow:hidden">${eyeTable}${extraRows}${noteRow}</div>`;
+    glassBlockHtmlStr = `<div>${eyeTable}${extraRows}${noteRow}</div>`;
   }
 
   // Right column — Advice, Follow-Up, Referral
