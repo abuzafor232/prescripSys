@@ -3640,7 +3640,7 @@ function printWithPad(prescription: Prescription): void {
 function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescription: Prescription; onClose: () => void; onEdit: () => void }) {
   const previewHtml = buildPadHtml(prescription, false);
   const [showSendPanel, setShowSendPanel] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [busy, setBusy] = useState<"download" | "wa" | "email" | null>(null);
 
   function handlePrint() {
     const html = buildPadHtml(prescription, true);
@@ -3650,83 +3650,85 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     win.document.close();
   }
 
+  async function generatePdfBlob(): Promise<Blob> {
+    const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+      import("jspdf"),
+      import("html2canvas"),
+    ]);
+    const parsed = new DOMParser().parseFromString(buildPadHtml(prescription, false), "text/html");
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "position:fixed;top:0;left:-10000px;z-index:-1;width:794px;background:#fff;";
+    const styleEl = document.createElement("style");
+    styleEl.textContent = Array.from(parsed.querySelectorAll("style")).map(s => s.textContent ?? "").join("\n");
+    wrapper.appendChild(styleEl);
+    for (const child of Array.from(parsed.body.children)) wrapper.appendChild(document.importNode(child, true));
+    document.body.appendChild(wrapper);
+    await document.fonts.ready;
+    await new Promise(r => setTimeout(r, 400));
+    const canvas = await html2canvas(wrapper, { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff", width: 794 });
+    document.body.removeChild(wrapper);
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
+    return pdf.output("blob");
+  }
+
+  function pdfFilename() { return `Rx-${prescription.prescriptionNo}.pdf`; }
+
+  function triggerDownload(blob: Blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = pdfFilename(); a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function handleDownload() {
-    setIsDownloading(true);
+    setBusy("download");
+    try { triggerDownload(await generatePdfBlob()); }
+    catch { handlePrint(); }
+    finally { setBusy(null); }
+  }
+
+  async function handleWhatsApp() {
+    setBusy("wa");
     try {
-      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-        import("jspdf"),
-        import("html2canvas"),
-      ]);
-
-      const html = buildPadHtml(prescription, false);
-      const parsed = new DOMParser().parseFromString(html, "text/html");
-
-      // Build an off-screen container that mirrors the pad HTML
-      const wrapper = document.createElement("div");
-      wrapper.style.cssText = "position:fixed;top:0;left:-10000px;z-index:-1;width:794px;background:#fff;";
-      const styleEl = document.createElement("style");
-      styleEl.textContent = Array.from(parsed.querySelectorAll("style")).map(s => s.textContent ?? "").join("\n");
-      wrapper.appendChild(styleEl);
-      for (const child of Array.from(parsed.body.children)) {
-        wrapper.appendChild(document.importNode(child, true));
+      const blob = await generatePdfBlob();
+      const file = new File([blob], pdfFilename(), { type: "application/pdf" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Prescription ${prescription.prescriptionNo}` });
+      } else {
+        // Desktop fallback: download PDF then open WhatsApp Web
+        triggerDownload(blob);
+        const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
+        const wa = raw ? (raw.startsWith("880") ? raw : `880${raw.replace(/^0/, "")}`) : "";
+        window.open(`https://web.whatsapp.com/${wa ? `send?phone=${wa}` : ""}`, "_blank");
       }
-      document.body.appendChild(wrapper);
-
-      await document.fonts.ready;
-      await new Promise(r => setTimeout(r, 400));
-
-      const canvas = await html2canvas(wrapper, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        width: 794,
-      });
-
-      document.body.removeChild(wrapper);
-
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
-      pdf.save(`Rx-${prescription.prescriptionNo}.pdf`);
-    } catch {
-      handlePrint(); // fallback to print dialog
-    } finally {
-      setIsDownloading(false);
-    }
+    } catch (e) { if ((e as Error).name !== "AbortError") console.error(e); }
+    finally { setBusy(null); setShowSendPanel(false); }
   }
 
-  function sendText() {
-    const fuDate = prescription.followUpDate
-      ? new Date(prescription.followUpDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-      : "";
-    return `Prescription\nPatient: ${prescription.patient.name}\nRx No: ${prescription.prescriptionNo}${fuDate ? `\nFollow-up: ${fuDate}` : ""}`;
-  }
-
-  function waPhone() {
-    const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
-    return raw ? (raw.startsWith("880") ? raw : `880${raw.replace(/^0/, "")}`) : "";
-  }
-
-  function handleWhatsApp() {
-    const wa = waPhone();
-    window.open(
-      `https://wa.me/${wa}?text=${encodeURIComponent(sendText())}`,
-      "_blank"
-    );
-    setShowSendPanel(false);
+  async function handleEmail() {
+    setBusy("email");
+    try {
+      const blob = await generatePdfBlob();
+      const file = new File([blob], pdfFilename(), { type: "application/pdf" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Prescription ${prescription.prescriptionNo}` });
+      } else {
+        // Desktop fallback: download PDF then open Gmail compose
+        triggerDownload(blob);
+        const su = encodeURIComponent(`Prescription – ${prescription.patient.name} (${prescription.prescriptionNo})`);
+        const body = encodeURIComponent(`Dear ${prescription.patient.name},\n\nPlease find the prescription PDF attached.\n\nRx No: ${prescription.prescriptionNo}\n\nRegards,\nDr. ${prescription.doctor?.displayName ?? ""}`);
+        window.open(`https://mail.google.com/mail/?view=cm&su=${su}&body=${body}`, "_blank");
+      }
+    } catch (e) { if ((e as Error).name !== "AbortError") console.error(e); }
+    finally { setBusy(null); setShowSendPanel(false); }
   }
 
   function handleSMS() {
     const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
     const phone = raw ? (raw.startsWith("880") ? `+${raw}` : `+880${raw.replace(/^0/, "")}`) : "";
-    window.open(`sms:${phone}?body=${encodeURIComponent(sendText())}`, "_blank");
-    setShowSendPanel(false);
-  }
-
-  function handleEmail() {
-    const subject = encodeURIComponent(`Prescription – ${prescription.patient.name} (${prescription.prescriptionNo})`);
-    const body = encodeURIComponent(`Dear ${prescription.patient.name},\n\nPlease find your prescription details below.\n\nPrescription No: ${prescription.prescriptionNo}\nDate: ${new Date(prescription.createdAt ?? Date.now()).toLocaleDateString("en-GB")}\n\nRegards,\nDr. ${prescription.doctor?.displayName ?? ""}`);
-    window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+    const text = `Prescription\nPatient: ${prescription.patient.name}\nRx No: ${prescription.prescriptionNo}`;
+    window.open(`sms:${phone}?body=${encodeURIComponent(text)}`, "_blank");
     setShowSendPanel(false);
   }
 
@@ -3737,12 +3739,14 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const sendOptionCls = "flex w-full items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm font-medium text-foreground transition hover:bg-accent hover:text-accent-foreground disabled:opacity-50";
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex">
       {/* dark overlay */}
       <div className="flex-1 bg-black/50" onClick={onClose} />
       {/* sidebar */}
-      <div className="relative flex h-full w-1/2 flex-col bg-white shadow-2xl">
+      <div className="relative flex h-full w-1/2 flex-col bg-background shadow-2xl">
         {/* header */}
         <div className="flex shrink-0 items-center gap-3 border-b bg-muted/30 px-4 py-3">
           <div>
@@ -3768,9 +3772,9 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
           <Button variant="outline" className="flex-1 gap-1.5 text-xs" onClick={() => setShowSendPanel(true)}>
             <Share2 className="h-3.5 w-3.5" /> Send
           </Button>
-          <Button variant="outline" className="flex-1 gap-1.5 text-xs" onClick={handleDownload} disabled={isDownloading}>
-            {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            {isDownloading ? "Generating…" : "Download PDF"}
+          <Button variant="outline" className="flex-1 gap-1.5 text-xs" onClick={handleDownload} disabled={busy === "download"}>
+            {busy === "download" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {busy === "download" ? "Generating…" : "Download PDF"}
           </Button>
           <Button variant="secondary" className="flex-1 gap-1.5 text-xs" onClick={onEdit}>
             <PenLine className="h-3.5 w-3.5" /> Edit Rx
@@ -3778,7 +3782,7 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
         </div>
 
         {/* preview iframe */}
-        <div className="flex-1 overflow-hidden bg-gray-100 p-3">
+        <div className="flex-1 overflow-hidden bg-muted/40 p-3">
           <iframe
             srcDoc={previewHtml}
             className="h-full w-full rounded-lg border bg-white shadow-sm"
@@ -3790,32 +3794,23 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
         {/* Send channel picker overlay */}
         {showSendPanel && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
-            <div className="w-72 rounded-xl bg-white p-5 shadow-2xl">
-              <p className="mb-4 text-sm font-semibold text-center">Send Prescription via</p>
+            <div className="w-72 rounded-xl border border-border bg-background p-5 shadow-2xl">
+              <p className="mb-1 text-sm font-semibold text-center text-foreground">Send Prescription via</p>
+              <p className="mb-4 text-xs text-center text-muted-foreground">PDF will be generated and shared</p>
               <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={handleWhatsApp}
-                  className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium transition hover:bg-green-50 hover:border-green-400"
-                >
-                  <MessageCircle className="h-5 w-5 text-green-600" />
+                <button type="button" onClick={handleWhatsApp} disabled={!!busy} className={sendOptionCls}>
+                  {busy === "wa" ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : <MessageCircle className="h-5 w-5 text-muted-foreground" />}
                   <span>WhatsApp</span>
+                  {busy === "wa" && <span className="ml-auto text-xs text-muted-foreground">Generating…</span>}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSMS}
-                  className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium transition hover:bg-blue-50 hover:border-blue-400"
-                >
-                  <Smartphone className="h-5 w-5 text-blue-600" />
+                <button type="button" onClick={handleEmail} disabled={!!busy} className={sendOptionCls}>
+                  {busy === "email" ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : <Mail className="h-5 w-5 text-muted-foreground" />}
+                  <span>Email (Gmail)</span>
+                  {busy === "email" && <span className="ml-auto text-xs text-muted-foreground">Generating…</span>}
+                </button>
+                <button type="button" onClick={handleSMS} disabled={!!busy} className={sendOptionCls}>
+                  <Smartphone className="h-5 w-5 text-muted-foreground" />
                   <span>SMS</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleEmail}
-                  className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium transition hover:bg-purple-50 hover:border-purple-400"
-                >
-                  <Mail className="h-5 w-5 text-purple-600" />
-                  <span>Email</span>
                 </button>
               </div>
               <button
