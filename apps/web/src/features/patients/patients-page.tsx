@@ -67,7 +67,7 @@ function genderLabel(g?: string | null): string {
 
 // ── Prescription History Card ──────────────────────────────────────────────
 
-function RxHistoryCard({ rx }: { rx: ProfilePrescription }) {
+function RxHistoryCard({ rx, onFollowUp }: { rx: ProfilePrescription; onFollowUp?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const meds = rx.medicines ?? [];
 
@@ -81,10 +81,21 @@ function RxHistoryCard({ rx }: { rx: ProfilePrescription }) {
           </span>
           <span className="text-xs text-muted-foreground">{formatDate(rx.createdAt)}</span>
         </div>
-        <div className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
-          <span>{rx.doctor.displayName}</span>
-          <span className="text-border">·</span>
-          <span>{rx.chamber.name}</span>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>{rx.doctor.displayName}</span>
+            <span className="text-border">·</span>
+            <span>{rx.chamber.name}</span>
+          </div>
+          {onFollowUp && (
+            <button
+              onClick={onFollowUp}
+              className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+            >
+              <CalendarPlus className="h-3 w-3" />
+              Follow Up
+            </button>
+          )}
         </div>
       </div>
 
@@ -148,7 +159,7 @@ function PatientProfileDrawer({
 }: {
   patientId: string;
   onClose: () => void;
-  onFollowUp: (patient: Patient) => void;
+  onFollowUp: (patient: Patient, rx?: ProfilePrescription) => void;
 }) {
   const token = useSessionStore((s) => s.accessToken) ?? "";
 
@@ -256,10 +267,10 @@ function PatientProfileDrawer({
               {/* ── Follow-up button ── */}
               <Button
                 className="w-full gap-2"
-                onClick={() => onFollowUp(profile)}
+                onClick={() => onFollowUp(profile, rxs[0])}
               >
                 <CalendarPlus className="h-4 w-4" />
-                New Follow-Up Prescription
+                Follow-Up
               </Button>
 
               {/* ── Prescription history ── */}
@@ -280,7 +291,7 @@ function PatientProfileDrawer({
                 ) : (
                   <div className="space-y-3">
                     {rxs.map((rx) => (
-                      <RxHistoryCard key={rx.id} rx={rx} />
+                      <RxHistoryCard key={rx.id} rx={rx} onFollowUp={() => onFollowUp(profile!, rx)} />
                     ))}
                   </div>
                 )}
@@ -329,8 +340,11 @@ export function PatientsPage() {
   const meta = data?.meta;
   const totalPages = meta?.totalPages ?? 1;
 
-  const handleFollowUp = useCallback((patient: Patient) => {
+  const handleFollowUp = useCallback((patient: Patient, rx?: ProfilePrescription) => {
     try { localStorage.setItem("rx-followup-patient", JSON.stringify(patient)); } catch {}
+    if (rx) {
+      try { localStorage.setItem("rx-followup-rx", JSON.stringify(rx)); } catch {}
+    }
     router.push("/prescriptions/new");
   }, [router]);
 

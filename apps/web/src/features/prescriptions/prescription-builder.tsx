@@ -2414,7 +2414,7 @@ export function PrescriptionBuilder() {
   useEffect(() => {
     clearPrescriptionPad();
 
-    // Pre-select patient coming from the Patients page "Follow Up" button
+    // Pre-select patient (and optionally a prescription) from the Patients page "Follow Up" button
     const followUpPatientRaw = typeof window !== "undefined" ? localStorage.getItem("rx-followup-patient") : null;
     if (followUpPatientRaw) {
       localStorage.removeItem("rx-followup-patient");
@@ -2422,6 +2422,41 @@ export function PrescriptionBuilder() {
         const p = JSON.parse(followUpPatientRaw) as Patient;
         setSelectedPatient(p);
       } catch {}
+
+      const followUpRxRaw = typeof window !== "undefined" ? localStorage.getItem("rx-followup-rx") : null;
+      if (followUpRxRaw) {
+        localStorage.removeItem("rx-followup-rx");
+        try {
+          const rx = JSON.parse(followUpRxRaw) as {
+            chiefComplaints?: string | null;
+            advice?: string | null;
+            medicines?: Array<{
+              brandName: string; genericName?: string | null;
+              strength?: string | null; dosageForm?: string | null;
+              dose: string; duration: string;
+              instruction?: string | null; note?: string | null;
+            }>;
+          };
+          setNotes((prev) => ({
+            ...prev,
+            complaint: rx.chiefComplaints ?? "",
+            advice: rx.advice ?? "",
+          }));
+          if (rx.medicines?.length) {
+            setMedicines(rx.medicines.map((m) => ({
+              brandName: m.brandName,
+              genericName: m.genericName ?? undefined,
+              strength: m.strength ?? null,
+              dosageForm: m.dosageForm ?? null,
+              dose: m.dose,
+              duration: m.duration,
+              instruction: m.instruction ?? "",
+              note: m.note ?? undefined,
+            })));
+          }
+        } catch {}
+      }
+
       return;
     }
 
