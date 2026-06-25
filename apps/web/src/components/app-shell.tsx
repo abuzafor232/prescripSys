@@ -19,7 +19,7 @@ import {
   Loader2,
   LogOut,
   Menu,
-  Microscope,
+  History,
   Pill,
   Plus,
   Settings,
@@ -41,7 +41,7 @@ const nav: { href: string; label: string; icon: React.ElementType }[] = [
   { href: "/appointments",      label: "Appointments", icon: CalendarClock   },
   { href: "/prescriptions/new", label: "Prescription", icon: FilePlus2       },
   { href: "/patients",          label: "Patients",     icon: UsersRound      },
-  { href: "/research",          label: "Old Rx",       icon: Microscope      },
+  { href: "/old-rx",            label: "Old Rx",       icon: History         },
   { href: "/medicines",         label: "Drugs",        icon: Pill            },
 ];
 
