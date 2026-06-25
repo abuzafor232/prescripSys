@@ -3409,24 +3409,28 @@ function printWithPad(prescription: Prescription): void {
           </tbody>
         </table>`
       : "";
-    // Near Add / IPD / Glass as a bordered table row (matches the power box style)
-    const nearAdd   = vision.add ? escHtml(vision.add) : "";
-    const ipd       = vision.ipd ? escHtml(vision.ipd) : "";
+    // Near Add / IPD row + Glass on its own row below (both bordered like power table)
+    const nearAdd    = vision.add ? escHtml(vision.add) : "";
+    const ipd        = vision.ipd ? escHtml(vision.ipd) : "";
     const glassLabel = escHtml([vision.lensType, ...(vision.glassFeatures ?? [])].filter(Boolean).join(" "));
-    const extraRow = (nearAdd || ipd || glassLabel)
+    const extraRows = (nearAdd || ipd || glassLabel)
       ? `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:0">
-          <tbody><tr>
-            <td style="border:1px solid #ddd;padding:2px 6px"><strong>Near Add:</strong> ${nearAdd || "—"}</td>
-            <td style="border:1px solid #ddd;padding:2px 6px"><strong>IPD:</strong> ${ipd || "—"}</td>
-            <td style="border:1px solid #ddd;padding:2px 6px"><strong>Glass:</strong> ${glassLabel || "—"}</td>
-          </tr></tbody>
+          <tbody>
+            <tr>
+              <td style="border:1px solid #ddd;padding:2px 8px"><strong>Near Add:</strong> ${nearAdd || "—"}</td>
+              <td style="border:1px solid #ddd;padding:2px 8px"><strong>IPD:</strong> ${ipd || "—"}</td>
+            </tr>
+            <tr>
+              <td colspan="2" style="border:1px solid #ddd;padding:2px 8px"><strong>Glass:</strong> ${glassLabel || "—"}</td>
+            </tr>
+          </tbody>
         </table>`
       : "";
     const noteRow = vision.note
       ? `<div style="font-size:11px;color:#555;padding:2px 0">Remarks: ${escHtml(vision.note)}</div>`
       : "";
-    // Wrap entire glass block in a 1.8in fixed-height container
-    glassBlockHtmlStr = `<div style="height:1.8in;overflow:hidden">${eyeTable}${extraRow}${noteRow}</div>`;
+    // Fixed 1.8in height for entire glass block
+    glassBlockHtmlStr = `<div style="height:1.8in;overflow:hidden">${eyeTable}${extraRows}${noteRow}</div>`;
   }
 
   // Right column — Advice, Follow-Up, Referral
@@ -3439,16 +3443,30 @@ function printWithPad(prescription: Prescription): void {
   const refText = String(rawSections.referral ?? "").trim();
   const structRefs = (meta.referrals as ReferralEntry[] | undefined)?.filter(r => r.name || r.specialty) ?? [];
   const refInner = structRefs.length
-    ? structRefs.map((r, i) =>
-        `<div style="font-size:12px">${i + 1}. ${r.direction === "to" ? "Refer To" : "Referred From"}: ${escHtml([r.name, r.specialty, r.additionalInfo, r.phone].filter(Boolean).join(", "))}</div>`
-      ).join("")
+    ? structRefs.map((r) => {
+        const direction = r.direction === "to" ? "Refer To" : "Referred From";
+        const nameSpec = [r.name, r.specialty].filter(Boolean).join(" - ");
+        return `<div style="font-size:12px;margin-bottom:5px">
+          <div style="font-weight:600">${escHtml(direction)}: ${escHtml(nameSpec)}</div>
+          ${r.additionalInfo ? `<div style="white-space:pre-line">${escHtml(r.additionalInfo)}</div>` : ""}
+          <div>Contact: ${r.phone ? escHtml(r.phone) : ""}</div>
+        </div>`;
+      }).join("")
     : refText
       ? `<div style="white-space:pre-line;font-size:12px">${escHtml(refText)}</div>`
       : "";
 
+  // Glass section uses margin-bottom:2px (no gap before Advice)
+  const glassSecHtml = glassBlockHtmlStr
+    ? `<div style="margin-bottom:2px">
+         <div style="font-size:10px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Glass Prescription</div>
+         ${glassBlockHtmlStr}
+       </div>`
+    : "";
+
   const rightHtml = [
     medsHtml ? `<div style="margin-bottom:7px">${medsHtml}</div>` : "",
-    sec("Glass Prescription", glassBlockHtmlStr),
+    glassSecHtml,
     sec("Advice", adviceText ? `<div style="white-space:pre-line;font-size:12px">${escHtml(adviceText)}</div>` : ""),
     fuText ? sec("Follow-Up", `<div style="font-size:12px">${escHtml(fuText)}</div>`) : "",
     refInner ? sec("Referral", refInner) : "",
