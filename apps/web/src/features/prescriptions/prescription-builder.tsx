@@ -3565,7 +3565,7 @@ function buildPadHtml(prescription: Prescription, autoprint = true): string {
     ${footerHtml ? `<div class="rxp" style="font-size:12px;color:#111;line-height:1.5;text-align:${footerAlign}">${footerHtml}</div>` : ""}
   </div>
 </div>
-${autoprint ? `<script>window.onload=function(){window.print()}</script>` : ""}
+${autoprint ? `<script>window.onload=function(){window.print();window.close()}</script>` : ""}
 </body></html>`;
 
   return html;
@@ -3617,6 +3617,13 @@ function PrescriptionPrintSidebar({ prescription, onClose }: { prescription: Pre
     window.open(url, "_blank");
   }
 
+  // Auto-trigger print dialog when sidebar first opens
+  useEffect(() => {
+    const timer = setTimeout(handlePrint, 200);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex">
       {/* dark overlay */}
@@ -3639,17 +3646,8 @@ function PrescriptionPrintSidebar({ prescription, onClose }: { prescription: Pre
             <X className="h-4 w-4" />
           </button>
         </div>
-        {/* preview iframe */}
-        <div className="flex-1 overflow-hidden bg-gray-100 p-3">
-          <iframe
-            srcDoc={previewHtml}
-            className="h-full w-full rounded-lg border bg-white shadow-sm"
-            title="Prescription Preview"
-            sandbox="allow-same-origin"
-          />
-        </div>
-        {/* action buttons */}
-        <div className="flex shrink-0 gap-2 border-t bg-muted/20 px-4 py-3">
+        {/* action buttons — top */}
+        <div className="flex shrink-0 gap-2 border-b bg-muted/20 px-4 py-2">
           <Button className="flex-1 gap-2" onClick={handlePrint}>
             <Printer className="h-4 w-4" /> Print
           </Button>
@@ -3659,6 +3657,15 @@ function PrescriptionPrintSidebar({ prescription, onClose }: { prescription: Pre
           <Button variant="outline" className="flex-1 gap-2" onClick={handleDownload}>
             <Download className="h-4 w-4" /> Download PDF
           </Button>
+        </div>
+        {/* preview iframe */}
+        <div className="flex-1 overflow-hidden bg-gray-100 p-3">
+          <iframe
+            srcDoc={previewHtml}
+            className="h-full w-full rounded-lg border bg-white shadow-sm"
+            title="Prescription Preview"
+            sandbox="allow-same-origin"
+          />
         </div>
       </div>
     </div>,
