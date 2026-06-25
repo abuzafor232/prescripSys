@@ -1038,6 +1038,7 @@ export function PrescriptionBuilder() {
       showStatus("success", `Prescription ${prescription.prescriptionNo} saved.`);
       if (variables.printAfterSave) {
         window.setTimeout(() => printWithPad(prescription), 0);
+        clearPrescriptionPad();
       }
       if (variables.clearAfterSave) {
         clearPrescriptionPad();
@@ -1689,6 +1690,12 @@ export function PrescriptionBuilder() {
                 return `${h.name}${h.value ? `: ${h.value}` : ""}${dur ? `\n• ${dur}` : ""}${h.note ? `\n  ${h.note}` : ""}`;
               }).join("\n")
             : notes.history,
+          printHistoryLines: histories.length
+            ? histories.map((h) => {
+                const dur = h.duration ? formatHistoryDuration(h.duration) : "";
+                return [h.name + (h.value ? `: ${h.value}` : ""), dur, h.note ? `(${h.note})` : ""].filter(Boolean).join(" ");
+              })
+            : [],
           findings: notes.findings,
           investigation: notes.investigation,
           diagnosis: notes.diagnosis,
@@ -3297,16 +3304,16 @@ function printWithPad(prescription: Prescription): void {
     : new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   const regNo = pt.registrationNo ?? "—";
 
-  // Section builder
+  // Section builder — bold, dark label
   const sec = (label: string, innerHtml: string) =>
     innerHtml.trim()
       ? `<div style="margin-bottom:7px">
-           <div style="font-size:9.5px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">${label}</div>
+           <div style="font-size:10px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">${label}</div>
            ${innerHtml}
          </div>`
       : "";
 
-  // Bullet list from plain-text (newline-separated items)
+  // Bullet list — plain text, one bullet per line
   const bullets = (text: string) => {
     const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
     return lines.length
@@ -3314,27 +3321,51 @@ function printWithPad(prescription: Prescription): void {
       : "";
   };
 
-  // Metadata
-  const meta    = (prescription.metadata ?? {}) as Record<string, unknown>;
-  const content = (meta.content ?? {}) as Record<string, string>;
+  // Findings renderer: lines ending with ":" are sub-section headers (bulleted + bold),
+  // lines starting with spaces are RE/LE sub-items (indented, no bullet).
+  const findingsHtmlRenderer = (text: string) => {
+    if (!text.trim()) return "";
+    return text.split("\n").map(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return "";
+      const isIndented = line.startsWith("  ") || line.startsWith("\t");
+      if (isIndented) {
+        return `<div style="padding-left:16px;font-size:11.5px;line-height:1.4">${escHtml(trimmed)}</div>`;
+      }
+      if (trimmed.endsWith(":")) {
+        return `<div style="font-size:12px;line-height:1.5">• <strong>${escHtml(trimmed)}</strong></div>`;
+      }
+      return `<div style="font-size:12px;line-height:1.5">• ${escHtml(trimmed)}</div>`;
+    }).join("");
+  };
+
+  // Metadata — data lives in rawSections (not content)
+  const meta       = (prescription.metadata ?? {}) as Record<string, unknown>;
+  const rawSections = (meta.rawSections ?? {}) as Record<string, unknown>;
 
   // Left column
-  const complaintText   = prescription.chiefComplaints?.trim() ?? "";
-  const historyText     = content.history?.trim() ?? "";
-  const findingsText    = prescription.examination?.trim() ?? "";
+  const complaintText     = prescription.chiefComplaints?.trim() ?? "";
+  // History: prefer compact printHistoryLines array; fall back to parsing rawSections.history
+  const printHistoryLines = Array.isArray(rawSections.printHistoryLines)
+    ? (rawSections.printHistoryLines as string[]).filter(Boolean)
+    : (String(rawSections.history ?? "")).split("\n").filter(l => !l.trim().startsWith("•") && l.trim());
+  const historyHtml = printHistoryLines.length
+    ? `<ul style="margin:0;padding-left:1.1em;font-size:12px">${printHistoryLines.map(l => `<li>${escHtml(l)}</li>`).join("")}</ul>`
+    : "";
+  const findingsText      = prescription.examination?.trim() ?? "";
   const investigationText = prescription.investigations?.length
     ? prescription.investigations.map(i => i.name).join("\n")
-    : (content.investigation?.trim() ?? "");
+    : (String(rawSections.investigation ?? "").trim());
   const diagnosisText = prescription.diagnoses?.length
     ? prescription.diagnoses.map(d => d.name).join("\n")
-    : (content.diagnosis?.trim() ?? "");
+    : (String(rawSections.diagnosis ?? "").trim());
 
   const leftHtml = [
-    sec("Complaints",   bullets(complaintText)),
-    sec("History",      bullets(historyText)),
-    sec("Findings",     bullets(findingsText)),
+    sec("Complaints",    bullets(complaintText)),
+    sec("History",       historyHtml),
+    sec("Findings",      findingsHtmlRenderer(findingsText)),
     sec("Investigation", bullets(investigationText)),
-    sec("Diagnosis",    bullets(diagnosisText)),
+    sec("Diagnosis",     bullets(diagnosisText)),
   ].join("");
 
   // Right column — Rx (medications)
@@ -3352,14 +3383,14 @@ function printWithPad(prescription: Prescription): void {
       }).join("")
     : "";
 
-  // Right column — Glass Prescription
+  // Right column — Glass Prescription (fixed 1.8in total height)
   const vision = meta.vision as (VisionState | undefined);
   let glassBlockHtmlStr = "";
   if (vision && glassPrescriptionHasContent(vision)) {
     const sides = ["right", "left"] as const;
     const hasEyeData = sides.some(s => Object.values(vision[s]).some(Boolean));
     const eyeTable = hasEyeData
-      ? `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:3px">
+      ? `<table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead><tr style="background:#f5f5f5">
             <th style="border:1px solid #ddd;padding:2px 4px;width:28px"></th>
             <th style="border:1px solid #ddd;padding:2px 6px;text-align:center">SPH</th>
@@ -3370,25 +3401,32 @@ function printWithPad(prescription: Prescription): void {
           <tbody>
             ${sides.map(s => `<tr>
               <td style="border:1px solid #ddd;padding:2px 4px;font-weight:600;text-align:center">${s === "right" ? "RE" : "LE"}</td>
-              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${vision[s].sphere || "—"}</td>
-              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${vision[s].cyl || "—"}</td>
-              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${vision[s].axis || "—"}</td>
-              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${vision[s].va || "—"}</td>
+              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${escHtml(vision[s].sphere || "")}</td>
+              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${escHtml(vision[s].cyl || "")}</td>
+              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${escHtml(vision[s].axis || "")}</td>
+              <td style="border:1px solid #ddd;padding:2px 4px;text-align:center">${escHtml(vision[s].va || "")}</td>
             </tr>`).join("")}
           </tbody>
         </table>`
       : "";
-    const addIpd = [
-      vision.add ? `Add: ${vision.add}` : "",
-      vision.ipd ? `IPD: ${vision.ipd}` : "",
-    ].filter(Boolean);
-    const glassLabel = [vision.lensType, ...(vision.glassFeatures ?? [])].filter(Boolean).join(" ");
-    glassBlockHtmlStr = `
-      ${eyeTable}
-      ${addIpd.length ? `<div style="font-size:11px;display:flex;gap:20px;margin-bottom:2px">${addIpd.map(l => `<span>${escHtml(l)}</span>`).join("")}</div>` : ""}
-      ${glassLabel ? `<div style="font-size:11px">Glass: ${escHtml(glassLabel)}</div>` : ""}
-      ${vision.note ? `<div style="font-size:11px;color:#555">Remarks: ${escHtml(vision.note)}</div>` : ""}
-    `;
+    // Near Add / IPD / Glass as a bordered table row (matches the power box style)
+    const nearAdd   = vision.add ? escHtml(vision.add) : "";
+    const ipd       = vision.ipd ? escHtml(vision.ipd) : "";
+    const glassLabel = escHtml([vision.lensType, ...(vision.glassFeatures ?? [])].filter(Boolean).join(" "));
+    const extraRow = (nearAdd || ipd || glassLabel)
+      ? `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:0">
+          <tbody><tr>
+            <td style="border:1px solid #ddd;padding:2px 6px"><strong>Near Add:</strong> ${nearAdd || "—"}</td>
+            <td style="border:1px solid #ddd;padding:2px 6px"><strong>IPD:</strong> ${ipd || "—"}</td>
+            <td style="border:1px solid #ddd;padding:2px 6px"><strong>Glass:</strong> ${glassLabel || "—"}</td>
+          </tr></tbody>
+        </table>`
+      : "";
+    const noteRow = vision.note
+      ? `<div style="font-size:11px;color:#555;padding:2px 0">Remarks: ${escHtml(vision.note)}</div>`
+      : "";
+    // Wrap entire glass block in a 1.8in fixed-height container
+    glassBlockHtmlStr = `<div style="height:1.8in;overflow:hidden">${eyeTable}${extraRow}${noteRow}</div>`;
   }
 
   // Right column — Advice, Follow-Up, Referral
@@ -3396,13 +3434,13 @@ function printWithPad(prescription: Prescription): void {
   const fuDate = prescription.followUpDate
     ? new Date(prescription.followUpDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
     : "";
-  const fuNote = content.followUp?.trim() ?? "";
+  const fuNote = String(rawSections.followUp ?? "").trim();
   const fuText = [fuDate, fuNote].filter(Boolean).join(" — ");
-  const refText = content.referral?.trim() ?? "";
+  const refText = String(rawSections.referral ?? "").trim();
   const structRefs = (meta.referrals as ReferralEntry[] | undefined)?.filter(r => r.name || r.specialty) ?? [];
   const refInner = structRefs.length
     ? structRefs.map((r, i) =>
-        `<div style="font-size:12px">${i + 1}. ${r.direction === "to" ? "Refer To" : "Referred From"}: ${escHtml([r.name, r.specialty, r.phone].filter(Boolean).join(" — "))}</div>`
+        `<div style="font-size:12px">${i + 1}. ${r.direction === "to" ? "Refer To" : "Referred From"}: ${escHtml([r.name, r.specialty, r.additionalInfo, r.phone].filter(Boolean).join(", "))}</div>`
       ).join("")
     : refText
       ? `<div style="white-space:pre-line;font-size:12px">${escHtml(refText)}</div>`
