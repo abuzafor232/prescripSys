@@ -3641,10 +3641,20 @@ function printWithPad(prescription: Prescription): void {
 function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescription: Prescription; onClose: () => void; onEdit: () => void }) {
   const previewHtml = buildPadHtml(prescription, false);
   const token = useSessionStore((s) => s.accessToken) ?? "";
+
   const [showSendPanel, setShowSendPanel] = useState(false);
+
+  // Email dialog
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   const [emailError, setEmailError] = useState("");
+
+  // WhatsApp dialog
+  const [showWaDialog, setShowWaDialog] = useState(false);
+  const [waNumber, setWaNumber] = useState("");
+  const [waError, setWaError] = useState("");
+  const [waCopied, setWaCopied] = useState(false);
+
   const [busy, setBusy] = useState<"download" | "wa" | "email" | null>(null);
 
   function handlePrint() {
@@ -3655,11 +3665,9 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     win.document.close();
   }
 
-  async function generatePdfBlob(): Promise<Blob> {
-    const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-      import("jspdf"),
-      import("html2canvas"),
-    ]);
+  // Shared canvas renderer — used by both PDF and PNG generators
+  async function renderCanvas(): Promise<HTMLCanvasElement> {
+    const { default: html2canvas } = await import("html2canvas");
     const parsed = new DOMParser().parseFromString(buildPadHtml(prescription, false), "text/html");
     const wrapper = document.createElement("div");
     wrapper.style.cssText = "position:fixed;top:0;left:-10000px;z-index:-1;width:794px;background:#fff;";
@@ -3668,21 +3676,35 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     wrapper.appendChild(styleEl);
     for (const child of Array.from(parsed.body.children)) wrapper.appendChild(document.importNode(child, true));
     document.body.appendChild(wrapper);
-    await document.fonts.ready;
-    await new Promise(r => setTimeout(r, 400));
-    const canvas = await html2canvas(wrapper, { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff", width: 794 });
-    document.body.removeChild(wrapper);
+    try {
+      await document.fonts.ready;
+      await new Promise(r => setTimeout(r, 400));
+      return await html2canvas(wrapper, { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff", width: 794 });
+    } finally {
+      document.body.removeChild(wrapper);
+    }
+  }
+
+  async function generatePdfBlob(): Promise<Blob> {
+    const [{ default: jsPDF }, canvas] = await Promise.all([import("jspdf"), renderCanvas()]);
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
     return pdf.output("blob");
   }
 
+  async function generatePngBlob(): Promise<Blob> {
+    const canvas = await renderCanvas();
+    return new Promise<Blob>((res, rej) =>
+      canvas.toBlob(b => b ? res(b) : rej(new Error("canvas.toBlob failed")), "image/png")
+    );
+  }
+
   function pdfFilename() { return `Rx-${prescription.prescriptionNo}.pdf`; }
 
-  function triggerDownload(blob: Blob) {
+  function triggerDownload(blob: Blob, name = pdfFilename()) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = pdfFilename(); a.click();
+    a.href = url; a.download = name; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
@@ -3693,17 +3715,59 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     finally { setBusy(null); }
   }
 
-  async function handleWhatsApp() {
-    setBusy("wa");
-    try {
-      const blob = await generatePdfBlob();
-      triggerDownload(blob);
-      const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
-      const wa = raw ? (raw.startsWith("880") ? raw : `880${raw.replace(/^0/, "")}`) : "";
-      window.open(wa ? `https://wa.me/${wa}` : "https://wa.me/", "_blank");
-    } catch (e) { console.error(e); }
-    finally { setBusy(null); setShowSendPanel(false); }
+  // ── WhatsApp ──────────────────────────────────────────────────────────────
+
+  function handleWhatsApp() {
+    setShowSendPanel(false);
+    const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
+    setWaNumber(raw ? (raw.startsWith("880") ? `+${raw}` : `+880${raw.replace(/^0/, "")}`) : "");
+    setWaError("");
+    setWaCopied(false);
+    setShowWaDialog(true);
   }
+
+  async function handleSendWhatsApp() {
+    const digits = waNumber.replace(/\D/g, "");
+    if (!digits || digits.length < 7) { setWaError("Please enter a valid phone number."); return; }
+    const wa = digits.startsWith("880") ? digits : `880${digits.replace(/^0/, "")}`;
+    setBusy("wa");
+    setWaError("");
+    try {
+      // Mobile path: Web Share API sends PDF directly without any download
+      const pdfBlob = await generatePdfBlob();
+      const pdfFile = new File([pdfBlob], pdfFilename(), { type: "application/pdf" });
+      if (navigator.canShare?.({ files: [pdfFile] })) {
+        await navigator.share({ files: [pdfFile], title: `Prescription ${prescription.prescriptionNo}` });
+        setShowWaDialog(false);
+        return;
+      }
+
+      // Desktop path: copy prescription image to clipboard, open WhatsApp chat
+      const pngBlob = await generatePngBlob();
+      let clipOk = false;
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
+          clipOk = true;
+        } catch { /* clipboard blocked — will fall back to download */ }
+      }
+      window.open(`https://web.whatsapp.com/send?phone=${wa}`, "_blank");
+      if (clipOk) {
+        setWaCopied(true); // show paste hint
+      } else {
+        triggerDownload(pngBlob, `Rx-${prescription.prescriptionNo}.png`);
+        setShowWaDialog(false);
+      }
+    } catch (e) {
+      if ((e as Error).name === "AbortError") { setShowWaDialog(false); return; }
+      setWaError("Something went wrong. Please try again.");
+      console.error(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // ── Email ─────────────────────────────────────────────────────────────────
 
   function handleEmail() {
     setShowSendPanel(false);
@@ -3843,6 +3907,80 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* WhatsApp dialog */}
+        {showWaDialog && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
+            <div className="w-80 rounded-xl border border-border bg-background p-5 shadow-2xl">
+
+              {waCopied ? (
+                /* Success / paste hint state */
+                <>
+                  <div className="mb-4 flex flex-col items-center gap-2 text-center">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent">
+                      <MessageCircle className="h-5 w-5 text-foreground" />
+                    </div>
+                    <p className="text-sm font-semibold text-foreground">WhatsApp is opening!</p>
+                    <p className="text-xs text-muted-foreground">
+                      Prescription image copied to clipboard.<br />
+                      In WhatsApp chat, press{" "}
+                      <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Ctrl+V</kbd>
+                      {" "}(or <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">⌘V</kbd> on Mac) to send.
+                    </p>
+                  </div>
+                  <Button className="w-full" onClick={() => setShowWaDialog(false)}>Done</Button>
+                </>
+              ) : (
+                /* Input state */
+                <>
+                  <div className="mb-4 flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm font-semibold text-foreground">Send via WhatsApp</p>
+                  </div>
+
+                  <div className="mb-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{prescription.patient.name}</span>
+                    {" · "}Rx# {prescription.prescriptionNo}
+                  </div>
+
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    WhatsApp Number
+                  </label>
+                  <input
+                    type="tel"
+                    autoFocus
+                    placeholder="+880 1XXX-XXXXXX"
+                    value={waNumber}
+                    onChange={e => { setWaNumber(e.target.value); setWaError(""); }}
+                    onKeyDown={e => e.key === "Enter" && handleSendWhatsApp()}
+                    className="mb-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  {waError && <p className="mb-2 text-xs text-destructive">{waError}</p>}
+
+                  <p className="mb-4 text-[11px] text-muted-foreground">
+                    On mobile the PDF is shared directly. On desktop the prescription image is copied to clipboard — just paste it in the chat.
+                  </p>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowWaDialog(false)}
+                      disabled={busy === "wa"}
+                      className="flex-1 rounded-lg border border-border py-2 text-sm text-muted-foreground transition hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                    <Button className="flex-1 gap-2" onClick={handleSendWhatsApp} disabled={busy === "wa"}>
+                      {busy === "wa"
+                        ? <><Loader2 className="h-4 w-4 animate-spin" /> Preparing…</>
+                        : <><MessageCircle className="h-4 w-4" /> Open WhatsApp</>}
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
