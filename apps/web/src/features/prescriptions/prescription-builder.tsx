@@ -3331,7 +3331,7 @@ function printWithPad(prescription: Prescription): void {
       if (!trimmed) return "";
       const isIndented = line.startsWith("  ") || line.startsWith("\t");
       if (isIndented) {
-        return `<div style="padding-left:16px;font-size:11.5px;line-height:1.4">${escHtml(trimmed)}</div>`;
+        return `<div style="padding-left:16px;font-size:12px;line-height:1.4">${escHtml(trimmed)}</div>`;
       }
       if (trimmed.endsWith(":")) {
         return `<div style="font-size:12px;line-height:1.5">• <strong>${escHtml(trimmed)}</strong></div>`;
@@ -3378,8 +3378,8 @@ function printWithPad(prescription: Prescription): void {
         const detail = [m.dose, m.instruction, m.duration].filter(Boolean).join("  ");
         return `<div style="margin-bottom:5px">
           <div style="font-weight:600;font-size:12px">${i + 1}. ${escHtml(title)}</div>
-          ${detail ? `<div style="padding-left:14px;font-size:11.5px">${escHtml(detail)}</div>` : ""}
-          ${m.note ? `<div style="padding-left:14px;font-size:11px;color:#555">※ ${escHtml(m.note)}</div>` : ""}
+          ${detail ? `<div style="padding-left:14px;font-size:12px">${escHtml(detail)}</div>` : ""}
+          ${m.note ? `<div style="padding-left:14px;font-size:12px;color:#555">※ ${escHtml(m.note)}</div>` : ""}
         </div>`;
       }).join("")
     : "";
@@ -3391,7 +3391,7 @@ function printWithPad(prescription: Prescription): void {
     const sides = ["right", "left"] as const;
     const hasEyeData = sides.some(s => Object.values(vision[s]).some(Boolean));
     const eyeTable = hasEyeData
-      ? `<table style="width:100%;border-collapse:collapse;font-size:11px">
+      ? `<table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="background:#f5f5f5">
             <th style="border:1px solid #ddd;padding:5px 4px;width:28px"></th>
             <th style="border:1px solid #ddd;padding:5px 6px;text-align:center">SPH</th>
@@ -3415,7 +3415,7 @@ function printWithPad(prescription: Prescription): void {
     const ipd        = vision.ipd ? escHtml(vision.ipd) : "";
     const glassLabel = escHtml([vision.lensType, ...(vision.glassFeatures ?? [])].filter(Boolean).join(" "));
     const extraRows = (nearAdd || ipd || glassLabel)
-      ? `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:0">
+      ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:0">
           <tbody>
             <tr>
               <td style="border:1px solid #ddd;padding:5px 8px"><strong>Near Add:</strong> ${nearAdd || "—"}</td>
@@ -3428,7 +3428,7 @@ function printWithPad(prescription: Prescription): void {
         </table>`
       : "";
     const noteRow = vision.note
-      ? `<div style="font-size:11px;color:#555;padding:2px 0">Remarks: ${escHtml(vision.note)}</div>`
+      ? `<div style="font-size:12px;color:#555;padding:2px 0">Remarks: ${escHtml(vision.note)}</div>`
       : "";
     glassBlockHtmlStr = `<div>${eyeTable}${extraRows}${noteRow}</div>`;
   }
@@ -3499,7 +3499,7 @@ function printWithPad(prescription: Prescription): void {
 <style>
   *{box-sizing:border-box}
   @page{size:${pageCss};margin:0}
-  body{margin:0;padding:0;font-family:Arial,sans-serif;font-size:13px;color:#111;background:#fff}
+  body{margin:0;padding:0;font-family:Arial,sans-serif;font-size:12px;color:#111;background:#fff}
   .page{width:${pageW}mm;height:${pageH}mm;padding:${mTop.toFixed(2)}mm ${mRight.toFixed(2)}mm ${mBottom.toFixed(2)}mm ${mLeft.toFixed(2)}mm;display:flex;flex-direction:column;overflow:hidden}
   .rxp p,.rxp h1,.rxp h2,.rxp h3,.rxp h4{margin:0;padding:0}
   .rxp ul,.rxp ol{margin:0;padding-left:1.2em}
@@ -3515,7 +3515,7 @@ function printWithPad(prescription: Prescription): void {
     <div class="rxp" style="flex:1;min-width:0;overflow:hidden;padding:6px 10px;color:#111">${headerEn}</div>
   </div>
   <!-- Patient row -->
-  <div style="flex-shrink:0;display:flex;align-items:center;padding:5px 6px;border-bottom:1px solid #aaa;font-size:11px;color:#111">
+  <div style="flex-shrink:0;display:flex;align-items:center;padding:5px 6px;border-bottom:1px solid #aaa;font-size:12px;color:#111">
     <div style="flex:1;text-align:left"><span style="font-weight:600">Name: </span>${escHtml(pt.name)} <span style="font-size:10px;color:#555">(No.: ${escHtml(regNo)})</span></div>
     <div style="flex:1;text-align:center"><span style="font-weight:600">Age: </span>${escHtml(age)}</div>
     <div style="flex:1;text-align:right"><span style="font-weight:600">Date: </span>${escHtml(date)}</div>
@@ -3532,7 +3532,7 @@ function printWithPad(prescription: Prescription): void {
   <!-- Footer -->
   <div style="height:${ftrH.toFixed(2)}mm;flex-shrink:0;border-top:2px solid #222;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:4px 10px">
     ${footerDivider ? `<div style="border-top:1px solid #555;margin-bottom:4px"></div>` : ""}
-    ${footerHtml ? `<div class="rxp" style="font-size:11px;color:#111;line-height:1.5;text-align:${footerAlign}">${footerHtml}</div>` : ""}
+    ${footerHtml ? `<div class="rxp" style="font-size:12px;color:#111;line-height:1.5;text-align:${footerAlign}">${footerHtml}</div>` : ""}
   </div>
 </div>
 <script>window.onload=function(){window.print()}</script>
