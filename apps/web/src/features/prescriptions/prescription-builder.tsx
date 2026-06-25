@@ -1701,6 +1701,7 @@ export function PrescriptionBuilder() {
           diagnosis: notes.diagnosis,
           medicationNote,
           followUp: notes.followUp,
+          followUpActiveChips: followUpNoteChips.filter(c => c.active).map(c => c.text),
           referral: notes.referral
         },
         findings,
@@ -3434,11 +3435,24 @@ function printWithPad(prescription: Prescription): void {
 
   // Right column — Advice, Follow-Up, Referral
   const adviceText = prescription.advice?.trim() ?? "";
-  const fuDate = prescription.followUpDate
-    ? new Date(prescription.followUpDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+
+  // Follow-up: Bengali date + active chip texts + free-text note
+  const _bn = (n: number) => String(n).replace(/[0-9]/g, ch => "০১২৩৪৫৬৭৮৯"[+ch]);
+  const _bnMonths = ["জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","আগস্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর"];
+  const fuDateBn = prescription.followUpDate
+    ? (() => { const d = new Date(prescription.followUpDate!); return isNaN(d.getTime()) ? "" : `${_bn(d.getDate())} ${_bnMonths[d.getMonth()]} ${_bn(d.getFullYear())}`; })()
     : "";
-  const fuNote = String(rawSections.followUp ?? "").trim();
-  const fuText = [fuDate, fuNote].filter(Boolean).join(" — ");
+  const fuNote        = String(rawSections.followUp ?? "").trim();
+  const fuActiveChips = Array.isArray(rawSections.followUpActiveChips)
+    ? (rawSections.followUpActiveChips as string[]).filter(Boolean)
+    : [];
+  const fuParts = [
+    fuDateBn ? `<div style="font-size:12px">${escHtml(fuDateBn)}</div>` : "",
+    fuActiveChips.length
+      ? `<div style="font-size:12px">${fuActiveChips.map(t => escHtml(t)).join(" &nbsp;·&nbsp; ")}</div>`
+      : "",
+    fuNote ? `<div style="font-size:12px;white-space:pre-line">${escHtml(fuNote)}</div>` : "",
+  ].filter(Boolean).join("");
   const refText = String(rawSections.referral ?? "").trim();
   const structRefs = (meta.referrals as ReferralEntry[] | undefined)?.filter(r => r.name || r.specialty) ?? [];
   const refInner = structRefs.length
@@ -3467,7 +3481,7 @@ function printWithPad(prescription: Prescription): void {
     medsHtml ? `<div style="margin-bottom:7px">${medsHtml}</div>` : "",
     glassSecHtml,
     sec("Advice", adviceText ? `<div style="white-space:pre-line;font-size:12px">${escHtml(adviceText)}</div>` : ""),
-    fuText ? sec("Follow-Up", `<div style="font-size:12px">${escHtml(fuText)}</div>`) : "",
+    fuParts ? sec("Follow-Up", fuParts) : "",
     refInner ? sec("Referral", refInner) : "",
   ].join("");
 
