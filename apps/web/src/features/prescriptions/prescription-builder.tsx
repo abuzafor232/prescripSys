@@ -860,6 +860,17 @@ function customMedicineDefaultsForType(
   return base;
 }
 
+type FollowUpRxPayload = {
+  chiefComplaints?: string | null;
+  advice?: string | null;
+  medicines?: Array<{
+    brandName: string; genericName?: string | null;
+    strength?: string | null; dosageForm?: string | null;
+    dose: string; duration: string;
+    instruction?: string | null; note?: string | null;
+  }>;
+};
+
 export function PrescriptionBuilder() {
   const searchParams = useSearchParams();
   const token = useSessionStore((state) => state.accessToken);
@@ -869,6 +880,22 @@ export function PrescriptionBuilder() {
   const pendingLoadRef = useRef<{ type: "draft"; item: RxDraft } | { type: "template"; item: RxTemplate } | null>(null);
   const forceSelectAfterRegisterRef = useRef(false);
   const clearAfterSaveRef = useRef(false);
+
+  // Read follow-up payload once at mount (lazy initializer so value survives Strict Mode double-run)
+  const [followUpInit] = useState<{ patient: Patient; rx: FollowUpRxPayload | null } | null>(() => {
+    if (typeof window === "undefined") return null;
+    const patientRaw = localStorage.getItem("rx-followup-patient");
+    if (!patientRaw) return null;
+    localStorage.removeItem("rx-followup-patient");
+    const rxRaw = localStorage.getItem("rx-followup-rx");
+    let rx: FollowUpRxPayload | null = null;
+    if (rxRaw) {
+      localStorage.removeItem("rx-followup-rx");
+      try { rx = JSON.parse(rxRaw) as FollowUpRxPayload; } catch {}
+    }
+    try { return { patient: JSON.parse(patientRaw) as Patient, rx }; } catch { return null; }
+  });
+
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientQuery, setPatientQuery] = useState("");
   const [patientSearchOpen, setPatientSearchOpen] = useState(false);
@@ -2414,49 +2441,29 @@ export function PrescriptionBuilder() {
   useEffect(() => {
     clearPrescriptionPad();
 
-    // Pre-select patient (and optionally a prescription) from the Patients page "Follow Up" button
-    const followUpPatientRaw = typeof window !== "undefined" ? localStorage.getItem("rx-followup-patient") : null;
-    if (followUpPatientRaw) {
-      localStorage.removeItem("rx-followup-patient");
-      try {
-        const p = JSON.parse(followUpPatientRaw) as Patient;
-        setSelectedPatient(p);
-      } catch {}
-
-      const followUpRxRaw = typeof window !== "undefined" ? localStorage.getItem("rx-followup-rx") : null;
-      if (followUpRxRaw) {
-        localStorage.removeItem("rx-followup-rx");
-        try {
-          const rx = JSON.parse(followUpRxRaw) as {
-            chiefComplaints?: string | null;
-            advice?: string | null;
-            medicines?: Array<{
-              brandName: string; genericName?: string | null;
-              strength?: string | null; dosageForm?: string | null;
-              dose: string; duration: string;
-              instruction?: string | null; note?: string | null;
-            }>;
-          };
-          setNotes((prev) => ({
-            ...prev,
-            complaint: rx.chiefComplaints ?? "",
-            advice: rx.advice ?? "",
-          }));
-          if (rx.medicines?.length) {
-            setMedicines(rx.medicines.map((m) => ({
-              brandName: m.brandName,
-              genericName: m.genericName ?? undefined,
-              strength: m.strength ?? null,
-              dosageForm: m.dosageForm ?? null,
-              dose: m.dose,
-              duration: m.duration,
-              instruction: m.instruction ?? "",
-              note: m.note ?? undefined,
-            })));
-          }
-        } catch {}
+    // Pre-select patient (and optionally a prescription) from the Patients page "Follow Up" button.
+    // followUpInit is read via useState lazy initializer so it survives React Strict Mode's double-run.
+    if (followUpInit) {
+      setSelectedPatient(followUpInit.patient);
+      if (followUpInit.rx) {
+        setNotes((prev) => ({
+          ...prev,
+          complaint: followUpInit.rx!.chiefComplaints ?? "",
+          advice: followUpInit.rx!.advice ?? "",
+        }));
+        if (followUpInit.rx.medicines?.length) {
+          setMedicines(followUpInit.rx.medicines.map((m) => ({
+            brandName: m.brandName,
+            genericName: m.genericName ?? undefined,
+            strength: m.strength ?? null,
+            dosageForm: m.dosageForm ?? null,
+            dose: m.dose,
+            duration: m.duration,
+            instruction: m.instruction ?? "",
+            note: m.note ?? undefined,
+          })));
+        }
       }
-
       return;
     }
 

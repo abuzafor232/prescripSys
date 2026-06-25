@@ -341,7 +341,9 @@ export function PatientsPage() {
   const totalPages = meta?.totalPages ?? 1;
 
   const handleFollowUp = useCallback((patient: Patient, rx?: ProfilePrescription) => {
-    try { localStorage.setItem("rx-followup-patient", JSON.stringify(patient)); } catch {}
+    // Strip prescriptions array (PatientProfile superset) before storing
+    const { prescriptions: _p, ...patientOnly } = patient as Patient & { prescriptions?: unknown };
+    try { localStorage.setItem("rx-followup-patient", JSON.stringify(patientOnly)); } catch {}
     if (rx) {
       try { localStorage.setItem("rx-followup-rx", JSON.stringify(rx)); } catch {}
     }
