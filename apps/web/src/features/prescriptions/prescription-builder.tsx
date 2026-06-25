@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Download,
   Eraser,
   FileText,
   Eye,
@@ -20,6 +21,7 @@ import {
   PenLine,
   Plus,
   Printer,
+  Share2,
   UserCheck,
   UserCog,
   RotateCcw,
@@ -918,6 +920,7 @@ export function PrescriptionBuilder() {
   const [noteEditing, setNoteEditing] = useState(false);
   const [prevRxOpen, setPrevRxOpen] = useState(false);
   const [prevRxPreviewId, setPrevRxPreviewId] = useState<string | null>(null);
+  const [printSidebarRx, setPrintSidebarRx] = useState<Prescription | null>(null);
   const [statusMessage, setStatusMessage] = useState<{
     tone: "success" | "warning";
     text: string;
@@ -1037,8 +1040,8 @@ export function PrescriptionBuilder() {
       completeAttendedAppointment(prescription.id);
       showStatus("success", `Prescription ${prescription.prescriptionNo} saved.`);
       if (variables.printAfterSave) {
-        window.setTimeout(() => printWithPad(prescription), 0);
         clearPrescriptionPad();
+        setPrintSidebarRx(prescription);
       }
       if (variables.clearAfterSave) {
         clearPrescriptionPad();
@@ -3220,6 +3223,13 @@ export function PrescriptionBuilder() {
           onClose={() => setPrevRxPreviewId(null)}
         />
       )}
+
+      {printSidebarRx && (
+        <PrescriptionPrintSidebar
+          prescription={printSidebarRx}
+          onClose={() => setPrintSidebarRx(null)}
+        />
+      )}
     </>
   );
 }
@@ -3245,7 +3255,7 @@ function sanitizePrintHtml(html: string): string {
   );
 }
 
-function printWithPad(prescription: Prescription): void {
+function buildPadHtml(prescription: Prescription, autoprint = true): string {
   // Load pad settings.
   // prescription.chamberId is the API UUID; pad settings are keyed by the
   // LOCAL chamber ID from the sidebar. Read rx-selected-chamber to get it,
@@ -3442,12 +3452,32 @@ function printWithPad(prescription: Prescription): void {
   const fuDateBn = prescription.followUpDate
     ? (() => { const d = new Date(prescription.followUpDate!); return isNaN(d.getTime()) ? "" : `${_bn(d.getDate())} ${_bnMonths[d.getMonth()]} ${_bn(d.getFullYear())}`; })()
     : "";
+  const fuDateLabel = (() => {
+    if (!prescription.followUpDate || !fuDateBn) return fuDateBn;
+    const d = new Date(prescription.followUpDate);
+    if (isNaN(d.getTime())) return fuDateBn;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const target = new Date(d); target.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return `${fuDateBn} (আজ)`;
+    if (diffDays > 0) {
+      const yrs = Math.floor(diffDays / 365), rem = diffDays % 365;
+      const mos = Math.floor(rem / 30), days = rem - mos * 30;
+      const parts = [
+        yrs > 0 ? `${_bn(yrs)} বছর` : "",
+        mos > 0 ? `${_bn(mos)} মাস` : "",
+        days > 0 ? `${_bn(days)} দিন` : "",
+      ].filter(Boolean);
+      return `${fuDateBn} (${parts.join(" ")} পর)`;
+    }
+    return fuDateBn;
+  })();
   const fuNote        = String(rawSections.followUp ?? "").trim();
   const fuActiveChips = Array.isArray(rawSections.followUpActiveChips)
     ? (rawSections.followUpActiveChips as string[]).filter(Boolean)
     : [];
   const fuParts = [
-    fuDateBn ? `<div style="font-size:12px">${escHtml(fuDateBn)}</div>` : "",
+    fuDateLabel ? `<div style="font-size:12px">${escHtml(fuDateLabel)}</div>` : "",
     fuActiveChips.length
       ? `<div style="font-size:12px">${fuActiveChips.map(t => escHtml(t)).join(" &nbsp;·&nbsp; ")}</div>`
       : "",
@@ -3535,13 +3565,105 @@ function printWithPad(prescription: Prescription): void {
     ${footerHtml ? `<div class="rxp" style="font-size:12px;color:#111;line-height:1.5;text-align:${footerAlign}">${footerHtml}</div>` : ""}
   </div>
 </div>
-<script>window.onload=function(){window.print()}</script>
+${autoprint ? `<script>window.onload=function(){window.print()}</script>` : ""}
 </body></html>`;
 
+  return html;
+}
+
+function printWithPad(prescription: Prescription): void {
+  const html = buildPadHtml(prescription, true);
   const win = window.open("", "_blank", "width=900,height=700");
   if (!win) return;
   win.document.write(html);
   win.document.close();
+}
+
+// ── PrescriptionPrintSidebar ───────────────────────────────────────────────
+
+function PrescriptionPrintSidebar({ prescription, onClose }: { prescription: Prescription; onClose: () => void }) {
+  const previewHtml = buildPadHtml(prescription, false);
+
+  function handlePrint() {
+    const html = buildPadHtml(prescription, true);
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+  }
+
+  function handleDownload() {
+    const html = buildPadHtml(prescription, false);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Rx-${prescription.prescriptionNo}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function handleSend() {
+    const raw = prescription.patient.phone?.replace(/\D/g, "") ?? "";
+    const waPhone = raw
+      ? raw.startsWith("880") ? raw : `880${raw.replace(/^0/, "")}`
+      : "";
+    const text = `Prescription\nPatient: ${prescription.patient.name}\nRx#: ${prescription.prescriptionNo}`;
+    const url = waPhone
+      ? `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex">
+      {/* dark overlay */}
+      <div className="flex-1 bg-black/50" onClick={onClose} />
+      {/* sidebar */}
+      <div className="flex h-full w-1/2 flex-col bg-white shadow-2xl">
+        {/* header */}
+        <div className="flex shrink-0 items-center gap-3 border-b bg-muted/30 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold">Prescription Preview</p>
+            <p className="text-xs text-muted-foreground">
+              {prescription.prescriptionNo} &middot; {prescription.patient.name}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-muted"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {/* preview iframe */}
+        <div className="flex-1 overflow-hidden bg-gray-100 p-3">
+          <iframe
+            srcDoc={previewHtml}
+            className="h-full w-full rounded-lg border bg-white shadow-sm"
+            title="Prescription Preview"
+            sandbox="allow-same-origin"
+          />
+        </div>
+        {/* action buttons */}
+        <div className="flex shrink-0 gap-2 border-t bg-muted/20 px-4 py-3">
+          <Button className="flex-1 gap-2" onClick={handlePrint}>
+            <Printer className="h-4 w-4" /> Print
+          </Button>
+          <Button variant="outline" className="flex-1 gap-2" onClick={handleSend}>
+            <Share2 className="h-4 w-4" /> Send
+          </Button>
+          <Button variant="outline" className="flex-1 gap-2" onClick={handleDownload}>
+            <Download className="h-4 w-4" /> Download PDF
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
 }
 
 // ── RxGlassBlock ──────────────────────────────────────────────────────────
