@@ -3,10 +3,10 @@
 import { createPortal } from "react-dom";
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-const APPOINTMENTS_STORAGE_KEY = "rx-appointments";
-const CHAMBERS_STORAGE_KEY     = "rx-chambers";
-const SELECTED_CHAMBER_KEY     = "rx-selected-chamber";
-const APPT_SCHEDULE_KEY        = "rx-appointment-schedule";
+const APPOINTMENTS_STORAGE_KEY  = "rx-appointments";
+const CHAMBERS_STORAGE_KEY      = "rx-chambers";
+const SELECTED_CHAMBER_KEY      = "rx-selected-chamber";
+const APPT_SCHEDULE_KEY_PREFIX  = "rx-appointment-schedule";
 
 // Day-name → JS getDay() index (0=Sunday … 6=Saturday)
 const DAY_NAME_TO_JS_DAY: Record<string, number> = {
@@ -19,9 +19,13 @@ type SchedWeek       = Record<string, SchedTimeBlock[]>;
 type SchedLeave      = { id: string; from: string; to: string; comment: string };
 type SchedData       = { phone: string; schedule: SchedWeek; leaves: SchedLeave[] };
 
-function loadScheduleData(): SchedData {
+function apptScheduleKey(chamberId?: string | null) {
+  return chamberId ? `${APPT_SCHEDULE_KEY_PREFIX}-${chamberId}` : APPT_SCHEDULE_KEY_PREFIX;
+}
+
+function loadScheduleData(chamberId?: string | null): SchedData {
   try {
-    const raw = typeof window !== "undefined" ? localStorage.getItem(APPT_SCHEDULE_KEY) : null;
+    const raw = typeof window !== "undefined" ? localStorage.getItem(apptScheduleKey(chamberId)) : null;
     if (!raw) return { phone: "", schedule: {}, leaves: [] };
     return JSON.parse(raw) as SchedData;
   } catch { return { phone: "", schedule: {}, leaves: [] }; }
@@ -577,13 +581,13 @@ export function AppointmentBoard() {
   const [selectedDate, setSelectedDate] = useState(formatISODate(new Date()));
 
   // Schedule constraints for the date picker
-  const [schedData, setBoardSchedData] = useState<SchedData>(() => loadScheduleData());
+  const [schedData, setBoardSchedData] = useState<SchedData>(() => loadScheduleData(loadSelectedChamber(loadChambers())?.id));
   const boardActiveDays = activeWeekdays(schedData.schedule);
   const boardLeaveDates = leaveISODates(schedData.leaves);
 
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key === APPT_SCHEDULE_KEY && e.newValue) {
+      if (e.key?.startsWith(APPT_SCHEDULE_KEY_PREFIX) && e.newValue) {
         try { setBoardSchedData(JSON.parse(e.newValue) as SchedData); } catch {}
       }
     }
@@ -1271,7 +1275,7 @@ function BookAppointmentDialog({
   const slots = generateTimeSlots(slotSettings);
 
   // Schedule & leave data for the date picker
-  const [schedData, setSchedData] = useState<SchedData>(() => loadScheduleData());
+  const [schedData, setSchedData] = useState<SchedData>(() => loadScheduleData(loadSelectedChamber(loadChambers())?.id));
   const activeDays  = activeWeekdays(schedData.schedule);
   const leaveDates  = leaveISODates(schedData.leaves);
 
@@ -1281,7 +1285,7 @@ function BookAppointmentDialog({
       if (e.key === SLOT_SETTINGS_KEY && e.newValue) {
         try { setSlotSettings({ ...DEFAULT_SLOT_SETTINGS, ...(JSON.parse(e.newValue) as Partial<SlotSettings>) }); } catch {}
       }
-      if (e.key === APPT_SCHEDULE_KEY && e.newValue) {
+      if (e.key?.startsWith(APPT_SCHEDULE_KEY_PREFIX) && e.newValue) {
         try { setSchedData(JSON.parse(e.newValue) as SchedData); } catch {}
       }
     }

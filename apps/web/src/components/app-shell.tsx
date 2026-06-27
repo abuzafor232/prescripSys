@@ -1312,50 +1312,26 @@ function ChamberDropdown({
 
 // ─── Appointment Settings Modal ──────────────────────────────────────────────
 
-// ── Slot config ──
-const SLOT_SETTINGS_KEY     = "rx-slot-settings";
-const SLOT_INTERVAL_OPTIONS = [5, 10, 15, 20, 30, 60];
-const SLOT_MINUTE_OPTIONS   = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
-
-type SlotSettings = { startHour: number; startMinute: number; intervalMinutes: number; totalSlots: number };
-const DEFAULT_SLOT_SETTINGS: SlotSettings = { startHour: 9, startMinute: 0, intervalMinutes: 10, totalSlots: 30 };
-
-function loadSlotSettings(): SlotSettings {
-  try {
-    const raw = typeof window !== "undefined" ? localStorage.getItem(SLOT_SETTINGS_KEY) : null;
-    return raw ? { ...DEFAULT_SLOT_SETTINGS, ...(JSON.parse(raw) as Partial<SlotSettings>) } : DEFAULT_SLOT_SETTINGS;
-  } catch { return DEFAULT_SLOT_SETTINGS; }
-}
-
-function generatePreviewSlots(s: SlotSettings): string[] {
-  const slots: string[] = [];
-  let h = s.startHour, m = s.startMinute;
-  for (let i = 0; i < s.totalSlots; i++) {
-    if (h >= 24) break;
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    slots.push(`${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`);
-    m += s.intervalMinutes;
-    while (m >= 60) { m -= 60; h++; }
-  }
-  return slots;
-}
-
-// ── Schedule & Leave ──
+// ── Shared types ──
 export const APPT_SCHEDULE_KEY = "rx-appointment-schedule";
 export const WEEK_DAYS = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] as const;
 export type WeekDay = typeof WEEK_DAYS[number];
 
-export type TimeBlock    = { id: string; from: string; to: string; maxPatients: number };
+// minutesPerPatient: consultation duration per patient in minutes
+export type TimeBlock    = { id: string; from: string; to: string; maxPatients: number; minutesPerPatient: number };
 export type WeekSchedule = Record<WeekDay, TimeBlock[]>;
 export type LeaveEntry   = { id: string; from: string; to: string; comment: string };
 export type ApptScheduleData = { phone: string; schedule: WeekSchedule; leaves: LeaveEntry[] };
 
 const EMPTY_WEEK: WeekSchedule = Object.fromEntries(WEEK_DAYS.map((d) => [d, [] as TimeBlock[]])) as unknown as WeekSchedule;
-const DEFAULT_APPT: ApptScheduleData = { phone: "", schedule: EMPTY_WEEK, leaves: [] };
+const DEFAULT_APPT: ApptScheduleData = { phone: "", schedule: { ...EMPTY_WEEK }, leaves: [] };
 
-export function loadApptSchedule(): ApptScheduleData {
+// Per-chamber key
+function apptScheduleKey(chamberId: string) { return `${APPT_SCHEDULE_KEY}-${chamberId}`; }
+
+export function loadApptSchedule(chamberId = "default"): ApptScheduleData {
   try {
-    const raw = typeof window !== "undefined" ? localStorage.getItem(APPT_SCHEDULE_KEY) : null;
+    const raw = typeof window !== "undefined" ? localStorage.getItem(apptScheduleKey(chamberId)) : null;
     if (!raw) return { ...DEFAULT_APPT, schedule: { ...EMPTY_WEEK } };
     const p = JSON.parse(raw) as Partial<ApptScheduleData>;
     return { phone: p.phone ?? "", schedule: { ...EMPTY_WEEK, ...(p.schedule ?? {}) } as WeekSchedule, leaves: p.leaves ?? [] };
@@ -1372,29 +1348,26 @@ function fmt12h(t: string): string {
 }
 
 // ── Schedule tab ──
+const DEFAULT_BLOCK_FORM = { from: "09:00", to: "21:00", maxPatients: 30, minutesPerPatient: 10 };
+
 function ScheduleTab({ schedule, onChange }: { schedule: WeekSchedule; onChange: (s: WeekSchedule) => void }) {
   const [expanded, setExpanded] = useState<WeekDay | null>(null);
   const [adding,   setAdding]   = useState<WeekDay | null>(null);
   const [editing,  setEditing]  = useState<{ day: WeekDay; id: string } | null>(null);
-  const [form, setForm] = useState({ from: "09:00", to: "21:00", maxPatients: 30 });
+  const [form, setForm] = useState({ ...DEFAULT_BLOCK_FORM });
 
   function openAdd(day: WeekDay) {
-    setForm({ from: "09:00", to: "21:00", maxPatients: 30 });
-    setAdding(day);
-    setEditing(null);
-    setExpanded(day);
+    setForm({ ...DEFAULT_BLOCK_FORM });
+    setAdding(day); setEditing(null); setExpanded(day);
   }
 
   function openEdit(day: WeekDay, block: TimeBlock) {
-    setForm({ from: block.from, to: block.to, maxPatients: block.maxPatients });
-    setEditing({ day, id: block.id });
-    setAdding(null);
-    setExpanded(day);
+    setForm({ from: block.from, to: block.to, maxPatients: block.maxPatients, minutesPerPatient: block.minutesPerPatient ?? 10 });
+    setEditing({ day, id: block.id }); setAdding(null); setExpanded(day);
   }
 
   function commitAdd(day: WeekDay) {
-    const block: TimeBlock = { id: uid(), ...form };
-    onChange({ ...schedule, [day]: [...schedule[day], block] });
+    onChange({ ...schedule, [day]: [...schedule[day], { id: uid(), ...form }] });
     setAdding(null);
   }
 
@@ -1420,22 +1393,24 @@ function ScheduleTab({ schedule, onChange }: { schedule: WeekSchedule; onChange:
           <input type="time" value={form.to} onChange={(e) => setForm((f) => ({ ...f, to: e.target.value }))}
             className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary" />
         </div>
-      </div>
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Max Patients</label>
-        <input type="number" min={1} max={999} value={form.maxPatients}
-          onChange={(e) => setForm((f) => ({ ...f, maxPatients: Math.max(1, Number(e.target.value) || 1) }))}
-          className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary" />
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Max Patients</label>
+          <input type="number" min={1} max={999} value={form.maxPatients}
+            onChange={(e) => setForm((f) => ({ ...f, maxPatients: Math.max(1, Number(e.target.value) || 1) }))}
+            className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Min / Patient</label>
+          <input type="number" min={1} max={120} value={form.minutesPerPatient}
+            onChange={(e) => setForm((f) => ({ ...f, minutesPerPatient: Math.max(1, Number(e.target.value) || 1) }))}
+            className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary" />
+        </div>
       </div>
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onCommit}
-          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
-          Save
-        </button>
+          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">Save</button>
         <button type="button" onClick={onCancel}
-          className="rounded-lg border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors">
-          Cancel
-        </button>
+          className="rounded-lg border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors">Cancel</button>
       </div>
     </div>
   );
@@ -1443,13 +1418,11 @@ function ScheduleTab({ schedule, onChange }: { schedule: WeekSchedule; onChange:
   return (
     <div className="space-y-1.5">
       {WEEK_DAYS.map((day) => {
-        const blocks  = schedule[day];
-        const isOpen  = expanded === day;
+        const blocks    = schedule[day];
+        const isOpen    = expanded === day;
         const hasBlocks = blocks.length > 0;
-
         return (
           <div key={day} className="rounded-xl border border-border bg-card overflow-hidden">
-            {/* Day header */}
             <div className="flex items-center justify-between px-4 py-2.5">
               <button type="button" className="flex flex-1 items-center gap-2 text-left"
                 onClick={() => setExpanded(isOpen ? null : day)}>
@@ -1467,13 +1440,11 @@ function ScheduleTab({ schedule, onChange }: { schedule: WeekSchedule; onChange:
               </button>
             </div>
 
-            {/* Expanded content */}
             {isOpen && (
               <div className="border-t border-border px-4 py-3 space-y-2">
                 {blocks.length === 0 && adding !== day && (
                   <p className="text-xs italic text-muted-foreground/60">No schedule — click + to add a time block.</p>
                 )}
-
                 {blocks.map((block) => {
                   const isEditingThis = editing?.day === day && editing.id === block.id;
                   return (
@@ -1484,9 +1455,11 @@ function ScheduleTab({ schedule, onChange }: { schedule: WeekSchedule; onChange:
                         <div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2">
                           <div>
                             <p className="text-sm font-medium text-foreground">
-                              {fmt12h(block.from)} - {fmt12h(block.to)}
+                              {fmt12h(block.from)} – {fmt12h(block.to)}
                             </p>
-                            <p className="text-xs text-muted-foreground">Max Patient: {block.maxPatients}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Max: {block.maxPatients} patients &nbsp;·&nbsp; {block.minutesPerPatient ?? 10} min/patient
+                            </p>
                           </div>
                           <div className="flex items-center gap-1">
                             <button type="button" onClick={() => openEdit(day, block)}
@@ -1503,7 +1476,6 @@ function ScheduleTab({ schedule, onChange }: { schedule: WeekSchedule; onChange:
                     </div>
                   );
                 })}
-
                 {adding === day && inlineForm(day, () => commitAdd(day), () => setAdding(null))}
               </div>
             )}
@@ -1524,11 +1496,10 @@ function LeaveTab({ leaves, onChange }: { leaves: LeaveEntry[]; onChange: (l: Le
     if (!form.from || !form.to) { setError("Both From and To dates are required."); return; }
     if (form.from > form.to)    { setError("'From' must be before or equal to 'To'."); return; }
     onChange([...leaves, { id: uid(), ...form }]);
-    setForm(empty);
-    setError("");
+    setForm(empty); setError("");
   }
 
-  function formatDisplay(iso: string) {
+  function fmtDisplay(iso: string) {
     if (!iso) return "";
     const [y, m, d] = iso.split("-");
     return `${d}/${m}/${y}`;
@@ -1536,18 +1507,19 @@ function LeaveTab({ leaves, onChange }: { leaves: LeaveEntry[]; onChange: (l: Le
 
   return (
     <div className="space-y-4">
-      {/* Add leave form */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-3">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Add Leave / Holiday</p>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">From <span className="text-destructive">*</span></label>
-            <input type="date" value={form.from} onChange={(e) => { setForm((f) => ({ ...f, from: e.target.value })); setError(""); }}
+            <input type="date" value={form.from}
+              onChange={(e) => { setForm((f) => ({ ...f, from: e.target.value })); setError(""); }}
               className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">To <span className="text-destructive">*</span></label>
-            <input type="date" value={form.to} onChange={(e) => { setForm((f) => ({ ...f, to: e.target.value })); setError(""); }}
+            <input type="date" value={form.to}
+              onChange={(e) => { setForm((f) => ({ ...f, to: e.target.value })); setError(""); }}
               className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
         </div>
@@ -1560,18 +1532,13 @@ function LeaveTab({ leaves, onChange }: { leaves: LeaveEntry[]; onChange: (l: Le
         {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex gap-2">
           <button type="button" onClick={addLeave}
-            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
-            Save
-          </button>
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">Save</button>
           <button type="button" onClick={() => { setForm(empty); setError(""); }}
-            className="flex items-center gap-1.5 rounded-lg border px-4 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors">
-            Reset
-          </button>
+            className="rounded-lg border px-4 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors">Reset</button>
         </div>
       </div>
 
-      {/* Leave list */}
-      {leaves.length > 0 && (
+      {leaves.length > 0 ? (
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Saved Leaves</p>
           {leaves.map((lv) => (
@@ -1580,8 +1547,7 @@ function LeaveTab({ leaves, onChange }: { leaves: LeaveEntry[]; onChange: (l: Le
                 <div className="flex items-center gap-2">
                   <CalendarOff className="h-3.5 w-3.5 text-destructive/70" />
                   <span className="text-sm font-medium text-foreground">
-                    {formatDisplay(lv.from)}
-                    {lv.from !== lv.to && <> — {formatDisplay(lv.to)}</>}
+                    {fmtDisplay(lv.from)}{lv.from !== lv.to && <> — {fmtDisplay(lv.to)}</>}
                   </span>
                 </div>
                 {lv.comment && <p className="mt-0.5 text-xs text-muted-foreground pl-5">{lv.comment}</p>}
@@ -1593,88 +1559,52 @@ function LeaveTab({ leaves, onChange }: { leaves: LeaveEntry[]; onChange: (l: Le
             </div>
           ))}
         </div>
-      )}
-
-      {leaves.length === 0 && (
+      ) : (
         <p className="text-center text-sm italic text-muted-foreground/50 py-4">No leaves added yet.</p>
       )}
     </div>
   );
 }
 
-// ── Slot Config tab ──
-function SlotConfigTab({ draft, onChange }: { draft: SlotSettings; onChange: (s: SlotSettings) => void }) {
-  const preview = generatePreviewSlots(draft);
-  const last    = preview[preview.length - 1] ?? "";
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-foreground">Start Hour</label>
-          <select className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-            value={draft.startHour} onChange={(e) => onChange({ ...draft, startHour: Number(e.target.value) })}>
-            {Array.from({ length: 18 }, (_, i) => i + 6).map((h) => {
-              const h12 = h % 12 === 0 ? 12 : h % 12;
-              return <option key={h} value={h}>{String(h12).padStart(2, "0")} {h < 12 ? "AM" : "PM"}</option>;
-            })}
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-foreground">Start Minute</label>
-          <select className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-            value={draft.startMinute} onChange={(e) => onChange({ ...draft, startMinute: Number(e.target.value) })}>
-            {SLOT_MINUTE_OPTIONS.map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-foreground">Interval (min)</label>
-          <select className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-            value={draft.intervalMinutes} onChange={(e) => onChange({ ...draft, intervalMinutes: Number(e.target.value) })}>
-            {SLOT_INTERVAL_OPTIONS.map((i) => <option key={i} value={i}>{i} min</option>)}
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-foreground">Total Serials</label>
-          <input type="number" min={1} max={100} value={draft.totalSlots}
-            onChange={(e) => onChange({ ...draft, totalSlots: Math.max(1, Math.min(100, Number(e.target.value) || 1)) })}
-            className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
-        </div>
-      </div>
-      <div className="rounded-xl bg-muted/40 px-4 py-3 space-y-1">
-        <p className="text-xs font-semibold text-muted-foreground">Preview</p>
-        <p className="text-sm text-foreground">
-          {preview.length > 0
-            ? <><span className="font-medium">{preview[0]}</span> — <span className="font-medium">{last}</span>&nbsp;·&nbsp;<span className="text-muted-foreground">{preview.length} slots</span></>
-            : <span className="italic text-muted-foreground">No slots</span>}
-        </p>
-      </div>
-    </div>
-  );
-}
-
 // ── Main modal ──
-type ApptSettingsTab = "schedule" | "leave" | "slots";
+type ApptSettingsTab = "schedule" | "leave";
 
 function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
-  const [tab,      setTab]      = useState<ApptSettingsTab>("schedule");
-  const [saved,    setSaved]    = useState(false);
+  const [tab, setTab] = useState<ApptSettingsTab>("schedule");
+  const [saved, setSaved] = useState(false);
 
-  // Schedule & leave state
-  const [appt, setAppt] = useState<ApptScheduleData>(loadApptSchedule);
+  // Load chambers from localStorage (same source as topbar)
+  const [chambers] = useState<Chamber[]>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("rx-chambers") : null;
+      const parsed = raw ? (JSON.parse(raw) as Chamber[]) : null;
+      return parsed && parsed.length > 0 ? parsed : DEFAULT_CHAMBERS;
+    } catch { return DEFAULT_CHAMBERS; }
+  });
 
-  // Slot config state
-  const [slotDraft, setSlotDraft] = useState<SlotSettings>(loadSlotSettings);
+  // Active chamber — default to the selected one from topbar
+  const [selectedChamberId, setSelectedChamberId] = useState<string>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("rx-selected-chamber") : null;
+      const saved = raw ? (JSON.parse(raw) as Chamber) : null;
+      return saved?.id ?? chambers[0]?.id ?? "default";
+    } catch { return chambers[0]?.id ?? "default"; }
+  });
+
+  // Per-chamber data
+  const [appt, setAppt] = useState<ApptScheduleData>(() => loadApptSchedule(selectedChamberId));
+
+  // Reload data when chamber changes
+  function handleChamberChange(id: string) {
+    setSelectedChamberId(id);
+    setAppt(loadApptSchedule(id));
+  }
 
   function handleSave() {
-    // Persist schedule/leave/phone
+    const key = apptScheduleKey(selectedChamberId);
     try {
-      localStorage.setItem(APPT_SCHEDULE_KEY, JSON.stringify(appt));
-      window.dispatchEvent(new StorageEvent("storage", { key: APPT_SCHEDULE_KEY, newValue: JSON.stringify(appt) }));
-    } catch {}
-    // Persist slot config
-    try {
-      localStorage.setItem(SLOT_SETTINGS_KEY, JSON.stringify(slotDraft));
-      window.dispatchEvent(new StorageEvent("storage", { key: SLOT_SETTINGS_KEY, newValue: JSON.stringify(slotDraft) }));
+      localStorage.setItem(key, JSON.stringify(appt));
+      window.dispatchEvent(new StorageEvent("storage", { key, newValue: JSON.stringify(appt) }));
     } catch {}
     setSaved(true);
     setTimeout(() => { setSaved(false); onClose(); }, 700);
@@ -1683,7 +1613,6 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
   const TABS: { id: ApptSettingsTab; label: string }[] = [
     { id: "schedule", label: "Schedule" },
     { id: "leave",    label: "Leave" },
-    { id: "slots",    label: "Slot Config" },
   ];
 
   return (
@@ -1704,16 +1633,43 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
 
+          {/* Chamber selector */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Chamber</label>
+            <div className="grid grid-cols-1 gap-1">
+              {chambers.length > 4 ? (
+                <select
+                  value={selectedChamberId}
+                  onChange={(e) => handleChamberChange(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {chambers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {chambers.map((c) => (
+                    <button key={c.id} type="button" onClick={() => handleChamberChange(c.id)}
+                      className={cn(
+                        "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors border",
+                        selectedChamberId === c.id
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "border-border text-muted-foreground hover:bg-muted"
+                      )}>
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Phone */}
           <div className="flex items-center gap-2 rounded-xl border border-input bg-background px-3 py-2">
             <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <input
-              type="tel"
-              value={appt.phone}
+            <input type="tel" value={appt.phone}
               onChange={(e) => setAppt((a) => ({ ...a, phone: e.target.value }))}
-              placeholder="Chamber / Contact phone number"
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
-            />
+              placeholder="Chamber contact phone number"
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50" />
           </div>
 
           {/* Tabs */}
@@ -1722,9 +1678,7 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
               <button key={t.id} type="button" onClick={() => setTab(t.id)}
                 className={cn(
                   "flex-1 rounded-lg py-1.5 text-xs font-semibold transition-colors",
-                  tab === t.id
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
+                  tab === t.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}>
                 {t.label}
               </button>
@@ -1741,9 +1695,6 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
           {tab === "leave" && (
             <LeaveTab leaves={appt.leaves}
               onChange={(l) => setAppt((a) => ({ ...a, leaves: l }))} />
-          )}
-          {tab === "slots" && (
-            <SlotConfigTab draft={slotDraft} onChange={setSlotDraft} />
           )}
         </div>
 
