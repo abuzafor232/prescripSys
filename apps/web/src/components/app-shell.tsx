@@ -1390,8 +1390,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [verifyError, setVerifyError] = useState("");
   const [verifying, setVerifying] = useState(false);
   const verifyCallback = useRef<() => void>(() => {});
-  const avatarRef = useRef<HTMLDivElement>(null);
-  const chamberRef = useRef<HTMLDivElement>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const avatarRef    = useRef<HTMLDivElement>(null);
+  const settingsRef  = useRef<HTMLDivElement>(null);
+  const chamberRef   = useRef<HTMLDivElement>(null);
   const hydrated = useSessionHydrated();
   const accessToken = useSessionStore((state) => state.accessToken);
   const refreshToken = useSessionStore((state) => state.refreshToken);
@@ -1490,6 +1492,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     function handleOutsideClick(e: MouseEvent) {
       if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
         setAvatarOpen(false);
+      }
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
       }
       if (chamberRef.current && !chamberRef.current.contains(e.target as Node)) {
         setChamberOpen(false);
@@ -1753,10 +1758,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {/* Theme toggle */}
             <ThemeToggle />
 
-            {/* Settings */}
-            <Button aria-label="Settings" size="icon" variant="ghost" className="h-8 w-8">
-              <Settings className="h-4 w-4" />
-            </Button>
+            {/* Settings dropdown */}
+            <div ref={settingsRef} className="relative">
+              <Button
+                aria-label="Settings"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() => setSettingsOpen((o) => !o)}
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+
+              {settingsOpen && (
+                <div className="absolute right-0 top-10 z-50 w-52 rounded-xl border bg-card p-1 shadow-lg">
+                  <button
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground transition hover:bg-muted"
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      setTimeout(() => openVerify(() => setChamberSettingsOpen(true)), 0);
+                    }}
+                  >
+                    <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+                    Manage Chamber
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Avatar + dropdown */}
             <div ref={avatarRef} className="relative ml-0.5">
