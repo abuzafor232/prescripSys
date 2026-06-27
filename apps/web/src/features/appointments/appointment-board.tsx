@@ -19,7 +19,6 @@ import {
   Printer,
   PlusCircle,
   RefreshCw,
-  Settings,
   Trash2,
   X,
 } from "lucide-react";
@@ -127,9 +126,7 @@ function completedTimeRemaining(completedAt?: string): string {
 }
 const BLOOD_GROUPS = ["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const MONTH_SHORT  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const SLOT_SETTINGS_KEY  = "rx-slot-settings";
-const INTERVAL_OPTIONS   = [5, 10, 15, 20, 30, 60];
-const MINUTE_OPTIONS     = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+const SLOT_SETTINGS_KEY = "rx-slot-settings";
 
 type SlotSettings = {
   startHour: number;
@@ -1185,7 +1182,6 @@ function BookAppointmentDialog({
   onUpdate: (patch: Partial<AppointmentFormState>) => void;
 }) {
   const [commentOpen,    setCommentOpen]    = useState(false);
-  const [settingsOpen,   setSettingsOpen]   = useState(false);
   const [phoneDismissed, setPhoneDismissed] = useState(false);
   const [slotSettings, setSlotSettings] = useState<SlotSettings>(() => {
     try {
@@ -1193,8 +1189,19 @@ function BookAppointmentDialog({
       return raw ? { ...DEFAULT_SLOT_SETTINGS, ...(JSON.parse(raw) as Partial<SlotSettings>) } : DEFAULT_SLOT_SETTINGS;
     } catch { return DEFAULT_SLOT_SETTINGS; }
   });
-  const [draft, setDraft] = useState<SlotSettings>(slotSettings);
   const slots = generateTimeSlots(slotSettings);
+
+  // React to slot settings changed from Appointment Settings (topbar gear)
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== SLOT_SETTINGS_KEY || !e.newValue) return;
+      try {
+        setSlotSettings({ ...DEFAULT_SLOT_SETTINGS, ...(JSON.parse(e.newValue) as Partial<SlotSettings>) });
+      } catch {}
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   // Slots already booked on this date (excludes Cancelled)
   const bookedSlots = useMemo(() => {
@@ -1223,12 +1230,6 @@ function BookAppointmentDialog({
   if (form.phone !== prevPhoneRef.current) {
     prevPhoneRef.current = form.phone;
     if (phoneDismissed) setPhoneDismissed(false);
-  }
-
-  function applySlotSettings() {
-    setSlotSettings(draft);
-    try { localStorage.setItem(SLOT_SETTINGS_KEY, JSON.stringify(draft)); } catch {}
-    setSettingsOpen(false);
   }
 
   function handlePhoneChange(raw: string) {
@@ -1282,64 +1283,10 @@ function BookAppointmentDialog({
 
             {/* ── LEFT: Slot selection ── */}
             <div className="space-y-2 px-4 py-3">
-              {/* Slots header with gear */}
+              {/* Slots header */}
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground">Select a Time Slot</span>
-                <button
-                  aria-label="Slot settings"
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-primary"
-                  type="button"
-                  onClick={() => { setDraft(slotSettings); setSettingsOpen((o) => !o); }}
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                </button>
               </div>
-
-              {/* Slot settings panel */}
-              {settingsOpen && (
-                <div className="rounded-xl border bg-muted/30 p-3">
-                  <p className="mb-2 text-xs font-semibold">Slot Configuration</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <span className="text-xs font-medium">Start Hour</span>
-                      <select className="h-8 w-full rounded-lg border bg-background px-2 text-xs"
-                        value={draft.startHour}
-                        onChange={(e) => setDraft((d) => ({ ...d, startHour: Number(e.target.value) }))}>
-                        {Array.from({ length: 18 }, (_, i) => i + 6).map((h) => {
-                          const h12 = h % 12 === 0 ? 12 : h % 12;
-                          return <option key={h} value={h}>{String(h12).padStart(2, "0")} {h < 12 ? "AM" : "PM"}</option>;
-                        })}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-xs font-medium">Start Minute</span>
-                      <select className="h-8 w-full rounded-lg border bg-background px-2 text-xs"
-                        value={draft.startMinute}
-                        onChange={(e) => setDraft((d) => ({ ...d, startMinute: Number(e.target.value) }))}>
-                        {MINUTE_OPTIONS.map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-xs font-medium">Interval (min)</span>
-                      <select className="h-8 w-full rounded-lg border bg-background px-2 text-xs"
-                        value={draft.intervalMinutes}
-                        onChange={(e) => setDraft((d) => ({ ...d, intervalMinutes: Number(e.target.value) }))}>
-                        {INTERVAL_OPTIONS.map((i) => <option key={i} value={i}>{i} min</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-xs font-medium">Total Serials</span>
-                      <Input className="h-8 rounded-lg text-xs" inputMode="numeric" max="100" min="1" type="number"
-                        value={draft.totalSlots}
-                        onChange={(e) => setDraft((d) => ({ ...d, totalSlots: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }))} />
-                    </div>
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    <Button className="h-8 text-xs" type="button" onClick={applySlotSettings}>Apply</Button>
-                    <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => setSettingsOpen(false)}>Cancel</button>
-                  </div>
-                </div>
-              )}
 
               {/* Time slots */}
               <div className="grid grid-cols-6 gap-1">

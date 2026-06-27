@@ -1304,6 +1304,167 @@ function ChamberDropdown({
   );
 }
 
+// ─── Appointment Settings Modal ──────────────────────────────────────────────
+
+const SLOT_SETTINGS_KEY     = "rx-slot-settings";
+const SLOT_INTERVAL_OPTIONS = [5, 10, 15, 20, 30, 60];
+const SLOT_MINUTE_OPTIONS   = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+type SlotSettings = {
+  startHour: number;
+  startMinute: number;
+  intervalMinutes: number;
+  totalSlots: number;
+};
+
+const DEFAULT_SLOT_SETTINGS: SlotSettings = {
+  startHour: 9, startMinute: 0, intervalMinutes: 10, totalSlots: 30,
+};
+
+function loadSlotSettings(): SlotSettings {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(SLOT_SETTINGS_KEY) : null;
+    return raw ? { ...DEFAULT_SLOT_SETTINGS, ...(JSON.parse(raw) as Partial<SlotSettings>) } : DEFAULT_SLOT_SETTINGS;
+  } catch { return DEFAULT_SLOT_SETTINGS; }
+}
+
+function generatePreviewSlots(s: SlotSettings): string[] {
+  const slots: string[] = [];
+  let h = s.startHour, m = s.startMinute;
+  for (let i = 0; i < s.totalSlots; i++) {
+    if (h >= 24) break;
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    slots.push(`${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`);
+    m += s.intervalMinutes;
+    while (m >= 60) { m -= 60; h++; }
+  }
+  return slots;
+}
+
+function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
+  const [draft, setDraft] = useState<SlotSettings>(loadSlotSettings);
+  const [saved, setSaved] = useState(false);
+
+  const preview = generatePreviewSlots(draft);
+  const last    = preview[preview.length - 1] ?? "";
+
+  function handleApply() {
+    try { localStorage.setItem(SLOT_SETTINGS_KEY, JSON.stringify(draft)); } catch {}
+    // Notify appointment-board (same-tab storage event doesn't fire for same origin)
+    window.dispatchEvent(new StorageEvent("storage", { key: SLOT_SETTINGS_KEY, newValue: JSON.stringify(draft) }));
+    setSaved(true);
+    setTimeout(() => { setSaved(false); onClose(); }, 800);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-md rounded-2xl border bg-card shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-bold text-foreground">Appointment Settings</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Slot Configuration */}
+        <div className="px-5 py-4 space-y-5">
+          <div>
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Slot Configuration</p>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Start Hour */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Start Hour</label>
+                <select
+                  className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  value={draft.startHour}
+                  onChange={(e) => setDraft((d) => ({ ...d, startHour: Number(e.target.value) }))}
+                >
+                  {Array.from({ length: 18 }, (_, i) => i + 6).map((h) => {
+                    const h12 = h % 12 === 0 ? 12 : h % 12;
+                    return <option key={h} value={h}>{String(h12).padStart(2, "0")} {h < 12 ? "AM" : "PM"}</option>;
+                  })}
+                </select>
+              </div>
+
+              {/* Start Minute */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Start Minute</label>
+                <select
+                  className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  value={draft.startMinute}
+                  onChange={(e) => setDraft((d) => ({ ...d, startMinute: Number(e.target.value) }))}
+                >
+                  {SLOT_MINUTE_OPTIONS.map((m) => (
+                    <option key={m} value={m}>{String(m).padStart(2, "0")}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Interval */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Interval (min)</label>
+                <select
+                  className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  value={draft.intervalMinutes}
+                  onChange={(e) => setDraft((d) => ({ ...d, intervalMinutes: Number(e.target.value) }))}
+                >
+                  {SLOT_INTERVAL_OPTIONS.map((i) => (
+                    <option key={i} value={i}>{i} min</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Total Serials */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Total Serials</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={draft.totalSlots}
+                  onChange={(e) => setDraft((d) => ({ ...d, totalSlots: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }))}
+                  className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="rounded-xl bg-muted/40 px-4 py-3 space-y-1">
+            <p className="text-xs font-semibold text-muted-foreground">Preview</p>
+            <p className="text-sm text-foreground">
+              {preview.length > 0
+                ? <><span className="font-medium">{preview[0]}</span> — <span className="font-medium">{last}</span> &nbsp;·&nbsp; <span className="text-muted-foreground">{preview.length} slots</span></>
+                : <span className="italic text-muted-foreground">No slots</span>}
+            </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
+          <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={handleApply}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            {saved ? <><Settings className="h-3.5 w-3.5" /> Saved!</> : "Apply & Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Chamber Settings Dialog ─────────────────────────────────────────────────
 
 function AppShellChamberSettingsDialog({
@@ -1402,7 +1563,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [verifyError, setVerifyError] = useState("");
   const [verifying, setVerifying] = useState(false);
   const verifyCallback = useRef<() => void>(() => {});
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen,      setSettingsOpen]      = useState(false);
+  const [apptSettingsOpen,  setApptSettingsOpen]  = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const avatarRef    = useRef<HTMLDivElement>(null);
@@ -1807,6 +1969,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Settings className="h-3.5 w-3.5 text-muted-foreground" />
                     Manage Chamber
                   </button>
+
+                  {/* Appointment Settings */}
+                  <button
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground transition hover:bg-muted"
+                    onClick={() => { setSettingsOpen(false); setApptSettingsOpen(true); }}
+                  >
+                    <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
+                    Appointment Settings
+                  </button>
                 </div>
               )}
             </div>
@@ -1879,6 +2050,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : children}
         </main>
       </div>
+
+      {/* Appointment Settings Modal */}
+      {apptSettingsOpen && (
+        <AppointmentSettingsModal onClose={() => setApptSettingsOpen(false)} />
+      )}
     </div>
   );
 }
