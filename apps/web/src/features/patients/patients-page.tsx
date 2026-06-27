@@ -21,8 +21,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/stores/session-store";
 import {
+  fetchChambers,
   fetchPatientProfile,
   fetchPatients,
+  type Chamber,
   type Patient,
   type PatientProfile,
   type ProfilePrescription,
@@ -549,8 +551,9 @@ export function PatientsPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo,   setDateTo]   = useState("");
+  const [dateFrom,   setDateFrom]   = useState("");
+  const [dateTo,     setDateTo]     = useState("");
+  const [chamberId,  setChamberId]  = useState("");
   const [page, setPage] = useState(1);
   const [profilePatientId, setProfilePatientId] = useState<string | null>(null);
   const [registrationOpen, setRegistrationOpen] = useState(false);
@@ -564,17 +567,26 @@ export function PatientsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset page when date filter changes
-  useEffect(() => { setPage(1); }, [dateFrom, dateTo]);
+  // Reset page when filters change
+  useEffect(() => { setPage(1); }, [dateFrom, dateTo, chamberId]);
+
+  const { data: chambersData } = useQuery<Chamber[]>({
+    queryKey: ["chambers"],
+    queryFn: () => fetchChambers(token),
+    enabled: !!token,
+    staleTime: 5 * 60_000,
+  });
+  const chambers = chambersData ?? [];
 
   const { data, isLoading } = useQuery({
-    queryKey: ["patients", debouncedSearch, page, dateFrom, dateTo],
+    queryKey: ["patients", debouncedSearch, page, dateFrom, dateTo, chamberId],
     queryFn: () => fetchPatients({
-      q: debouncedSearch || undefined,
+      q:         debouncedSearch || undefined,
       page,
-      limit: 20,
-      dateFrom: dateFrom || undefined,
-      dateTo:   dateTo   || undefined,
+      limit:     20,
+      dateFrom:  dateFrom  || undefined,
+      dateTo:    dateTo    || undefined,
+      chamberId: chamberId || undefined,
     }, token),
     enabled: !!token,
     staleTime: 30_000,
@@ -622,10 +634,27 @@ export function PatientsPage() {
           <DatePickerCard label="To (Reg. Date)" value={dateTo} min={dateFrom || undefined} onChange={setDateTo} />
         </div>
 
+        {/* Chamber dropdown */}
+        {chambers.length > 0 && (
+          <div className="grid gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Chamber</span>
+            <select
+              value={chamberId}
+              onChange={(e) => setChamberId(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+            >
+              <option value="">All Chambers</option>
+              {chambers.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Clear filter */}
-        {(dateFrom || dateTo) && (
+        {(dateFrom || dateTo || chamberId) && (
           <button
-            onClick={() => { setDateFrom(""); setDateTo(""); }}
+            onClick={() => { setDateFrom(""); setDateTo(""); setChamberId(""); }}
             className="self-end mb-0.5 text-xs text-muted-foreground hover:text-destructive"
           >
             Clear filter

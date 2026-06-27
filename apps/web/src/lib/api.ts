@@ -203,15 +203,16 @@ export function searchPatients(q: string, token: string) {
 }
 
 export function fetchPatients(
-  params: { q?: string; page?: number; limit?: number; dateFrom?: string; dateTo?: string },
+  params: { q?: string; page?: number; limit?: number; dateFrom?: string; dateTo?: string; chamberId?: string },
   token: string
 ) {
   const qs = new URLSearchParams();
-  if (params.q)        qs.set("q",        params.q);
-  if (params.page)     qs.set("page",     String(params.page));
-  if (params.limit)    qs.set("limit",    String(params.limit));
-  if (params.dateFrom) qs.set("dateFrom", params.dateFrom);
-  if (params.dateTo)   qs.set("dateTo",   params.dateTo);
+  if (params.q)          qs.set("q",          params.q);
+  if (params.page)       qs.set("page",       String(params.page));
+  if (params.limit)      qs.set("limit",      String(params.limit));
+  if (params.dateFrom)   qs.set("dateFrom",   params.dateFrom);
+  if (params.dateTo)     qs.set("dateTo",     params.dateTo);
+  if (params.chamberId)  qs.set("chamberId",  params.chamberId);
   return apiFetch<PatientListResponse>(`/patients?${qs.toString()}`, { token });
 }
 

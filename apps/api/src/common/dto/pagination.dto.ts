@@ -26,4 +26,8 @@ export class PaginationDto {
   @IsOptional()
   @IsString()
   dateTo?: string;
+
+  @IsOptional()
+  @IsString()
+  chamberId?: string;
 }

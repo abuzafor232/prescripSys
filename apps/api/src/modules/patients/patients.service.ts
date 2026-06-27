@@ -33,7 +33,8 @@ export class PatientsService {
               ...(dto.dateTo   ? { lte: new Date(`${dto.dateTo}T23:59:59.999Z`)   } : {})
             }
           }
-        : {})
+        : {}),
+      ...(dto.chamberId ? { chamberId: dto.chamberId } : {})
     };
 
     const [rawData, total] = await this.prisma.$transaction([
