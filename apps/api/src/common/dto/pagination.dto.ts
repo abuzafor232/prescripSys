@@ -18,4 +18,12 @@ export class PaginationDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
 }

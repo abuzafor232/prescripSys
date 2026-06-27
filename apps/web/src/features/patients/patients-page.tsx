@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
+  CalendarDays,
   CalendarPlus,
   ChevronLeft,
   ChevronRight,
@@ -63,6 +64,238 @@ function formatDate(iso?: string | null): string {
 function genderLabel(g?: string | null): string {
   if (!g) return "";
   return g.charAt(0).toUpperCase() + g.slice(1).toLowerCase();
+}
+
+function getDateInputValue(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function buildCalendarDays(month: Date) {
+  const firstOfMonth  = new Date(month.getFullYear(), month.getMonth(), 1);
+  const calendarStart = new Date(firstOfMonth);
+  calendarStart.setDate(firstOfMonth.getDate() - firstOfMonth.getDay());
+  return Array.from({ length: 42 }, (_, i) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + i);
+    return { date };
+  });
+}
+
+function parseDateText(text: string): string | null {
+  const match = text.trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (!match) return null;
+  const [, d, m, y] = match;
+  const year = y.length === 2 ? (Number(y) < 50 ? 2000 + Number(y) : 1900 + Number(y)) : Number(y);
+  const date = new Date(year, Number(m) - 1, Number(d));
+  if (isNaN(date.getTime()) || date.getMonth() !== Number(m) - 1) return null;
+  return getDateInputValue(date);
+}
+
+// ── Date Picker (copied from Dashboard) ───────────────────────────────────
+
+function DatePickerCard({
+  label,
+  value,
+  min,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  min?: string;
+  onChange: (v: string) => void;
+}) {
+  const [open,       setOpen]       = useState(false);
+  const [textInput,  setTextInput]  = useState("");
+  const [textError,  setTextError]  = useState(false);
+  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const parsed = value ? new Date(`${value}T00:00:00`) : null;
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const base = parsed ?? new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+
+  const displayValue = parsed
+    ? parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "—";
+
+  function openPicker() {
+    if (parsed) setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+    const initText = parsed
+      ? `${String(parsed.getDate()).padStart(2, "0")}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getFullYear()).slice(-2)}`
+      : "";
+    setTextInput(initText);
+    setTextError(false);
+    if (triggerRef.current) {
+      const rect        = triggerRef.current.getBoundingClientRect();
+      const popupHeight = 380;
+      const spaceBelow  = window.innerHeight - rect.bottom;
+      const placeAbove  = rect.top >= popupHeight || rect.top > spaceBelow;
+      setPopupStyle(
+        placeAbove
+          ? { position: "fixed", bottom: window.innerHeight - rect.top + 6, left: rect.left }
+          : { position: "fixed", top: rect.bottom + 6, left: rect.left },
+      );
+    }
+    setOpen(true);
+  }
+
+  function handleTextChange(raw: string) {
+    setTextInput(raw);
+    setTextError(false);
+    const iso = parseDateText(raw);
+    if (iso) {
+      const d = new Date(`${iso}T00:00:00`);
+      setVisibleMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+  }
+
+  function handleTextConfirm() {
+    if (!textInput.trim()) { onChange(""); setOpen(false); return; }
+    const iso = parseDateText(textInput);
+    if (iso) { onChange(iso); setOpen(false); }
+    else setTextError(true);
+  }
+
+  function handleDayClick(iso: string) {
+    if (min && iso < min) return;
+    onChange(iso);
+    setOpen(false);
+  }
+
+  const calendarDays = buildCalendarDays(visibleMonth);
+  const monthLabel   = visibleMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  return (
+    <>
+      <div className="grid gap-1">
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <button
+          ref={triggerRef}
+          type="button"
+          className="flex h-9 w-full cursor-pointer items-center overflow-hidden rounded-md border border-input bg-background transition hover:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          onClick={openPicker}
+        >
+          <span className="flex flex-1 items-center px-3 text-sm font-medium text-foreground">
+            {displayValue}
+          </span>
+          <span className="flex h-full w-9 shrink-0 items-center justify-center border-l bg-muted">
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+          </span>
+        </button>
+      </div>
+
+      {open && typeof document !== "undefined" && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onMouseDown={() => setOpen(false)} />
+          <div
+            className="z-[9999] w-72 rounded-xl border bg-card shadow-2xl"
+            style={popupStyle}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 pt-3 pb-1">
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  className={cn(
+                    "flex-1 rounded border px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary",
+                    textError ? "border-destructive" : "border-border",
+                  )}
+                  placeholder="DD-MM-YY"
+                  value={textInput}
+                  onChange={(e) => handleTextChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter")  handleTextConfirm();
+                    if (e.key === "Escape") setOpen(false);
+                  }}
+                />
+                <button
+                  className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90"
+                  type="button"
+                  onClick={handleTextConfirm}
+                >
+                  Set
+                </button>
+              </div>
+              {textError && (
+                <p className="mt-1 text-xs text-destructive">Invalid — use DD-MM-YY (e.g. 10-05-26)</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between px-4 py-2">
+              <button
+                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                type="button"
+                onClick={() => setVisibleMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-sm font-semibold">{monthLabel}</span>
+              <button
+                className="rounded p-1 text-muted-foreground hover:bg-muted"
+                type="button"
+                onClick={() => setVisibleMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 border-t px-2 text-center text-[10px] font-semibold text-muted-foreground">
+              {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                <div key={d} className="py-1">{d}</div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 px-2 pb-3 text-center">
+              {calendarDays.map((item) => {
+                const iso        = getDateInputValue(item.date);
+                const isSelected = iso === value;
+                const isOutside  = item.date.getMonth() !== visibleMonth.getMonth();
+                const isDisabled = !!min && iso < min;
+                return (
+                  <button
+                    key={iso}
+                    type="button"
+                    disabled={isDisabled}
+                    className={cn(
+                      "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs",
+                      isSelected
+                        ? "bg-primary font-bold text-white"
+                        : isDisabled
+                          ? "cursor-not-allowed text-muted-foreground/20"
+                          : isOutside
+                            ? "text-muted-foreground/30"
+                            : "hover:bg-muted",
+                    )}
+                    onClick={() => handleDayClick(iso)}
+                  >
+                    {item.date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+
+            {value && (
+              <div className="border-t px-4 py-2 text-right">
+                <button
+                  className="text-xs text-muted-foreground hover:text-destructive"
+                  type="button"
+                  onClick={() => { onChange(""); setOpen(false); }}
+                >
+                  Clear date
+                </button>
+              </div>
+            )}
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
+  );
 }
 
 // ── Prescription History Card ──────────────────────────────────────────────
@@ -316,6 +549,8 @@ export function PatientsPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo,   setDateTo]   = useState("");
   const [page, setPage] = useState(1);
   const [profilePatientId, setProfilePatientId] = useState<string | null>(null);
   const [registrationOpen, setRegistrationOpen] = useState(false);
@@ -329,9 +564,18 @@ export function PatientsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Reset page when date filter changes
+  useEffect(() => { setPage(1); }, [dateFrom, dateTo]);
+
   const { data, isLoading } = useQuery({
-    queryKey: ["patients", debouncedSearch, page],
-    queryFn: () => fetchPatients({ q: debouncedSearch || undefined, page, limit: 20 }, token),
+    queryKey: ["patients", debouncedSearch, page, dateFrom, dateTo],
+    queryFn: () => fetchPatients({
+      q: debouncedSearch || undefined,
+      page,
+      limit: 20,
+      dateFrom: dateFrom || undefined,
+      dateTo:   dateTo   || undefined,
+    }, token),
     enabled: !!token,
     staleTime: 30_000,
   });
@@ -354,25 +598,47 @@ export function PatientsPage() {
     <div className="space-y-4">
 
       {/* ── Toolbar ── */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search by name, phone, or reg no…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
+      <div className="flex flex-wrap items-end gap-3">
+        {/* Search */}
+        <div className="grid gap-1">
+          <span className="text-xs font-medium text-muted-foreground">Search</span>
+          <div className="relative w-56">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Name, phone, reg no…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-[7px] text-sm outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
         </div>
 
-        <Button onClick={() => setRegistrationOpen(true)} className="shrink-0 gap-2">
+        {/* Date range pickers */}
+        <div className="w-36">
+          <DatePickerCard label="From (Reg. Date)" value={dateFrom} onChange={setDateFrom} />
+        </div>
+        <div className="w-36">
+          <DatePickerCard label="To (Reg. Date)" value={dateTo} min={dateFrom || undefined} onChange={setDateTo} />
+        </div>
+
+        {/* Clear filter */}
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={() => { setDateFrom(""); setDateTo(""); }}
+            className="self-end mb-0.5 text-xs text-muted-foreground hover:text-destructive"
+          >
+            Clear filter
+          </button>
+        )}
+
+        <Button onClick={() => setRegistrationOpen(true)} className="shrink-0 gap-2 self-end">
           <UserPlus className="h-4 w-4" />
           Register New Patient
         </Button>
 
         {meta && (
-          <span className="ml-auto text-sm text-muted-foreground">
+          <span className="ml-auto self-end text-sm text-muted-foreground">
             {meta.total} patient{meta.total !== 1 ? "s" : ""}
           </span>
         )}

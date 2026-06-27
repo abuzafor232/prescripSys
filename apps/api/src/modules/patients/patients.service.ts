@@ -25,6 +25,14 @@ export class PatientsService {
               { registrationNo: { contains: q, mode: "insensitive" } }
             ]
           }
+        : {}),
+      ...(dto.dateFrom || dto.dateTo
+        ? {
+            createdAt: {
+              ...(dto.dateFrom ? { gte: new Date(`${dto.dateFrom}T00:00:00.000Z`) } : {}),
+              ...(dto.dateTo   ? { lte: new Date(`${dto.dateTo}T23:59:59.999Z`)   } : {})
+            }
+          }
         : {})
     };
 
