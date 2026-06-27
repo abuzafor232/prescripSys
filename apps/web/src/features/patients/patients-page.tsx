@@ -384,13 +384,14 @@ export function PatientsPage() {
         {/* Header row */}
         <div
           className="grid border-b bg-muted/60 px-4 py-3 text-xs font-bold uppercase tracking-wide text-foreground"
-          style={{ gridTemplateColumns: "1.4fr 2fr 1fr 1.5fr 1.5fr 1fr" }}
+          style={{ gridTemplateColumns: "1.4fr 2fr 1fr 1.5fr 1.5fr 1.5fr 1fr" }}
         >
           <span>Patient No.</span>
           <span>Patient&apos;s Name</span>
           <span>Age</span>
           <span>Phone Number</span>
           <span>Last Visit</span>
+          <span>Registration Date</span>
           <span className="text-center">View Profile</span>
         </div>
 
@@ -410,7 +411,7 @@ export function PatientsPage() {
                 "grid items-center gap-4 border-b px-4 py-3.5 text-sm last:border-0 transition-colors hover:bg-muted/30",
                 idx % 2 === 1 && "bg-muted/10"
               )}
-              style={{ gridTemplateColumns: "1.4fr 2fr 1fr 1.5fr 1.5fr 1fr" }}
+              style={{ gridTemplateColumns: "1.4fr 2fr 1fr 1.5fr 1.5fr 1.5fr 1fr" }}
             >
               {/* Patient No */}
               <span className="font-mono text-xs text-muted-foreground">
@@ -431,6 +432,11 @@ export function PatientsPage() {
                 {patient.lastVisitAt ? timeAgo(patient.lastVisitAt) : (
                   <span className="italic text-xs">No visit yet</span>
                 )}
+              </span>
+
+              {/* Registration Date */}
+              <span className="text-muted-foreground">
+                {patient.createdAt ? formatDate(patient.createdAt) : "—"}
               </span>
 
               {/* View Profile */}
