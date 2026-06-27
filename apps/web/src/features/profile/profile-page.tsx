@@ -252,37 +252,36 @@ export function ProfilePage() {
   }
 
   const mutation = useMutation({
-    // Only send text fields to API — photo stays local (base64 can be >100kb)
+    // Only send text fields to API — photo stays local (base64 can be large)
     mutationFn: () => updateDoctor(
       doctorId,
-      { displayName: displayName || undefined, bmdcNumber: bmdcNumber || undefined, specialization: specialization || undefined, designation: designation || undefined, qualifications: qualifications || undefined },
+      {
+        displayName:    displayName    || undefined,
+        bmdcNumber:     bmdcNumber     || undefined,
+        specialization: specialization || undefined,
+        designation:    designation    || undefined,
+        qualifications: qualifications || undefined,
+      },
       token
     ),
     onSuccess: () => {
-      // Always save extended data to localStorage on success
-      saveExtended(doctorId, buildExtended());
       queryClient.invalidateQueries({ queryKey: ["doctor", doctorId] });
-      setEditing(false);
-      setError("");
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
     },
     onError: (e) => {
-      setError(getApiErrorMessage(e));
+      // Show a non-blocking warning — local data is already saved
+      setError("Profile saved locally. Server sync failed: " + getApiErrorMessage(e));
     },
   });
 
   function handleSave() {
     setError("");
-    if (!doctorId) {
-      // No doctor linked — just save extended data locally
-      saveExtended(doctorId, buildExtended());
-      setEditing(false);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-      return;
-    }
-    mutation.mutate();
+    // Always save everything to localStorage immediately
+    saveExtended(doctorId, buildExtended());
+    setEditing(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+    // Fire API sync in background if a doctor record exists
+    if (doctorId) mutation.mutate();
   }
 
   function handleCancel() {
