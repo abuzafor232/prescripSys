@@ -276,6 +276,7 @@ export type Doctor = {
   specialization?: string | null;
   designation?: string | null;
   qualifications?: string | null;
+  profileImageUrl?: string | null;
   chambers?: Array<{
     isDefault: boolean;
     chamber: Chamber;
@@ -339,6 +340,18 @@ export function fetchDoctors(token: string) {
 
 export function fetchChambers(token: string) {
   return apiFetch<Chamber[]>("/chambers", { token });
+}
+
+export function fetchDoctor(id: string, token: string) {
+  return apiFetch<Doctor>(`/doctors/${id}`, { token });
+}
+
+export function updateDoctor(
+  id: string,
+  body: { displayName?: string; bmdcNumber?: string; specialization?: string; designation?: string; qualifications?: string; profileImageUrl?: string },
+  token: string
+) {
+  return apiFetch<Doctor>(`/doctors/${id}`, { method: "PATCH", token, body: JSON.stringify(body) });
 }
 
 export function createPrescription(input: CreatePrescriptionInput, token: string) {

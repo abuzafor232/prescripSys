@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@bd-prescription/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -7,6 +7,7 @@ import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import type { RequestUser } from "../../common/types/request-user";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateDoctorDto } from "./dto/create-doctor.dto";
+import { UpdateDoctorDto } from "./dto/update-doctor.dto";
 import { DoctorsService } from "./doctors.service";
 
 @ApiBearerAuth()
@@ -32,5 +33,11 @@ export class DoctorsController {
   @Get(":id")
   get(@CurrentUser() user: RequestUser, @Param("id") id: string) {
     return this.doctors.get(user.tenantId, id);
+  }
+
+  @Permissions(PERMISSIONS.PRESCRIPTIONS_READ)
+  @Patch(":id")
+  update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: UpdateDoctorDto) {
+    return this.doctors.update(user.tenantId, id, dto);
   }
 }

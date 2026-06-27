@@ -27,6 +27,7 @@ import {
   Sun,
   Trash2,
   Underline,
+  User,
   UsersRound,
   X,
 } from "lucide-react";
@@ -37,6 +38,15 @@ import { CommandPalette } from "@/components/command-palette";
 import { fetchCurrentUser, logoutSession, refreshAccessToken, loginWithPassword } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useSessionHydrated, useSessionStore } from "@/stores/session-store";
+
+function loadProfilePhoto(doctorId: string): string {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(`rx-doctor-profile-${doctorId}`) : null;
+    if (!raw) return "";
+    const parsed = JSON.parse(raw) as { photo?: string };
+    return parsed.photo ?? "";
+  } catch { return ""; }
+}
 
 const nav: { href: string; label: string; icon: React.ElementType }[] = [
   { href: "/",                  label: "Dashboard",    icon: LayoutDashboard },
@@ -1803,13 +1813,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Avatar + dropdown */}
             <div ref={avatarRef} className="relative ml-0.5">
-              <button
-                aria-label="Account menu"
-                className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-primary/40 bg-primary text-sm font-bold text-primary-foreground shadow-sm transition hover:opacity-90"
-                onClick={() => setAvatarOpen((o) => !o)}
-              >
-                {user?.fullName?.[0]?.toUpperCase() ?? "U"}
-              </button>
+              {(() => {
+                const profilePhoto = user?.doctorId ? loadProfilePhoto(user.doctorId) : "";
+                return (
+                  <button
+                    aria-label="Account menu"
+                    className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-primary/40 bg-primary text-sm font-bold text-primary-foreground shadow-sm transition hover:opacity-90"
+                    onClick={() => setAvatarOpen((o) => !o)}
+                  >
+                    {profilePhoto
+                      ? <img src={profilePhoto} alt="avatar" className="h-full w-full object-cover" />
+                      : (user?.fullName?.[0]?.toUpperCase() ?? "U")}
+                  </button>
+                );
+              })()}
 
               {avatarOpen && (
                 <div className="absolute right-0 top-10 z-50 w-52 rounded-xl border bg-card p-1 shadow-lg">
@@ -1819,6 +1836,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email}</p>
                     )}
                   </div>
+                  <div className="my-1 border-t" />
+                  <Link
+                    href="/profile"
+                    onClick={() => setAvatarOpen(false)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground transition hover:bg-muted"
+                  >
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    My Profile
+                  </Link>
                   <div className="my-1 border-t" />
                   <button
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-destructive transition hover:bg-destructive/10"
