@@ -1737,20 +1737,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       )}
                     </button>
                   ))}
-                  <div className="border-t mt-1 px-2 py-2">
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={() => {
-                        setChamberOpen(false);
-                        setTimeout(() => openVerify(() => setChamberSettingsOpen(true)), 0);
-                      }}
-                    >
-                      <Settings className="h-3.5 w-3.5" />
-                      Manage Chambers
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
