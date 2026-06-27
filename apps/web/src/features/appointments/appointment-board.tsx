@@ -6,9 +6,52 @@ import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useMemo,
 const APPOINTMENTS_STORAGE_KEY = "rx-appointments";
 const CHAMBERS_STORAGE_KEY     = "rx-chambers";
 const SELECTED_CHAMBER_KEY     = "rx-selected-chamber";
+const APPT_SCHEDULE_KEY        = "rx-appointment-schedule";
+
+// Day-name → JS getDay() index (0=Sunday … 6=Saturday)
+const DAY_NAME_TO_JS_DAY: Record<string, number> = {
+  Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+  Thursday: 4, Friday: 5, Saturday: 6,
+};
+
+type SchedTimeBlock  = { id: string; from: string; to: string; maxPatients: number };
+type SchedWeek       = Record<string, SchedTimeBlock[]>;
+type SchedLeave      = { id: string; from: string; to: string; comment: string };
+type SchedData       = { phone: string; schedule: SchedWeek; leaves: SchedLeave[] };
+
+function loadScheduleData(): SchedData {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(APPT_SCHEDULE_KEY) : null;
+    if (!raw) return { phone: "", schedule: {}, leaves: [] };
+    return JSON.parse(raw) as SchedData;
+  } catch { return { phone: "", schedule: {}, leaves: [] }; }
+}
+
+// Returns Set of JS day indices (0–6) that have schedule blocks
+function activeWeekdays(sched: SchedWeek): Set<number> | null {
+  const days = Object.entries(sched).filter(([, blocks]) => blocks.length > 0);
+  if (days.length === 0) return null; // no schedule → no restriction
+  return new Set(days.map(([name]) => DAY_NAME_TO_JS_DAY[name]).filter((d) => d !== undefined));
+}
+
+// Returns Set of ISO dates ("YYYY-MM-DD") covered by leaves
+function leaveISODates(leaves: SchedLeave[]): Set<string> {
+  const out = new Set<string>();
+  for (const lv of leaves) {
+    if (!lv.from || !lv.to) continue;
+    const cur = new Date(`${lv.from}T00:00:00`);
+    const end = new Date(`${lv.to}T00:00:00`);
+    while (cur <= end) {
+      out.add(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  return out;
+}
 
 import {
   CalendarDays,
+  CalendarOff,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -229,6 +272,8 @@ function CalendarPopup({
   onMonthChange,
   onSelect,
   onClose,
+  activeWeekdaySet,
+  leaveDateSet,
 }: {
   style: CSSProperties;
   value: string;
@@ -236,6 +281,8 @@ function CalendarPopup({
   onMonthChange: (m: Date) => void;
   onSelect: (iso: string) => void;
   onClose: () => void;
+  activeWeekdaySet?: Set<number> | null;
+  leaveDateSet?: Set<string>;
 }) {
   const [textInput, setTextInput] = useState(() => formatDateForInput(value));
   const [textError, setTextError] = useState(false);
@@ -326,22 +373,32 @@ function CalendarPopup({
         {/* Day grid */}
         <div className="grid grid-cols-7 px-2 pb-3 text-center">
           {calendarDays.map((item) => {
-            const iso       = formatISODate(item.date);
-            const isSel     = iso === value;
-            const isOutside = item.date.getMonth() !== visibleMonth.getMonth();
+            const iso        = formatISODate(item.date);
+            const isSel      = iso === value;
+            const isOutside  = item.date.getMonth() !== visibleMonth.getMonth();
+            const jsDay      = item.date.getDay();
+            const isLeave    = leaveDateSet?.has(iso) ?? false;
+            const isOffDay   = activeWeekdaySet != null && !activeWeekdaySet.has(jsDay);
+            const isDisabled = isLeave || isOffDay;
             return (
               <button
                 key={iso}
                 type="button"
+                disabled={isDisabled}
+                title={isLeave ? "Leave / Holiday" : isOffDay ? "No schedule this day" : undefined}
                 className={cn(
-                  "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs",
-                  isSel      ? "bg-primary font-bold text-white"
-                  : isOutside ? "text-muted-foreground/30"
-                              : "hover:bg-muted",
+                  "relative mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs transition-colors",
+                  isSel        ? "bg-primary font-bold text-white"
+                  : isDisabled ? "cursor-not-allowed text-muted-foreground/30 line-through"
+                  : isOutside  ? "text-muted-foreground/30"
+                               : "hover:bg-muted",
                 )}
-                onClick={() => onSelect(iso)}
+                onClick={() => !isDisabled && onSelect(iso)}
               >
                 {item.date.getDate()}
+                {isLeave && !isSel && (
+                  <span className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-destructive/60" />
+                )}
               </button>
             );
           })}
@@ -372,11 +429,15 @@ function CustomDateControl({
   fullWidth = false,
   compact = false,
   onChange,
+  activeWeekdaySet,
+  leaveDateSet,
 }: {
   value: string;
   fullWidth?: boolean;
   compact?: boolean;
   onChange: (value: string) => void;
+  activeWeekdaySet?: Set<number> | null;
+  leaveDateSet?: Set<string>;
 }) {
   const [open, setOpen] = useState(false);
   const [popupStyle, setPopupStyle] = useState<CSSProperties>({});
@@ -433,6 +494,8 @@ function CustomDateControl({
           onMonthChange={setVisibleMonth}
           onSelect={(iso) => { if (iso) onChange(iso); setOpen(false); }}
           onClose={() => setOpen(false)}
+          activeWeekdaySet={activeWeekdaySet}
+          leaveDateSet={leaveDateSet}
         />
       )}
     </>
@@ -512,6 +575,21 @@ export function AppointmentBoard() {
   const router = useRouter();
   const user = useSessionStore((s) => s.user);
   const [selectedDate, setSelectedDate] = useState(formatISODate(new Date()));
+
+  // Schedule constraints for the date picker
+  const [schedData, setBoardSchedData] = useState<SchedData>(() => loadScheduleData());
+  const boardActiveDays = activeWeekdays(schedData.schedule);
+  const boardLeaveDates = leaveISODates(schedData.leaves);
+
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key === APPT_SCHEDULE_KEY && e.newValue) {
+        try { setBoardSchedData(JSON.parse(e.newValue) as SchedData); } catch {}
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const [appointmentOpen, setAppointmentOpen] = useState(false);
   const [showList, setShowList] = useState(false);
   const [previewPrescriptionId, setPreviewPrescriptionId] = useState<string | null>(null);
@@ -661,7 +739,8 @@ export function AppointmentBoard() {
         <div className="flex flex-wrap items-center gap-2">
           {/* Date control */}
           <div className="h-7">
-            <CustomDateControl value={selectedDate} onChange={setSelectedDate} compact fullWidth={false} />
+            <CustomDateControl value={selectedDate} onChange={setSelectedDate} compact fullWidth={false}
+              activeWeekdaySet={boardActiveDays} leaveDateSet={boardLeaveDates} />
           </div>
           <Button size="sm" type="button" onClick={() => setAppointmentOpen(true)}>
             Book Appointment
@@ -1191,13 +1270,20 @@ function BookAppointmentDialog({
   });
   const slots = generateTimeSlots(slotSettings);
 
-  // React to slot settings changed from Appointment Settings (topbar gear)
+  // Schedule & leave data for the date picker
+  const [schedData, setSchedData] = useState<SchedData>(() => loadScheduleData());
+  const activeDays  = activeWeekdays(schedData.schedule);
+  const leaveDates  = leaveISODates(schedData.leaves);
+
+  // React to slot / schedule settings changed from topbar Appointment Settings
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key !== SLOT_SETTINGS_KEY || !e.newValue) return;
-      try {
-        setSlotSettings({ ...DEFAULT_SLOT_SETTINGS, ...(JSON.parse(e.newValue) as Partial<SlotSettings>) });
-      } catch {}
+      if (e.key === SLOT_SETTINGS_KEY && e.newValue) {
+        try { setSlotSettings({ ...DEFAULT_SLOT_SETTINGS, ...(JSON.parse(e.newValue) as Partial<SlotSettings>) }); } catch {}
+      }
+      if (e.key === APPT_SCHEDULE_KEY && e.newValue) {
+        try { setSchedData(JSON.parse(e.newValue) as SchedData); } catch {}
+      }
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
