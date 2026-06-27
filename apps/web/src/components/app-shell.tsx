@@ -19,18 +19,20 @@ import {
   Loader2,
   LogOut,
   Menu,
+  Moon,
   History,
   Pill,
   Plus,
   Settings,
+  Sun,
   Trash2,
   Underline,
   UsersRound,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { CommandPalette } from "@/components/command-palette";
 import { fetchCurrentUser, logoutSession, refreshAccessToken, loginWithPassword } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -1391,6 +1393,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [verifying, setVerifying] = useState(false);
   const verifyCallback = useRef<() => void>(() => {});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const avatarRef    = useRef<HTMLDivElement>(null);
   const settingsRef  = useRef<HTMLDivElement>(null);
   const chamberRef   = useRef<HTMLDivElement>(null);
@@ -1741,9 +1745,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </div>
 
-            {/* Theme toggle */}
-            <ThemeToggle />
-
             {/* Settings dropdown */}
             <div ref={settingsRef} className="relative">
               <Button
@@ -1757,7 +1758,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Button>
 
               {settingsOpen && (
-                <div className="absolute right-0 top-10 z-50 w-52 rounded-xl border bg-card p-1 shadow-lg">
+                <div className="absolute right-0 top-10 z-50 w-56 rounded-xl border bg-card p-1 shadow-lg">
+                  {/* Dark mode toggle */}
+                  <div className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-muted transition-colors">
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      {isDark ? <Moon className="h-3.5 w-3.5 text-muted-foreground" /> : <Sun className="h-3.5 w-3.5 text-muted-foreground" />}
+                      Dark Mode
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isDark}
+                      onClick={() => setTheme(isDark ? "light" : "dark")}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none",
+                        isDark ? "bg-primary" : "bg-muted-foreground/30"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transform transition-transform duration-200",
+                          isDark ? "translate-x-4" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="my-1 border-t" />
+
+                  {/* Manage Chamber */}
                   <button
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground transition hover:bg-muted"
                     onClick={() => {
