@@ -21,14 +21,23 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/stores/session-store";
 import {
-  fetchChambers,
   fetchPatientProfile,
   fetchPatients,
-  type Chamber,
   type Patient,
   type PatientProfile,
   type ProfilePrescription,
 } from "@/lib/api";
+
+type LocalChamber = { id: string; name: string };
+const DEFAULT_LOCAL_CHAMBERS: LocalChamber[] = [{ id: "default", name: "Dr. Abdullah Eye Care Center" }];
+
+function loadLocalChambers(): LocalChamber[] {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("rx-chambers") : null;
+    const parsed = raw ? (JSON.parse(raw) as LocalChamber[]) : null;
+    return parsed && parsed.length > 0 ? parsed : DEFAULT_LOCAL_CHAMBERS;
+  } catch { return DEFAULT_LOCAL_CHAMBERS; }
+}
 import { RegisterPatientDialog } from "./register-patient-dialog";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -570,13 +579,9 @@ export function PatientsPage() {
   // Reset page when filters change
   useEffect(() => { setPage(1); }, [dateFrom, dateTo, chamberId]);
 
-  const { data: chambersData } = useQuery<Chamber[]>({
-    queryKey: ["chambers"],
-    queryFn: () => fetchChambers(token),
-    enabled: !!token,
-    staleTime: 5 * 60_000,
-  });
-  const chambers = chambersData ?? [];
+  const [chambers] = useState<LocalChamber[]>(() =>
+    typeof window !== "undefined" ? loadLocalChambers() : DEFAULT_LOCAL_CHAMBERS
+  );
 
   const { data, isLoading } = useQuery({
     queryKey: ["patients", debouncedSearch, page, dateFrom, dateTo, chamberId],
