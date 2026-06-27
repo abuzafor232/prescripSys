@@ -124,6 +124,68 @@ function DynamicRow({ children, onRemove, editing }: { children: React.ReactNode
   );
 }
 
+// ── Image compressor ─────────────────────────────────────────────────────
+// Target: output data-URL string ≤ TARGET_BYTES. Strategy:
+//   1. Resize to ≤ MAX_DIM while preserving aspect ratio (no upscaling).
+//   2. Binary-search JPEG quality (0.1–0.95) to land just under target.
+//   3. If even quality=0.1 still exceeds target, halve dimensions and retry once.
+// "No quality loss" = we always use the highest quality that fits.
+
+const TARGET_BYTES = 512 * 1024; // 512 KB data-URL string cap
+const MAX_DIM      = 1400;       // max pixel dimension before any quality reduction
+
+async function compressToTarget(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  let w = bitmap.width;
+  let h = bitmap.height;
+
+  // Step 1 — resize if dimensions exceed max
+  if (w > MAX_DIM || h > MAX_DIM) {
+    const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
+    w = Math.round(w * ratio);
+    h = Math.round(h * ratio);
+  }
+
+  function drawToCanvas(cw: number, ch: number): HTMLCanvasElement {
+    const canvas = document.createElement("canvas");
+    canvas.width = cw;
+    canvas.height = ch;
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, cw, ch);
+    return canvas;
+  }
+
+  function toJpeg(canvas: HTMLCanvasElement, q: number) {
+    return canvas.toDataURL("image/jpeg", q);
+  }
+
+  const canvas = drawToCanvas(w, h);
+
+  // If already within target at full quality, return as-is
+  const fullQ = toJpeg(canvas, 0.95);
+  if (fullQ.length <= TARGET_BYTES) return fullQ;
+
+  // Step 2 — binary search quality
+  let lo = 0.1, hi = 0.92, best = toJpeg(canvas, 0.5);
+  for (let i = 0; i < 10; i++) {
+    const mid = (lo + hi) / 2;
+    const data = toJpeg(canvas, mid);
+    if (data.length <= TARGET_BYTES) { best = data; lo = mid; }
+    else                              { hi = mid; }
+  }
+  if (best.length <= TARGET_BYTES) return best;
+
+  // Step 3 — still too large: reduce dimensions by 60 % and retry
+  const c2 = drawToCanvas(Math.round(w * 0.6), Math.round(h * 0.6));
+  lo = 0.5; hi = 0.92; best = toJpeg(c2, 0.8);
+  for (let i = 0; i < 8; i++) {
+    const mid = (lo + hi) / 2;
+    const data = toJpeg(c2, mid);
+    if (data.length <= TARGET_BYTES) { best = data; lo = mid; }
+    else                              { hi = mid; }
+  }
+  return best;
+}
+
 // ── Profile Page ─────────────────────────────────────────────────────────
 
 export function ProfilePage() {
@@ -140,9 +202,10 @@ export function ProfilePage() {
     enabled:  !!token && !!doctorId,
   });
 
-  const [editing, setEditing] = useState(false);
-  const [saved,   setSaved]   = useState(false);
-  const [error,   setError]   = useState("");
+  const [editing,      setEditing]      = useState(false);
+  const [saved,        setSaved]        = useState(false);
+  const [error,        setError]        = useState("");
+  const [compressing,  setCompressing]  = useState(false);
 
   // API-backed fields
   const [displayName,    setDisplayName]    = useState("");
@@ -243,13 +306,22 @@ export function ProfilePage() {
     setError("");
   }
 
-  function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result as string);
-    reader.readAsDataURL(file);
     e.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    setCompressing(true);
+    try {
+      const dataUrl = await compressToTarget(file);
+      setPhoto(dataUrl);
+    } catch {
+      // Fallback: read as-is
+      const reader = new FileReader();
+      reader.onload = () => setPhoto(reader.result as string);
+      reader.readAsDataURL(file);
+    } finally {
+      setCompressing(false);
+    }
   }
 
   if (isLoading && doctorId) {
@@ -322,9 +394,12 @@ export function ProfilePage() {
               </div>
               {editing && (
                 <>
-                  <button onClick={() => photoRef.current?.click()}
-                    className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md hover:bg-primary/90 transition-colors">
-                    <Camera className="h-3.5 w-3.5" />
+                  <button onClick={() => !compressing && photoRef.current?.click()}
+                    disabled={compressing}
+                    className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md hover:bg-primary/90 transition-colors disabled:opacity-70">
+                    {compressing
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Camera className="h-3.5 w-3.5" />}
                   </button>
                   {photo && (
                     <button onClick={() => setPhoto("")}
