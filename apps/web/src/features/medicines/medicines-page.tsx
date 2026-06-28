@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, ChevronLeft, ChevronRight, AlertCircle, Plus, X } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, AlertCircle, Plus, X, Pill } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -164,6 +164,13 @@ export function MedicinesPage() {
     retry:           1
   });
 
+  const { data: totalData } = useQuery({
+    queryKey:  ["medicines-total"],
+    queryFn:   () => fetchMedicineList({ page: 1, limit: 1 }, token),
+    enabled:   !!token,
+    staleTime: 5 * 60_000
+  });
+
   const handleSearch = useCallback((v: string) => { setSearch(v); setPage(1); }, []);
   const handleType   = useCallback((v: "" | "trade" | "generic") => { setSearchType(v); setPage(1); }, []);
 
@@ -184,6 +191,11 @@ export function MedicinesPage() {
             className="h-9 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
+
+        <span className="flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground whitespace-nowrap">
+          <Pill className="h-3.5 w-3.5" />
+          {totalData ? totalData.meta.total.toLocaleString() : "…"} medicines
+        </span>
 
         <select
           value={searchType}
@@ -218,12 +230,12 @@ export function MedicinesPage() {
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div
           className="grid border-b border-border bg-muted/50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-          style={{ gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr" }}
+          style={{ gridTemplateColumns: "2fr 1fr 2fr 1.5fr 1fr" }}
         >
           <span>Trade Name</span>
+          <span>Dosage Form</span>
           <span>Generic Name</span>
           <span>Company</span>
-          <span>Dosage Form</span>
           <span>DAR No</span>
         </div>
 
@@ -239,7 +251,7 @@ export function MedicinesPage() {
               <div
                 key={m.id}
                 className="grid items-center gap-x-4 border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-muted/30 transition-colors"
-                style={{ gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr" }}
+                style={{ gridTemplateColumns: "2fr 1fr 2fr 1.5fr 1fr" }}
               >
                 <span className="font-semibold text-foreground" title={m.brandName}>
                   {m.brandName}
@@ -247,8 +259,6 @@ export function MedicinesPage() {
                     <span className="ml-1.5 text-xs font-normal text-muted-foreground">{m.strength}</span>
                   )}
                 </span>
-                <span className="text-muted-foreground" title={m.genericName}>{m.genericName}</span>
-                <span className="truncate text-muted-foreground" title={m.companyName ?? ""}>{m.companyName ?? "—"}</span>
                 <span>
                   {m.dosageForm ? (
                     <span className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
@@ -256,6 +266,8 @@ export function MedicinesPage() {
                     </span>
                   ) : "—"}
                 </span>
+                <span className="text-muted-foreground" title={m.genericName}>{m.genericName}</span>
+                <span className="truncate text-muted-foreground" title={m.companyName ?? ""}>{m.companyName ?? "—"}</span>
                 <span className="font-mono text-xs text-muted-foreground">{m.darNo ?? "—"}</span>
               </div>
             ))}

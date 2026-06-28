@@ -60,7 +60,7 @@ const nav: { href: string; label: string; icon: React.ElementType }[] = [
   { href: "/prescriptions/new", label: "Prescription", icon: FilePlus2       },
   { href: "/patients",          label: "Patients",     icon: UsersRound      },
   { href: "/old-rx",            label: "Old Rx",       icon: History         },
-  { href: "/medicines",         label: "Drugs",        icon: Pill            },
+  { href: "/medicines",         label: "Medicine",     icon: Pill            },
 ];
 
 type Chamber = { id: string; name: string };

@@ -34,7 +34,8 @@ import {
   Settings,
   Trash2,
   UserPlus,
-  X
+  X,
+  Star
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ import {
   updatePatient,
   fetchChambers,
   fetchDoctors,
+  fetchMedicineList,
   fetchPrescriptionById,
   fetchPatientPrescriptions,
   getApiErrorMessage,
@@ -986,11 +988,7 @@ export function PrescriptionBuilder() {
   const medicineSearch = useQuery({
     queryKey: ["medicine-search", debouncedMedicineQuery, token],
     enabled: debouncedMedicineQuery.length > 1 && Boolean(token),
-    queryFn: () =>
-      apiFetch<MedicineSearchResult[]>(
-        `/medicines/search?q=${encodeURIComponent(debouncedMedicineQuery)}&limit=8`,
-        { token }
-      )
+    queryFn: () => fetchMedicineList({ q: debouncedMedicineQuery, limit: 8 }, token!)
   });
 
   const doctorsQuery = useQuery({
@@ -1007,7 +1005,7 @@ export function PrescriptionBuilder() {
 
   const searchResults = useMemo(() => {
     if (!showSearchPanel || waitingForDebounce) return [];
-    return medicineSearch.data ?? [];
+    return medicineSearch.data?.data ?? [];
   }, [medicineSearch.data, showSearchPanel, waitingForDebounce]);
   const searchPending = showSearchPanel && (waitingForDebounce || medicineSearch.isFetching);
 
@@ -3059,6 +3057,7 @@ export function PrescriptionBuilder() {
           waitingForDebounce={waitingForDebounce}
           onAddMedicine={addMedicine}
           onAddCustomMedicine={addCustomMedicine}
+          onUpdateMedicine={updateMedicine}
           onChange={setMedicationNote}
           onClear={() => clearPanel("medication")}
           onClose={() => setActivePanel(null)}
@@ -6004,6 +6003,12 @@ function GynaeObsForm({
   );
 }
 
+type MedicineSession = {
+  search: MedicineSearchResult;
+  form: CustomMedicineFormState;
+  prescIdx: number;
+};
+
 type MedicationSidebarProps = {
   medicines: RxMedicine[];
   query: string;
@@ -6014,12 +6019,23 @@ type MedicationSidebarProps = {
   waitingForDebounce: boolean;
   onAddMedicine: (item: MedicineSearchResult) => void;
   onAddCustomMedicine: (medicine: RxMedicine) => void;
+  onUpdateMedicine: (index: number, patch: Partial<RxMedicine>) => void;
   onChange: (value: string) => void;
   onClear: () => void;
   onClose: () => void;
   onQueryChange: (value: string) => void;
   onStatus: (tone: "success" | "warning", text: string) => void;
 };
+
+const FAV_KEY = "rx-medicine-freq";
+function loadFavourites(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem(FAV_KEY) ?? "{}"); } catch { return {}; }
+}
+function incrementFavourite(id: string) {
+  const f = loadFavourites(); f[id] = (f[id] ?? 0) + 1;
+  localStorage.setItem(FAV_KEY, JSON.stringify(f));
+}
 
 function MedicationSidebar({
   medicines,
@@ -6031,406 +6047,430 @@ function MedicationSidebar({
   waitingForDebounce,
   onAddMedicine,
   onAddCustomMedicine,
+  onUpdateMedicine,
   onChange,
   onClear,
   onClose,
   onQueryChange,
   onStatus
 }: MedicationSidebarProps) {
-  const [searchType, setSearchType] = useState("Trade");
-  const [customFormOpen, setCustomFormOpen] = useState(true);
-  const [customMedicineExpanded, setCustomMedicineExpanded] = useState(true);
-  const [customMedicine, setCustomMedicine] =
-    useState<CustomMedicineFormState>(initialCustomMedicineForm);
+  const token = useSessionStore((s) => s.accessToken) ?? "";
+  const [sessions, setSessions]         = useState<MedicineSession[]>([]);
+  const [expandedIdx, setExpandedIdx]   = useState<number | null>(null);
+  const [customMedicine, setCustomMedicine] = useState<CustomMedicineFormState>(initialCustomMedicineForm);
+  const [showDoses, setShowDoses]       = useState(false);
+  const [favVersion, setFavVersion]     = useState(0);
 
-  function updateCustomMedicine(patch: Partial<CustomMedicineFormState>) {
-    setCustomMedicine((current) => ({ ...current, ...patch }));
-  }
+  const { data: dosageFormOptions } = useQuery({
+    queryKey: ["medicine-dosage-forms"],
+    queryFn: () => apiFetch<string[]>("/medicines/dosage-forms", { token }),
+    enabled: !!token,
+    staleTime: 10 * 60_000
+  });
 
-  function addCurrentQuery() {
-    const text = query.trim();
-    if (!text) {
-      onStatus("warning", "Type a medicine name first.");
-      return;
-    }
-    updateCustomMedicine({ brandName: text });
-    onQueryChange("");
-    onStatus("success", "Medicine name added to the custom form.");
-  }
+  // ── Sorted results (favourites first) ───────────────────────────────────
+  const sortedResults = useMemo(() => {
+    const favs = loadFavourites();
+    return [...searchResults].sort((a, b) => (favs[b.id] ?? 0) - (favs[a.id] ?? 0));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchResults, favVersion]);
 
-  function updateCustomMedicineSchedule(schedule: string) {
-    const count = schedule === "None" ? 0 : Number.parseInt(schedule, 10);
-    setCustomMedicine((current) => ({
-      ...current,
-      schedule,
-      scheduleDoses: Array.from({ length: Number.isNaN(count) ? 0 : count }, (_, index) =>
-        current.scheduleDoses[index] ?? ""
-      )
-    }));
-  }
-
-  function updateScheduleDose(index: number, value: string) {
-    const nextValue = value.replace(/[^\d.]/g, "");
-    setCustomMedicine((current) => {
-      const nextDoses = [...current.scheduleDoses];
-      nextDoses[index] = nextValue;
-      return { ...current, scheduleDoses: nextDoses };
-    });
-  }
-
-  function toggleInstructionTag(tag: string) {
-    setCustomMedicine((current) => ({
-      ...current,
-      instructionTags: current.instructionTags.includes(tag)
-        ? current.instructionTags.filter((item) => item !== tag)
-        : [...current.instructionTags, tag]
-    }));
-  }
-
-  function resetCustomMedicine() {
-    setCustomMedicine(customMedicineDefaultsForType(customMedicine.medicineType));
-  }
-
-  function closeCustomMedicineForm() {
-    resetCustomMedicine();
-    setCustomMedicineExpanded(true);
-    setCustomFormOpen(false);
-  }
-
-  function changeCustomMedicineType(medicineType: string) {
-    setCustomMedicine((current) =>
-      customMedicineDefaultsForType(medicineType, current.brandName)
-    );
-  }
-
-  function submitCustomMedicine(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const brandName = customMedicine.brandName.trim();
-    if (!brandName) {
-      onStatus("warning", "Type a medicine name first.");
-      return;
-    }
-
-    const medicineType = customMedicine.medicineType;
-    const duration = formatCustomMedicineDuration(customMedicine);
-    const scheduleDose = customMedicine.schedule === "None"
-      ? ""
-      : customMedicine.scheduleDoses.map((dose) => dose.trim() || "0").join("+");
-    const unit = customMedicine.unit === "n/a" ? "" : customMedicine.unit;
-    const dose = scheduleDose;
-    const instruction = [
-      unit,
-      customMedicine.customText.trim(),
-      ...customMedicine.instructionTags
-    ].filter(Boolean).join("\n");
-
-    onAddCustomMedicine({
-      brandName,
-      dosageForm: medicineType,
+  // ── Build RxMedicine from form state ────────────────────────────────────
+  function buildRxMedicine(form: CustomMedicineFormState): RxMedicine {
+    const dose = form.scheduleDoses.map((d) => d.trim() || "0").join("+");
+    const unit = form.unit === "n/a" ? "" : form.unit;
+    const instruction = [unit, form.customText.trim()].filter(Boolean).join("\n");
+    return {
+      brandName: form.brandName.trim(),
+      dosageForm: form.medicineType,
       dose,
-      duration,
+      duration: formatCustomMedicineDuration(form),
       instruction,
-      note: customMedicine.remarks.trim()
-    });
-    resetCustomMedicine();
-    onStatus("success", "Custom medicine added.");
+      note: form.remarks.trim() || undefined
+    };
   }
 
-  const selectedMedicineType = customMedicine.medicineType;
-  const scheduleCount = customMedicine.schedule === "None"
-    ? 0
-    : Number.parseInt(customMedicine.schedule, 10);
+  // ── Save a session back to prescription ─────────────────────────────────
+  function saveExpanded(idx = expandedIdx) {
+    if (idx === null) return;
+    const session = sessions[idx];
+    if (!session) return;
+    // Use live customMedicine for the currently-expanded session to avoid stale closure
+    const formToSave = idx === expandedIdx ? customMedicine : session.form;
+    onUpdateMedicine(session.prescIdx, buildRxMedicine(formToSave));
+  }
+
+  // ── Update form state (syncs to sessions array too) ──────────────────────
+  function updateCustomMedicine(patch: Partial<CustomMedicineFormState>) {
+    setCustomMedicine((curr) => ({ ...curr, ...patch }));
+    if (expandedIdx !== null) {
+      setSessions((prev) =>
+        prev.map((s, i) => i === expandedIdx ? { ...s, form: { ...s.form, ...patch } } : s)
+      );
+    }
+  }
+
+  // ── Select medicine from search results ──────────────────────────────────
+  function selectMedicine(item: MedicineSearchResult) {
+    // Save current expanded session before switching
+    saveExpanded();
+
+    const medicineType = item.dosageForm || "Tab.";
+    const defaults = customMedicineDefaultsForType(medicineType, item.brandName);
+    const form: CustomMedicineFormState = { ...defaults, unit: item.dosageForm || defaults.unit };
+
+    // Increment favourite counter
+    incrementFavourite(item.id);
+    setFavVersion((v) => v + 1);
+
+    // Auto-add to prescription immediately
+    onAddCustomMedicine(buildRxMedicine(form));
+
+    const newIdx = sessions.length;
+    setSessions((prev) => [...prev, { search: item, form, prescIdx: medicines.length }]);
+    setExpandedIdx(newIdx);
+    setCustomMedicine(form);
+    setShowDoses(false);
+    onQueryChange("");
+  }
+
+  // ── Toggle expand / collapse a session ──────────────────────────────────
+  function toggleExpand(idx: number) {
+    if (expandedIdx === idx) {
+      saveExpanded(idx);
+      setExpandedIdx(null);
+    } else {
+      saveExpanded();
+      setExpandedIdx(idx);
+      setCustomMedicine(sessions[idx].form);
+      setShowDoses(false);
+    }
+  }
+
+  // ── Collapse all when user starts typing ─────────────────────────────────
+  function handleQueryChange(v: string) {
+    if (v && expandedIdx !== null) {
+      saveExpanded();
+      setExpandedIdx(null);
+    }
+    onQueryChange(v);
+  }
+
+  // ── Schedule helpers ─────────────────────────────────────────────────────
+  function updateCustomMedicineSchedule(schedule: string) {
+    const count = Number.parseInt(schedule, 10);
+    const patch = {
+      schedule,
+      scheduleDoses: Array.from(
+        { length: Number.isNaN(count) ? 0 : count },
+        (_, i) => customMedicine.scheduleDoses[i] ?? "1"
+      )
+    };
+    updateCustomMedicine(patch);
+  }
+
+  function updateScheduleDose(index: number, v: string) {
+    const val = v.replace(/[^\d.]/g, "");
+    const nextDoses = [...customMedicine.scheduleDoses];
+    nextDoses[index] = val;
+    updateCustomMedicine({ scheduleDoses: nextDoses });
+  }
+
+  // ── Saved doses ──────────────────────────────────────────────────────────
+  function savedDosesKey() {
+    if (expandedIdx === null) return null;
+    return `rx-saved-doses:${sessions[expandedIdx]?.search.brandName.toLowerCase()}`;
+  }
+
+  function saveDose() {
+    const key = savedDosesKey();
+    if (!key) return;
+    const saved: object[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+    const entry = {
+      schedule: customMedicine.schedule, scheduleDoses: customMedicine.scheduleDoses,
+      unit: customMedicine.unit, durationValue: customMedicine.durationValue,
+      durationUnit: customMedicine.durationUnit, savedAt: new Date().toISOString()
+    };
+    localStorage.setItem(key, JSON.stringify([entry, ...saved.slice(0, 4)]));
+    onStatus("success", "Dose saved.");
+  }
+
+  function loadSavedDoses(): { schedule: string; scheduleDoses: string[]; unit: string; durationValue: string; durationUnit: string; savedAt: string }[] {
+    const key = savedDosesKey();
+    if (!key) return [];
+    try { return JSON.parse(localStorage.getItem(key) ?? "[]"); } catch { return []; }
+  }
+
+  function applyDose(dose: { schedule: string; scheduleDoses: string[]; unit: string; durationValue: string; durationUnit: string }) {
+    updateCustomMedicine(dose);
+    setShowDoses(false);
+  }
+
+  const scheduleCount = Number.isNaN(Number.parseInt(customMedicine.schedule, 10))
+    ? 0 : Number.parseInt(customMedicine.schedule, 10);
+  const favs = loadFavourites();
 
   return (
     <RightDrawer title="Medication" onClose={onClose}>
-      <div className="space-y-5">
-        <div className="flex gap-0">
-          <div className="relative flex-1">
-            <Input
-              autoFocus
-              className="h-14 rounded-r-none border-primary/50 text-lg focus-visible:ring-primary"
-              placeholder="Search..."
-              value={query}
-              onChange={(event) => onQueryChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  if (searchResults[0]) onAddMedicine(searchResults[0]);
-                  else addCurrentQuery();
-                }
-              }}
-            />
-            {showSearchPanel && (searchPending || searchResults.length > 0 || waitingForDebounce) ? (
-              <div className="absolute z-30 mt-2 w-full rounded-md border bg-card p-1 shadow-soft">
-                {searchPending ? (
-                  <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Searching medicines
-                  </div>
-                ) : null}
-                {!searchPending && searchResults.map((item) => (
-                  <button
-                    key={item.id}
-                    className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
-                    type="button"
-                    onClick={() => onAddMedicine(item)}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium">{item.brandName}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {item.genericName} {item.strength}
-                      </span>
-                    </span>
-                    <Plus className="h-4 w-4 flex-none" />
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <select
-            className="h-14 w-28 rounded-r-md border border-l-0 bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-            value={searchType}
-            onChange={(event) => setSearchType(event.target.value)}
-          >
-            {medicineSearchTypeOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="space-y-3 pt-3">
 
-        <div className="flex justify-end">
-          <button
-            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-            form={customFormOpen ? "custom-medicine-form" : undefined}
-            type={customFormOpen ? "submit" : "button"}
-            onClick={() => {
-              if (!customFormOpen) setCustomFormOpen(true);
+        {/* ── Medicine search ──────────────────────────────────────────── */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            autoFocus
+            className="h-9 bg-background pl-9 focus-visible:ring-primary"
+            placeholder="Search medicine by name or generic…"
+            value={query}
+            onChange={(event) => handleQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && sortedResults[0]) {
+                event.preventDefault();
+                selectMedicine(sortedResults[0]);
+              }
             }}
-          >
-            <Plus className="h-4 w-4" />
-            Add Custom Medicine
-          </button>
-        </div>
-
-        {customFormOpen ? (
-          <form
-            className="overflow-hidden border bg-[#eeeeee]"
-            id="custom-medicine-form"
-            onSubmit={submitCustomMedicine}
-          >
-            <div className="relative p-2">
-              <div className="flex flex-wrap items-center gap-3 pr-10">
-                <button
-                  aria-label="Medicine details"
-                  className="inline-flex h-7 w-7 items-center justify-center text-teal-600"
-                  type="button"
-                  onClick={() => setCustomMedicineExpanded((current) => !current)}
-                >
-                  <ChevronDown
-                    className={cn("h-4 w-4 transition", customMedicineExpanded ? "" : "-rotate-90")}
-                  />
-                </button>
-                <Input
-                  className="h-11 w-[238px] max-w-full flex-none rounded-sm bg-background text-base"
-                  placeholder="Drug name"
-                  value={customMedicine.brandName}
-                  onChange={(event) => updateCustomMedicine({ brandName: event.target.value })}
-                />
-                <select
-                  aria-label="Medicine Type"
-                  className="sr-only"
-                  value={selectedMedicineType}
-                  onChange={(event) => changeCustomMedicineType(event.target.value)}
-                >
-                  {customMedicineTypeOptions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="ml-auto h-9 rounded-sm bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700"
-                  type="button"
-                  onClick={() => updateCustomMedicine({ customText: "Interval dose" })}
-                >
-                  Add Interval Dose
-                </button>
-              </div>
-              <Button
-                aria-label="Reset custom medicine"
-                className="absolute right-2 top-4 h-8 w-8 text-slate-700"
-                size="icon"
-                type="button"
-                variant="ghost"
-                onClick={closeCustomMedicineForm}
-              >
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {customMedicineExpanded ? (
-              <div className="space-y-2 px-4 pb-0">
-                <div className="flex flex-wrap items-end gap-x-2 gap-y-2">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <span>1.Schedule</span>
-                      <select
-                        className="h-9 w-16 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                        value={customMedicine.schedule}
-                        onChange={(event) => updateCustomMedicineSchedule(event.target.value)}
-                      >
-                        {customMedicineScheduleOptions.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1">
-                      {Array.from({ length: Number.isNaN(scheduleCount) ? 0 : scheduleCount }, (_, index) => (
-                        <div key={index} className="flex items-center gap-1">
-                          <Input
-                            className="h-8 w-16 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
-                            inputMode="decimal"
-                            min="0"
-                            type="number"
-                            value={customMedicine.scheduleDoses[index] ?? ""}
-                            onChange={(event) => updateScheduleDose(index, event.target.value)}
-                          />
-                          {index < scheduleCount - 1 ? (
-                            <button
-                              aria-label={`Add interval after dose ${index + 1}`}
-                              className="h-8 px-1 text-primary hover:underline"
-                              type="button"
-                              onClick={() => updateCustomMedicine({ customText: "Interval dose" })}
-                            >
-                              +
-                            </button>
-                          ) : null}
-                        </div>
-                      ))}
-                      {customMedicine.schedule === "None" ? (
-                        <span className="text-sm text-muted-foreground">No scheduled dose</span>
-                      ) : null}
-                  </div>
-
-                  <div className="flex flex-col items-start">
-                    <span className="text-lg font-semibold leading-5">Continue</span>
-                    <input
-                      className="mt-1 h-4 w-4 accent-primary"
-                      type="checkbox"
-                      checked={customMedicine.continueMedicine}
-                      onChange={(event) =>
-                        updateCustomMedicine({ continueMedicine: event.target.checked })
-                      }
-                    />
-                  </div>
-
-                  <label className="space-y-1 text-xs font-medium">
-                    <span className="sr-only">Unit</span>
-                      <select
-                        className="h-9 w-20 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                        value={customMedicine.unit}
-                        onChange={(event) => updateCustomMedicine({ unit: event.target.value })}
-                      >
-                        {medicationUnitOptions.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                  </label>
-
-                  <div className="flex items-end gap-2">
-                    <span className="pb-2 text-sm">for</span>
-                    <Input
-                      className="h-8 w-16 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
-                      min="0"
-                      type="number"
-                      value={customMedicine.durationValue}
-                      onChange={(event) =>
-                        updateCustomMedicine({ durationValue: event.target.value })
-                      }
-                    />
-                    <select
-                      className="h-9 w-20 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                      value={customMedicine.durationUnit}
-                      onChange={(event) => updateCustomMedicine({ durationUnit: event.target.value })}
-                    >
-                      {customMedicineDurationUnitOptions.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+          />
+          {showSearchPanel && (searchPending || sortedResults.length > 0 || waitingForDebounce) ? (
+            <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+              {searchPending || waitingForDebounce ? (
+                <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Searching medicines…
                 </div>
-
-                <label className="space-y-1 text-xs font-medium">
-                  <span className="sr-only">Custom Instruction</span>
-                  <Input
-                    className="sr-only"
-                    placeholder="Type additional dose instruction..."
-                    value={customMedicine.customText}
-                    onChange={(event) =>
-                      updateCustomMedicine({ customText: event.target.value })
-                    }
-                  />
-                </label>
-
-                <div className="flex flex-wrap gap-1">
-                  {medicationInstructionChips.map((tag) => {
-                    const selected = customMedicine.instructionTags.includes(tag);
-
+              ) : sortedResults.length === 0 ? (
+                <div className="px-3 py-3 text-sm text-muted-foreground">No medicines found</div>
+              ) : (
+                <div className="grid grid-cols-2 gap-px bg-border">
+                  {sortedResults.map((item) => {
+                    const isFav = (favs[item.id] ?? 0) > 0;
                     return (
                       <button
-                        key={tag}
-                        className={cn(
-                          "rounded-sm px-3 py-1 text-sm transition",
-                          selected
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-zinc-300 text-foreground hover:bg-zinc-400"
-                        )}
+                        key={item.id}
+                        className="flex flex-col gap-0.5 bg-popover px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
                         type="button"
-                        onClick={() => toggleInstructionTag(tag)}
+                        onClick={() => selectMedicine(item)}
                       >
-                        {tag}
+                        {/* Row 1: Brand (Strength) · Dosage Form */}
+                        <div className="flex min-w-0 items-center gap-1">
+                          {isFav && <Star className="h-2.5 w-2.5 shrink-0 fill-amber-400 text-amber-400" />}
+                          <span className="truncate text-[11px] font-bold leading-tight text-foreground">
+                            {item.brandName}{item.strength ? ` (${item.strength})` : ""}
+                          </span>
+                          {item.dosageForm && (
+                            <span className="ml-auto shrink-0 rounded border border-border bg-muted px-1 py-px text-[8px] font-medium text-muted-foreground">
+                              {item.dosageForm}
+                            </span>
+                          )}
+                        </div>
+                        {/* Row 2: Generic · Company */}
+                        <div className="flex min-w-0 items-center gap-1">
+                          <span className="truncate text-[10px] text-primary/80">{item.genericName}</span>
+                          {item.companyName && (
+                            <>
+                              <span className="shrink-0 text-[9px] text-muted-foreground/40">·</span>
+                              <span className="truncate text-[10px] text-muted-foreground">{item.companyName}</span>
+                            </>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
                 </div>
-
-                <Textarea
-                  className="min-h-14 rounded-none border-x-0 border-b-0 bg-amber-50"
-                  placeholder="Remarks..."
-                  value={customMedicine.remarks}
-                  onChange={(event) => updateCustomMedicine({ remarks: event.target.value })}
-                />
-              </div>
-            ) : null}
-          </form>
-        ) : null}
-
-        {medicines.length ? (
-          <div className="rounded-md border">
-            <div className="border-b bg-muted px-3 py-2 text-sm font-medium">Selected Medicines</div>
-            <div className="divide-y">
-              {medicines.map((item, index) => (
-                <div key={`${item.brandName}-${index}`} className="px-3 py-2 text-sm">
-                  <div className="font-medium">{formatMedicineTitle(item)}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatMedicineSummary(item)}
-                  </div>
-                </div>
-              ))}
+              )}
             </div>
+          ) : null}
+        </div>
+
+        {/* ── Session list ─────────────────────────────────────────────── */}
+        {sessions.length > 0 && (
+          <div className="space-y-1.5">
+            {sessions.map((session, idx) => {
+              const isExpanded = expandedIdx === idx;
+              const form = isExpanded ? customMedicine : session.form;
+              const doseLabel = form.scheduleDoses.filter(Boolean).join("+");
+              const sessSchedCount = Number.isNaN(Number.parseInt(form.schedule, 10))
+                ? 0 : Number.parseInt(form.schedule, 10);
+              return (
+                <div key={idx} className="overflow-hidden rounded-md border border-border bg-card">
+                  {/* Card header */}
+                  <div className="relative flex items-center gap-1.5 border-b border-border bg-muted/50 px-2 py-1.5 pr-8">
+                    <span className="shrink-0 text-xs font-bold text-muted-foreground">{idx + 1}.</span>
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      onClick={() => toggleExpand(idx)}
+                    >
+                      <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition", isExpanded ? "" : "-rotate-90")} />
+                      <span className="truncate text-sm font-bold uppercase tracking-wide text-foreground">
+                        {session.search.brandName}
+                      </span>
+                      {session.search.strength && (
+                        <span className="shrink-0 text-xs font-normal text-muted-foreground">({session.search.strength})</span>
+                      )}
+                    </button>
+                    {!isExpanded && doseLabel && (
+                      <span className="shrink-0 text-xs text-muted-foreground">{doseLabel} {form.unit}</span>
+                    )}
+                    {isExpanded && (
+                      <div className="ml-auto flex shrink-0 items-center gap-1">
+                        <button
+                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-1.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onQueryChange(session.search.genericName || ""); }}
+                        >
+                          Alt. Brands
+                        </button>
+                        <button
+                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-1.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); saveDose(); }}
+                        >
+                          Save Dose
+                        </button>
+                        <div className="relative">
+                          <button
+                            className="h-6 whitespace-nowrap rounded bg-primary/10 px-1.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setShowDoses((v) => !v); }}
+                          >
+                            Doses
+                          </button>
+                          {showDoses && (() => {
+                            const saved = loadSavedDoses();
+                            return (
+                              <div className="absolute right-0 top-8 z-40 w-56 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+                                {saved.length === 0 ? (
+                                  <div className="px-3 py-2 text-xs text-muted-foreground">No saved doses yet</div>
+                                ) : (
+                                  saved.map((d, i) => (
+                                    <button
+                                      key={i}
+                                      className="flex w-full flex-col border-b border-border px-3 py-2 text-left text-xs last:border-0 hover:bg-muted"
+                                      type="button"
+                                      onClick={() => applyDose(d)}
+                                    >
+                                      <span className="font-medium">{d.schedule}×/day · {d.durationValue} {d.durationUnit}</span>
+                                      <span className="text-muted-foreground">{d.scheduleDoses.join("+")} {d.unit}</span>
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      aria-label="Remove"
+                      className="absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                      type="button"
+                      onClick={() => {
+                        setSessions((prev) => prev.filter((_, i) => i !== idx));
+                        setExpandedIdx((prev) =>
+                          prev === null ? null : prev === idx ? null : prev > idx ? prev - 1 : prev
+                        );
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  {/* Expanded form */}
+                  {isExpanded && (
+                    <div className="space-y-2 px-3 pb-2 pt-2">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">Schedule</span>
+                          <select
+                            className="h-8 w-14 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                            value={form.schedule}
+                            onChange={(event) => updateCustomMedicineSchedule(event.target.value)}
+                          >
+                            {["1", "2", "3", "4", "5", "6"].map((n) => (
+                              <option key={n} value={n}>{n}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1">
+                          {Array.from({ length: sessSchedCount }, (_, i) => (
+                            <div key={i} className="flex items-center gap-0.5">
+                              <Input
+                                className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
+                                inputMode="decimal"
+                                min="0"
+                                type="number"
+                                value={form.scheduleDoses[i] ?? ""}
+                                onChange={(event) => updateScheduleDose(i, event.target.value)}
+                              />
+                              {i < sessSchedCount - 1 && (
+                                <span className="text-xs text-muted-foreground select-none">+</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <label className="flex cursor-pointer items-center gap-1.5 select-none">
+                          <span className="text-sm font-semibold">Continue</span>
+                          <input
+                            className="h-4 w-4 accent-primary"
+                            type="checkbox"
+                            checked={form.continueMedicine}
+                            onChange={(event) => updateCustomMedicine({ continueMedicine: event.target.checked })}
+                          />
+                        </label>
+
+                        <select
+                          className="h-8 w-24 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                          value={form.unit}
+                          onChange={(event) => updateCustomMedicine({ unit: event.target.value })}
+                        >
+                          {(dosageFormOptions ?? medicationUnitOptions).map((item) => (
+                            <option key={item} value={item}>{item}</option>
+                          ))}
+                        </select>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">for</span>
+                          <Input
+                            className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
+                            min="0"
+                            type="number"
+                            value={form.durationValue}
+                            onChange={(event) => updateCustomMedicine({ durationValue: event.target.value })}
+                          />
+                          <select
+                            className="h-8 w-20 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                            value={form.durationUnit}
+                            onChange={(event) => updateCustomMedicine({ durationUnit: event.target.value })}
+                          >
+                            {customMedicineDurationUnitOptions.map((item) => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <Input
+                        className="h-8 bg-background text-xs"
+                        placeholder="Custom dose instruction..."
+                        value={form.customText}
+                        onChange={(event) => updateCustomMedicine({ customText: event.target.value })}
+                      />
+
+                      <Textarea
+                        className="min-h-12 rounded-sm border bg-muted/30 text-xs"
+                        placeholder="Remarks..."
+                        value={form.remarks}
+                        onChange={(event) => updateCustomMedicine({ remarks: event.target.value })}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ) : null}
+        )}
 
         <MedicationNoteArea
           value={value}
