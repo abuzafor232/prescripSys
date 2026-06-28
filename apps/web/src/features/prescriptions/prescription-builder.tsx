@@ -729,6 +729,7 @@ type CustomMedicineFormState = {
   durationUnit: string;
   instructionTags: string[];
   remarks: string;
+  remarksTags: string[];
 };
 
 const medicineSearchTypeOptions = ["Trade", "Generic", "Strength"];
@@ -817,7 +818,8 @@ const initialCustomMedicineForm: CustomMedicineFormState = {
   durationValue: "0",
   durationUnit: "Day",
   instructionTags: [],
-  remarks: ""
+  remarks: "",
+  remarksTags: []
 };
 
 function customMedicineDefaultsForType(
@@ -6079,14 +6081,18 @@ function MedicationSidebar({
   function buildRxMedicine(form: CustomMedicineFormState): RxMedicine {
     const dose = form.scheduleDoses.map((d) => d.trim() || "0").join("+");
     const unit = form.unit === "n/a" ? "" : form.unit;
-    const instruction = [unit, form.customText.trim()].filter(Boolean).join("\n");
+    const instruction = unit;
+    const noteparts = [
+      ...form.remarksTags,
+      form.remarks.trim()
+    ].filter(Boolean);
     return {
       brandName: form.brandName.trim(),
       dosageForm: form.medicineType,
       dose,
       duration: formatCustomMedicineDuration(form),
       instruction,
-      note: form.remarks.trim() || undefined
+      note: noteparts.join(", ") || undefined
     };
   }
 
@@ -6240,38 +6246,33 @@ function MedicationSidebar({
               ) : sortedResults.length === 0 ? (
                 <div className="px-3 py-3 text-sm text-muted-foreground">No medicines found</div>
               ) : (
-                <div className="grid grid-cols-2 gap-px bg-border">
+                <div className="grid grid-cols-3 gap-px bg-border">
                   {sortedResults.map((item) => {
                     const isFav = (favs[item.id] ?? 0) > 0;
                     return (
                       <button
                         key={item.id}
-                        className="flex flex-col gap-0.5 bg-popover px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+                        className="flex flex-col gap-0.5 bg-popover px-1.5 py-1.5 text-left transition-colors hover:bg-muted/60"
                         type="button"
                         onClick={() => selectMedicine(item)}
                       >
-                        {/* Row 1: Brand (Strength) · Dosage Form */}
-                        <div className="flex min-w-0 items-center gap-1">
-                          {isFav && <Star className="h-2.5 w-2.5 shrink-0 fill-amber-400 text-amber-400" />}
-                          <span className="truncate text-[11px] font-bold leading-tight text-foreground">
+                        {/* Row 1: Brand (Strength) + dosage form badge */}
+                        <div className="flex min-w-0 items-start gap-0.5">
+                          {isFav && <Star className="mt-0.5 h-2.5 w-2.5 shrink-0 fill-amber-400 text-amber-400" />}
+                          <span className="min-w-0 flex-1 truncate text-[10px] font-bold leading-tight text-foreground">
                             {item.brandName}{item.strength ? ` (${item.strength})` : ""}
                           </span>
-                          {item.dosageForm && (
-                            <span className="ml-auto shrink-0 rounded border border-border bg-muted px-1 py-px text-[8px] font-medium text-muted-foreground">
-                              {item.dosageForm}
-                            </span>
-                          )}
                         </div>
+                        {item.dosageForm && (
+                          <span className="w-fit rounded border border-border bg-muted px-1 py-px text-[8px] font-medium text-muted-foreground">
+                            {item.dosageForm}
+                          </span>
+                        )}
                         {/* Row 2: Generic · Company */}
-                        <div className="flex min-w-0 items-center gap-1">
-                          <span className="truncate text-[10px] text-primary/80">{item.genericName}</span>
-                          {item.companyName && (
-                            <>
-                              <span className="shrink-0 text-[9px] text-muted-foreground/40">·</span>
-                              <span className="truncate text-[10px] text-muted-foreground">{item.companyName}</span>
-                            </>
-                          )}
-                        </div>
+                        <span className="truncate text-[9px] text-primary/80">{item.genericName}</span>
+                        {item.companyName && (
+                          <span className="truncate text-[9px] text-muted-foreground">{item.companyName}</span>
+                        )}
                       </button>
                     );
                   })}
@@ -6312,16 +6313,23 @@ function MedicationSidebar({
                       <span className="shrink-0 text-xs text-muted-foreground">{doseLabel} {form.unit}</span>
                     )}
                     {isExpanded && (
-                      <div className="ml-auto flex shrink-0 items-center gap-1">
+                      <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1">
                         <button
-                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-1.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-2.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); updateCustomMedicine({ customText: "Interval dose" }); }}
+                        >
+                          Interval Dose
+                        </button>
+                        <button
+                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-2.5 text-[10px] font-medium text-primary hover:bg-primary/20"
                           type="button"
                           onClick={(e) => { e.stopPropagation(); onQueryChange(session.search.genericName || ""); }}
                         >
                           Alt. Brands
                         </button>
                         <button
-                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-1.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-2.5 text-[10px] font-medium text-primary hover:bg-primary/20"
                           type="button"
                           onClick={(e) => { e.stopPropagation(); saveDose(); }}
                         >
@@ -6329,7 +6337,7 @@ function MedicationSidebar({
                         </button>
                         <div className="relative">
                           <button
-                            className="h-6 whitespace-nowrap rounded bg-primary/10 px-1.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                            className="h-6 whitespace-nowrap rounded bg-primary/10 px-2.5 text-[10px] font-medium text-primary hover:bg-primary/20"
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setShowDoses((v) => !v); }}
                           >
@@ -6377,94 +6385,14 @@ function MedicationSidebar({
 
                   {/* Expanded form */}
                   {isExpanded && (
-                    <div className="space-y-2 px-3 pb-2 pt-2">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">Schedule</span>
-                          <select
-                            className="h-8 w-14 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                            value={form.schedule}
-                            onChange={(event) => updateCustomMedicineSchedule(event.target.value)}
-                          >
-                            {["1", "2", "3", "4", "5", "6"].map((n) => (
-                              <option key={n} value={n}>{n}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-1">
-                          {Array.from({ length: sessSchedCount }, (_, i) => (
-                            <div key={i} className="flex items-center gap-0.5">
-                              <Input
-                                className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
-                                inputMode="decimal"
-                                min="0"
-                                type="number"
-                                value={form.scheduleDoses[i] ?? ""}
-                                onChange={(event) => updateScheduleDose(i, event.target.value)}
-                              />
-                              {i < sessSchedCount - 1 && (
-                                <span className="text-xs text-muted-foreground select-none">+</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-
-                        <label className="flex cursor-pointer items-center gap-1.5 select-none">
-                          <span className="text-sm font-semibold">Continue</span>
-                          <input
-                            className="h-4 w-4 accent-primary"
-                            type="checkbox"
-                            checked={form.continueMedicine}
-                            onChange={(event) => updateCustomMedicine({ continueMedicine: event.target.checked })}
-                          />
-                        </label>
-
-                        <select
-                          className="h-8 w-24 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                          value={form.unit}
-                          onChange={(event) => updateCustomMedicine({ unit: event.target.value })}
-                        >
-                          {(dosageFormOptions ?? medicationUnitOptions).map((item) => (
-                            <option key={item} value={item}>{item}</option>
-                          ))}
-                        </select>
-
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground">for</span>
-                          <Input
-                            className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
-                            min="0"
-                            type="number"
-                            value={form.durationValue}
-                            onChange={(event) => updateCustomMedicine({ durationValue: event.target.value })}
-                          />
-                          <select
-                            className="h-8 w-20 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                            value={form.durationUnit}
-                            onChange={(event) => updateCustomMedicine({ durationUnit: event.target.value })}
-                          >
-                            {customMedicineDurationUnitOptions.map((item) => (
-                              <option key={item} value={item}>{item}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <Input
-                        className="h-8 bg-background text-xs"
-                        placeholder="Custom dose instruction..."
-                        value={form.customText}
-                        onChange={(event) => updateCustomMedicine({ customText: event.target.value })}
-                      />
-
-                      <Textarea
-                        className="min-h-12 rounded-sm border bg-muted/30 text-xs"
-                        placeholder="Remarks..."
-                        value={form.remarks}
-                        onChange={(event) => updateCustomMedicine({ remarks: event.target.value })}
-                      />
-                    </div>
+                    <ExpandedMedicineForm
+                      form={form}
+                      dosageFormOptions={dosageFormOptions}
+                      onUpdate={updateCustomMedicine}
+                      onScheduleChange={updateCustomMedicineSchedule}
+                      onScheduleDose={updateScheduleDose}
+                      schedCount={sessSchedCount}
+                    />
                   )}
                 </div>
               );
@@ -6479,6 +6407,203 @@ function MedicationSidebar({
         />
       </div>
     </RightDrawer>
+  );
+}
+
+const REMARKS_LIBRARY_KEY = "rx-remarks-library";
+function loadRemarksLibrary(): string[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(REMARKS_LIBRARY_KEY) ?? "[]"); } catch { return []; }
+}
+function saveRemarksLibrary(chips: string[]) {
+  localStorage.setItem(REMARKS_LIBRARY_KEY, JSON.stringify(chips));
+}
+
+function ExpandedMedicineForm({
+  form,
+  dosageFormOptions,
+  onUpdate,
+  onScheduleChange,
+  onScheduleDose,
+  schedCount
+}: {
+  form: CustomMedicineFormState;
+  dosageFormOptions: string[] | undefined;
+  onUpdate: (patch: Partial<CustomMedicineFormState>) => void;
+  onScheduleChange: (v: string) => void;
+  onScheduleDose: (i: number, v: string) => void;
+  schedCount: number;
+}) {
+  const [remarksInput, setRemarksInput] = useState("");
+  const [remarksLibrary, setRemarksLibrary] = useState<string[]>(() => loadRemarksLibrary());
+
+  function addRemark() {
+    const tag = remarksInput.trim();
+    if (!tag) return;
+    const next = remarksLibrary.includes(tag) ? remarksLibrary : [...remarksLibrary, tag];
+    setRemarksLibrary(next);
+    saveRemarksLibrary(next);
+    // auto-select the newly added remark
+    if (!form.remarksTags.includes(tag)) {
+      onUpdate({ remarksTags: [...form.remarksTags, tag] });
+    }
+    setRemarksInput("");
+  }
+
+  function toggleRemark(tag: string) {
+    const next = form.remarksTags.includes(tag)
+      ? form.remarksTags.filter((t) => t !== tag)
+      : [...form.remarksTags, tag];
+    onUpdate({ remarksTags: next });
+  }
+
+  function removeFromLibrary(tag: string) {
+    const next = remarksLibrary.filter((t) => t !== tag);
+    setRemarksLibrary(next);
+    saveRemarksLibrary(next);
+    if (form.remarksTags.includes(tag)) {
+      onUpdate({ remarksTags: form.remarksTags.filter((t) => t !== tag) });
+    }
+  }
+
+  return (
+    <div className="space-y-2 px-3 pb-2 pt-2">
+      {/* Row: Dosage Form → Schedule → [doses] → for → Continue */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+
+        {/* 1. Dosage Form */}
+        <select
+          className="h-8 w-24 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+          value={form.unit}
+          onChange={(event) => onUpdate({ unit: event.target.value })}
+        >
+          {(dosageFormOptions ?? medicationUnitOptions).map((item) => (
+            <option key={item} value={item}>{item}</option>
+          ))}
+        </select>
+
+        {/* 2. Schedule */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Schedule</span>
+          <select
+            className="h-8 w-14 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+            value={form.schedule}
+            onChange={(event) => onScheduleChange(event.target.value)}
+          >
+            {["1", "2", "3", "4", "5", "6"].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Dose inputs */}
+        <div className="flex flex-wrap items-center gap-1">
+          {Array.from({ length: schedCount }, (_, i) => (
+            <div key={i} className="flex items-center gap-0.5">
+              <Input
+                className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
+                inputMode="decimal"
+                min="0"
+                type="number"
+                value={form.scheduleDoses[i] ?? ""}
+                onChange={(event) => onScheduleDose(i, event.target.value)}
+              />
+              {i < schedCount - 1 && (
+                <span className="select-none text-xs text-muted-foreground">+</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* 3. for (hidden when Continue is checked) */}
+        {!form.continueMedicine && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">for</span>
+            <Input
+              className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
+              min="0"
+              type="number"
+              value={form.durationValue}
+              onChange={(event) => onUpdate({ durationValue: event.target.value })}
+            />
+            <select
+              className="h-8 w-20 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+              value={form.durationUnit}
+              onChange={(event) => onUpdate({ durationUnit: event.target.value })}
+            >
+              {customMedicineDurationUnitOptions.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 4. Continue (bigger checkbox) */}
+        <label className="flex cursor-pointer items-center gap-2 select-none">
+          <span className="text-sm font-semibold">Continue</span>
+          <input
+            className="h-5 w-5 cursor-pointer accent-primary"
+            type="checkbox"
+            checked={form.continueMedicine}
+            onChange={(event) => onUpdate({ continueMedicine: event.target.checked })}
+          />
+        </label>
+      </div>
+
+      {/* Remarks chips */}
+      <div className="space-y-1.5">
+        {/* Chip library */}
+        {remarksLibrary.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {remarksLibrary.map((tag) => {
+              const selected = form.remarksTags.includes(tag);
+              return (
+                <div key={tag} className="group flex items-center gap-0">
+                  <button
+                    type="button"
+                    className={cn(
+                      "rounded-l-full border px-2.5 py-0.5 text-xs font-medium transition",
+                      selected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
+                    )}
+                    onClick={() => toggleRemark(tag)}
+                  >
+                    {tag}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove "${tag}"`}
+                    className="rounded-r-full border border-l-0 border-border bg-muted px-1 py-0.5 text-[10px] text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    onClick={() => removeFromLibrary(tag)}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Add remarks input */}
+        <div className="flex gap-1.5">
+          <Input
+            className="h-7 flex-1 bg-background text-xs"
+            placeholder="Type a remark and press Add…"
+            value={remarksInput}
+            onChange={(e) => setRemarksInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRemark(); } }}
+          />
+          <button
+            type="button"
+            className="h-7 whitespace-nowrap rounded-sm border border-border bg-muted px-2.5 text-xs font-medium text-foreground hover:bg-muted/70"
+            onClick={addRemark}
+          >
+            Add Remarks
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
