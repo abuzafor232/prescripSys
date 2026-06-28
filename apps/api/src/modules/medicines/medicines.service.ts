@@ -2,6 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { RedisService } from "../redis/redis.service";
 import { MedicineImportService } from "./medicine-import.service";
 import { MedicineRepository } from "./medicine.repository";
+import { CreateMedicineDto } from "./dto/create-medicine.dto";
+import { ListMedicinesDto } from "./dto/list-medicines.dto";
 import { SearchMedicinesDto } from "./dto/search-medicines.dto";
 
 @Injectable()
@@ -22,6 +24,20 @@ export class MedicinesService {
     const results = await this.repository.search(tenantId, q, limit);
     await this.redis.setJson(cacheKey, results, 60);
     return results;
+  }
+
+  async create(dto: CreateMedicineDto) {
+    const result = await this.repository.create(dto);
+    await this.redis.delByPrefix("tenant:");
+    return result;
+  }
+
+  async list(dto: ListMedicinesDto) {
+    return this.repository.list(dto);
+  }
+
+  async dosageForms() {
+    return this.repository.dosageForms();
   }
 
   async importCsv(filePath: string, source: string, tenantId?: string) {

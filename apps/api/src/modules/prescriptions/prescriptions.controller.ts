@@ -15,6 +15,7 @@ import { PERMISSIONS } from "@bd-prescription/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { PaginationDto } from "../../common/dto/pagination.dto";
+import { ListPrescriptionsDto } from "./dto/list-prescriptions.dto";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import type { RequestUser } from "../../common/types/request-user";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -41,7 +42,7 @@ export class PrescriptionsController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permissions(PERMISSIONS.PRESCRIPTIONS_READ)
   @Get()
-  list(@CurrentUser() user: RequestUser, @Query() dto: PaginationDto) {
+  list(@CurrentUser() user: RequestUser, @Query() dto: ListPrescriptionsDto) {
     return this.prescriptions.list(user.tenantId, dto);
   }
 

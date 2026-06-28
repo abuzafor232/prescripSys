@@ -9,27 +9,62 @@ import { PaginationDto } from "../../common/dto/pagination.dto";
 import type { RequestUser } from "../../common/types/request-user";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreatePrescriptionDto } from "./dto/create-prescription.dto";
+import { ListPrescriptionsDto } from "./dto/list-prescriptions.dto";
 import { UpdatePrescriptionDto } from "./dto/update-prescription.dto";
 
 @Injectable()
 export class PrescriptionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(tenantId: string, dto: PaginationDto) {
+  async list(tenantId: string, dto: ListPrescriptionsDto) {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const where: Prisma.PrescriptionWhereInput = {
-      tenantId,
-      ...(dto.q
-        ? {
-            OR: [
-              { prescriptionNo: { contains: dto.q, mode: "insensitive" } },
-              { patient: { name: { contains: dto.q, mode: "insensitive" } } },
-              { patient: { phone: { contains: dto.q, mode: "insensitive" } } }
-            ]
-          }
-        : {})
-    };
+
+    const and: Prisma.PrescriptionWhereInput[] = [{ tenantId }];
+
+    if (dto.chamberId) and.push({ chamberId: dto.chamberId });
+
+    if (dto.dateFrom || dto.dateTo) {
+      and.push({
+        createdAt: {
+          ...(dto.dateFrom ? { gte: new Date(dto.dateFrom) } : {}),
+          ...(dto.dateTo ? { lte: new Date(`${dto.dateTo}T23:59:59.999Z`) } : {})
+        }
+      });
+    }
+
+    // Global search across patient info, prescription content, diagnoses, medicines
+    if (dto.q) {
+      and.push({
+        OR: [
+          { prescriptionNo: { contains: dto.q, mode: "insensitive" } },
+          { patient: { name: { contains: dto.q, mode: "insensitive" } } },
+          { patient: { phone: { contains: dto.q, mode: "insensitive" } } },
+          { chiefComplaints: { contains: dto.q, mode: "insensitive" } },
+          { examination: { contains: dto.q, mode: "insensitive" } },
+          { advice: { contains: dto.q, mode: "insensitive" } },
+          { diagnoses: { some: { name: { contains: dto.q, mode: "insensitive" } } } },
+          { medicines: { some: { brandName: { contains: dto.q, mode: "insensitive" } } } },
+          { medicines: { some: { genericName: { contains: dto.q, mode: "insensitive" } } } }
+        ]
+      });
+    }
+
+    // Individual field filters
+    if (dto.patientName) and.push({ patient: { name: { contains: dto.patientName, mode: "insensitive" } } });
+    if (dto.phone)       and.push({ patient: { phone: { contains: dto.phone, mode: "insensitive" } } });
+    if (dto.complaint)   and.push({ chiefComplaints: { contains: dto.complaint, mode: "insensitive" } });
+    if (dto.diagnosis)   and.push({ diagnoses: { some: { name: { contains: dto.diagnosis, mode: "insensitive" } } } });
+    if (dto.drug) {
+      and.push({
+        OR: [
+          { medicines: { some: { brandName: { contains: dto.drug, mode: "insensitive" } } } },
+          { medicines: { some: { genericName: { contains: dto.drug, mode: "insensitive" } } } }
+        ]
+      });
+    }
+
+    const where: Prisma.PrescriptionWhereInput = { AND: and };
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.prescription.findMany({
@@ -41,7 +76,9 @@ export class PrescriptionsService {
           patient: true,
           doctor: true,
           chamber: true,
-          medicines: { orderBy: { sortOrder: "asc" } }
+          medicines:      { orderBy: { sortOrder: "asc" } },
+          diagnoses:      { orderBy: { sortOrder: "asc" } },
+          investigations: { orderBy: { sortOrder: "asc" } }
         }
       }),
       this.prisma.prescription.count({ where })

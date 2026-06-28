@@ -334,6 +334,86 @@ export type Prescription = {
   investigations: Array<{ id: string; name: string; note?: string | null; sortOrder: number }>;
 };
 
+export type PrescriptionListResponse = {
+  data: Prescription[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+};
+
+export function fetchPrescriptions(
+  params: {
+    q?: string;
+    patientName?: string;
+    phone?: string;
+    drug?: string;
+    diagnosis?: string;
+    complaint?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    chamberId?: string;
+    page?: number;
+    limit?: number;
+  },
+  token: string
+) {
+  const qs = new URLSearchParams();
+  if (params.q)           qs.set("q",          params.q);
+  if (params.patientName) qs.set("patientName", params.patientName);
+  if (params.phone)       qs.set("phone",       params.phone);
+  if (params.drug)        qs.set("drug",        params.drug);
+  if (params.diagnosis)   qs.set("diagnosis",   params.diagnosis);
+  if (params.complaint)   qs.set("complaint",   params.complaint);
+  if (params.dateFrom)    qs.set("dateFrom",    params.dateFrom);
+  if (params.dateTo)      qs.set("dateTo",      params.dateTo);
+  if (params.chamberId)   qs.set("chamberId",   params.chamberId);
+  if (params.page)        qs.set("page",        String(params.page));
+  if (params.limit)       qs.set("limit",       String(params.limit));
+  return apiFetch<PrescriptionListResponse>(`/prescriptions?${qs.toString()}`, { token });
+}
+
+export type MedicineListItem = {
+  id: string;
+  brandName: string;
+  genericName: string;
+  strength: string | null;
+  companyName: string | null;
+  dosageForm: string | null;
+  darNo: string | null;
+};
+
+export type MedicineListResponse = {
+  data: MedicineListItem[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+};
+
+export type CreateMedicineInput = {
+  brandName: string;
+  genericName: string;
+  strength?: string;
+  dosageForm?: string;
+  companyName?: string;
+  darNo?: string;
+};
+
+export function createMedicine(input: CreateMedicineInput, token: string) {
+  return apiFetch<MedicineListItem>("/medicines", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input)
+  });
+}
+
+export function fetchMedicineList(
+  params: { q?: string; searchType?: "trade" | "generic"; page?: number; limit?: number },
+  token: string
+) {
+  const qs = new URLSearchParams();
+  if (params.q)          qs.set("q",          params.q);
+  if (params.searchType) qs.set("searchType", params.searchType);
+  if (params.page)       qs.set("page",       String(params.page));
+  if (params.limit)      qs.set("limit",      String(params.limit));
+  return apiFetch<MedicineListResponse>(`/medicines?${qs.toString()}`, { token });
+}
+
 export function fetchDoctors(token: string) {
   return apiFetch<Doctor[]>("/doctors", { token });
 }

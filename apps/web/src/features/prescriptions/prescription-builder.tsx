@@ -3365,7 +3365,7 @@ function sanitizePrintHtml(html: string): string {
   );
 }
 
-function buildPadHtml(prescription: Prescription, autoprint = true): string {
+export function buildPadHtml(prescription: Prescription, autoprint = true): string {
   // Load pad settings.
   // prescription.chamberId is the API UUID; pad settings are keyed by the
   // LOCAL chamber ID from the sidebar. Read rx-selected-chamber to get it,
@@ -3691,7 +3691,7 @@ function printWithPad(prescription: Prescription): void {
 
 // ── PrescriptionPrintSidebar ───────────────────────────────────────────────
 
-function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescription: Prescription; onClose: () => void; onEdit: () => void }) {
+export function PrescriptionPrintSidebar({ prescription, onClose, onEdit, autoPrint = true }: { prescription: Prescription; onClose: () => void; onEdit: () => void; autoPrint?: boolean }) {
   const previewHtml = buildPadHtml(prescription, false);
   const token = useSessionStore((s) => s.accessToken) ?? "";
 
@@ -3873,12 +3873,13 @@ function PrescriptionPrintSidebar({ prescription, onClose, onEdit }: { prescript
     setShowSendPanel(false);
   }
 
-  // Auto-trigger print dialog when sidebar first opens
+  // Auto-trigger print dialog when sidebar first opens (skipped when autoPrint=false)
   useEffect(() => {
+    if (!autoPrint) return;
     const timer = setTimeout(handlePrint, 200);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [autoPrint]);
 
   const sendOptionCls = "flex w-full items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm font-medium text-foreground transition hover:bg-accent hover:text-accent-foreground disabled:opacity-50";
 

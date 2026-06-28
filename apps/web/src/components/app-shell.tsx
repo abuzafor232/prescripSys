@@ -1636,31 +1636,13 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
           {/* Chamber selector */}
           <div className="space-y-1">
             <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Chamber</label>
-            <div className="grid grid-cols-1 gap-1">
-              {chambers.length > 4 ? (
-                <select
-                  value={selectedChamberId}
-                  onChange={(e) => handleChamberChange(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-                >
-                  {chambers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {chambers.map((c) => (
-                    <button key={c.id} type="button" onClick={() => handleChamberChange(c.id)}
-                      className={cn(
-                        "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors border",
-                        selectedChamberId === c.id
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "border-border text-muted-foreground hover:bg-muted"
-                      )}>
-                      {c.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <select
+              value={selectedChamberId}
+              onChange={(e) => handleChamberChange(e.target.value)}
+              className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+            >
+              {chambers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
           </div>
 
           {/* Phone */}

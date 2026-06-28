@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Eye,
   Loader2,
   Phone,
   Search,
@@ -23,10 +24,13 @@ import { useSessionStore } from "@/stores/session-store";
 import {
   fetchPatientProfile,
   fetchPatients,
+  fetchPrescriptionById,
   type Patient,
   type PatientProfile,
+  type Prescription,
   type ProfilePrescription,
 } from "@/lib/api";
+import { PrescriptionPrintSidebar } from "@/features/prescriptions/prescription-builder";
 
 type LocalChamber = { id: string; name: string };
 const DEFAULT_LOCAL_CHAMBERS: LocalChamber[] = [{ id: "default", name: "Dr. Abdullah Eye Care Center" }];
@@ -311,26 +315,31 @@ function DatePickerCard({
 
 // ── Prescription History Card ──────────────────────────────────────────────
 
-function RxHistoryCard({ rx, onFollowUp }: { rx: ProfilePrescription; onFollowUp?: () => void }) {
+function RxHistoryCard({ rx, onFollowUp, onPreview }: { rx: ProfilePrescription; onFollowUp?: () => void; onPreview?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const meds = rx.medicines ?? [];
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       {/* Header bar */}
-      <div className="flex items-center justify-between gap-3 bg-muted/40 px-4 py-2.5">
+      <div className="flex items-center justify-between gap-2 bg-muted/40 px-4 py-2.5">
         <div className="flex items-center gap-2 min-w-0">
           <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary font-mono">
             #{rx.prescriptionNo}
           </span>
           <span className="text-xs text-muted-foreground">{formatDate(rx.createdAt)}</span>
+          <span className="text-xs text-muted-foreground truncate">{rx.chamber.name}</span>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{rx.doctor.displayName}</span>
-            <span className="text-border">·</span>
-            <span>{rx.chamber.name}</span>
-          </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onPreview && (
+            <button
+              onClick={onPreview}
+              className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-semibold text-foreground hover:bg-muted transition-colors"
+            >
+              <Eye className="h-3 w-3" />
+              Preview
+            </button>
+          )}
           {onFollowUp && (
             <button
               onClick={onFollowUp}
@@ -413,12 +422,24 @@ function PatientProfileDrawer({
     enabled: !!token && !!patientId,
   });
 
+  const [previewRx, setPreviewRx] = useState<Prescription | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  async function handlePreview(rxId: string) {
+    setPreviewLoading(true);
+    try {
+      const full = await fetchPrescriptionById(rxId, token);
+      setPreviewRx(full);
+    } catch { /* ignore */ }
+    finally { setPreviewLoading(false); }
+  }
+
   // Close on Escape
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") { if (previewRx) setPreviewRx(null); else onClose(); } }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, previewRx]);
 
   const rxs = profile?.prescriptions ?? [];
 
@@ -449,16 +470,18 @@ function PatientProfileDrawer({
           ) : profile ? (
             <div className="p-5 space-y-5">
 
-              {/* ── Patient info card ── */}
-              <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
-                <div className="flex items-start gap-3">
-                  {/* Avatar */}
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <User className="h-6 w-6 text-primary" />
+              {/* ── Patient info card (single row) ── */}
+              <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                    <User className="h-5 w-5 text-primary" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <h3 className="text-base font-bold text-foreground">{profile.name}</h3>
+                      {profile.registrationNo && (
+                        <span className="font-mono text-xs text-muted-foreground">#{profile.registrationNo}</span>
+                      )}
                       {profile.gender && profile.gender !== "UNKNOWN" && (
                         <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
                           {genderLabel(profile.gender)}
@@ -469,42 +492,33 @@ function PatientProfileDrawer({
                           {profile.bloodGroup}
                         </span>
                       )}
+                      {(profile.ageYears || profile.ageMonths || profile.ageDays) && (
+                        <span className="text-xs text-muted-foreground">
+                          Age: <span className="font-medium text-foreground">{formatAge(profile)}</span>
+                        </span>
+                      )}
+                      {profile.phone && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Phone className="h-3 w-3 shrink-0" />{profile.phone}
+                        </span>
+                      )}
+                      {profile.dateOfBirth && (
+                        <span className="text-xs text-muted-foreground">
+                          DOB: <span className="font-medium text-foreground">{formatDate(profile.dateOfBirth)}</span>
+                        </span>
+                      )}
                     </div>
-                    {profile.registrationNo && (
-                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                        Reg # {profile.registrationNo}
+                    {profile.address && (
+                      <p className="mt-0.5 text-xs text-muted-foreground truncate">
+                        {profile.address}
                       </p>
                     )}
+                    {profile.allergies && (
+                      <div className="mt-1 rounded-lg bg-orange-50 px-2.5 py-1 text-xs text-orange-700 dark:bg-orange-950/30 dark:text-orange-400">
+                        ⚠ Allergies: {profile.allergies}
+                      </div>
+                    )}
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm">
-                  {profile.phone && (
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <Phone className="h-3.5 w-3.5 shrink-0" />
-                      <span>{profile.phone}</span>
-                    </div>
-                  )}
-                  {(profile.ageYears || profile.ageMonths || profile.ageDays) && (
-                    <div className="text-muted-foreground">
-                      Age: <span className="font-medium text-foreground">{formatAge(profile)}</span>
-                    </div>
-                  )}
-                  {profile.dateOfBirth && (
-                    <div className="text-muted-foreground">
-                      DOB: <span className="font-medium text-foreground">{formatDate(profile.dateOfBirth)}</span>
-                    </div>
-                  )}
-                  {profile.address && (
-                    <div className="col-span-2 text-muted-foreground">
-                      Address: <span className="text-foreground">{profile.address}</span>
-                    </div>
-                  )}
-                  {profile.allergies && (
-                    <div className="col-span-2 rounded-lg bg-orange-50 px-3 py-1.5 text-xs text-orange-700 dark:bg-orange-950/30 dark:text-orange-400">
-                      ⚠ Allergies: {profile.allergies}
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -535,8 +549,19 @@ function PatientProfileDrawer({
                 ) : (
                   <div className="space-y-3">
                     {rxs.map((rx) => (
-                      <RxHistoryCard key={rx.id} rx={rx} onFollowUp={() => onFollowUp(profile!, rx)} />
+                      <RxHistoryCard
+                        key={rx.id}
+                        rx={rx}
+                        onFollowUp={() => onFollowUp(profile!, rx)}
+                        onPreview={() => handlePreview(rx.id)}
+                      />
                     ))}
+                    {previewLoading && (
+                      <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading preview…
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -548,6 +573,15 @@ function PatientProfileDrawer({
           )}
         </div>
       </div>
+
+      {previewRx && (
+        <PrescriptionPrintSidebar
+          prescription={previewRx}
+          autoPrint={false}
+          onClose={() => setPreviewRx(null)}
+          onEdit={() => { setPreviewRx(null); if (profile) onFollowUp(profile, rxs[0]); }}
+        />
+      )}
     </div>,
     document.body
   );
@@ -684,12 +718,13 @@ export function PatientsPage() {
         {/* Header row */}
         <div
           className="grid border-b bg-muted/60 px-4 py-3 text-xs font-bold uppercase tracking-wide text-foreground"
-          style={{ gridTemplateColumns: "1.4fr 2fr 1fr 1.5fr 1.5fr 1.5fr 1fr" }}
+          style={{ gridTemplateColumns: "2fr 1.2fr 1.3fr 0.7fr 0.7fr 1.2fr 1.2fr 1fr" }}
         >
-          <span>Patient No.</span>
           <span>Patient&apos;s Name</span>
-          <span>Age</span>
+          <span>Patient No.</span>
           <span>Phone Number</span>
+          <span>Age</span>
+          <span>Sex</span>
           <span>Last Visit</span>
           <span>Registration Date</span>
           <span className="text-center">View Profile</span>
@@ -708,24 +743,27 @@ export function PatientsPage() {
             <div
               key={patient.id}
               className={cn(
-                "grid items-center gap-4 border-b px-4 py-3.5 text-sm last:border-0 transition-colors hover:bg-muted/30",
+                "grid items-center gap-3 border-b px-4 py-3.5 text-sm last:border-0 transition-colors hover:bg-muted/30",
                 idx % 2 === 1 && "bg-muted/10"
               )}
-              style={{ gridTemplateColumns: "1.4fr 2fr 1fr 1.5fr 1.5fr 1.5fr 1fr" }}
+              style={{ gridTemplateColumns: "2fr 1.2fr 1.3fr 0.7fr 0.7fr 1.2fr 1.2fr 1fr" }}
             >
+              {/* Patient's Name */}
+              <span className="font-medium text-foreground truncate">{patient.name}</span>
+
               {/* Patient No */}
               <span className="font-mono text-xs text-muted-foreground">
                 {patient.registrationNo ?? <span className="italic">Auto</span>}
               </span>
 
-              {/* Name */}
-              <span className="font-medium text-foreground truncate">{patient.name}</span>
+              {/* Phone */}
+              <span className="text-muted-foreground">{patient.phone ?? "—"}</span>
 
               {/* Age */}
               <span className="text-muted-foreground">{formatAge(patient)}</span>
 
-              {/* Phone */}
-              <span className="text-muted-foreground">{patient.phone ?? "—"}</span>
+              {/* Sex */}
+              <span className="text-muted-foreground">{patient.gender && patient.gender !== "UNKNOWN" ? genderLabel(patient.gender).slice(0, 1) : "—"}</span>
 
               {/* Last Visit */}
               <span className="text-muted-foreground">

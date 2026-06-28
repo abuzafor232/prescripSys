@@ -1,31 +1,29 @@
 "use client";
 
-import { createPortal } from "react-dom";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
+  CalendarDays,
   CalendarPlus,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock,
-  FileText,
-  History,
+  ChevronUp,
   Loader2,
-  Phone,
+  Printer,
   Search,
-  User,
-  X,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/stores/session-store";
 import {
-  fetchPatientProfile,
-  fetchPatients,
-  type Patient,
-  type PatientProfile,
+  fetchPrescriptions,
+  type Prescription,
   type ProfilePrescription,
+  type Patient,
 } from "@/lib/api";
+import { PrescriptionPrintSidebar } from "@/features/prescriptions/prescription-builder";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -39,340 +37,430 @@ function formatAge(p: { ageYears?: number | null; ageMonths?: number | null; age
   if (p.ageYears)  parts.push(`${p.ageYears}Y`);
   if (p.ageMonths) parts.push(`${p.ageMonths}M`);
   if (p.ageDays)   parts.push(`${p.ageDays}D`);
-  return parts.length ? parts.join(" ") : "—";
+  return parts.length ? parts.join(" ") : "";
 }
 
-// ── Rx Card ────────────────────────────────────────────────────────────────
+function genderShort(g?: string | null): string {
+  if (!g || g === "UNKNOWN") return "";
+  return g.charAt(0).toUpperCase();
+}
 
-function RxCard({ rx, onLoad }: { rx: ProfilePrescription; onLoad: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const meds = rx.medicines ?? [];
+function followUpStatus(iso?: string | null): "none" | "future" | "today" | "overdue" {
+  if (!iso) return "none";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(iso); d.setHours(0, 0, 0, 0);
+  if (d.getTime() === today.getTime()) return "today";
+  if (d > today) return "future";
+  return "overdue";
+}
+
+// ── DatePickerInput ────────────────────────────────────────────────────────
+
+function DateInput({
+  label, value, onChange, min,
+}: { label: string; value: string; onChange: (v: string) => void; min?: string }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</label>
+      <input
+        type="date"
+        value={value}
+        min={min}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+      />
+    </div>
+  );
+}
+
+// ── AdvancedSearch ─────────────────────────────────────────────────────────
+
+type AdvancedFilters = {
+  patientName: string;
+  phone: string;
+  drug: string;
+  diagnosis: string;
+  complaint: string;
+  dateFrom: string;
+  dateTo: string;
+};
+
+const EMPTY_ADV: AdvancedFilters = {
+  patientName: "", phone: "", drug: "", diagnosis: "", complaint: "",
+  dateFrom: "", dateTo: "",
+};
+
+function AdvancedSearch({
+  open, filters, onChange,
+}: { open: boolean; filters: AdvancedFilters; onChange: (f: AdvancedFilters) => void }) {
+  if (!open) return null;
+  const set = (key: keyof AdvancedFilters) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    onChange({ ...filters, [key]: e.target.value });
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 bg-muted/40 px-4 py-2.5">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary font-mono">
-            #{rx.prescriptionNo}
-          </span>
-          <span className="text-xs text-muted-foreground">{formatDate(rx.createdAt)}</span>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{rx.doctor.displayName}</span>
-            <span className="text-border">·</span>
-            <span>{rx.chamber.name}</span>
+    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Advanced Filters</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {([
+          ["patientName", "Patient Name"],
+          ["phone",       "Phone Number"],
+          ["drug",        "Drug / Medicine"],
+          ["diagnosis",   "Diagnosis"],
+          ["complaint",   "Chief Complaint"],
+        ] as [keyof AdvancedFilters, string][]).map(([key, label]) => (
+          <div key={key} className="space-y-1">
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</label>
+            <input
+              type="text"
+              value={filters[key]}
+              onChange={set(key)}
+              placeholder={`Search ${label.toLowerCase()}…`}
+              className="h-8 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+            />
           </div>
-          <button
-            onClick={onLoad}
-            className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <CalendarPlus className="h-3 w-3" />
-            Load into Rx
-          </button>
-        </div>
+        ))}
+        <DateInput label="Date From" value={filters.dateFrom} onChange={(v) => onChange({ ...filters, dateFrom: v })} />
+        <DateInput label="Date To"   value={filters.dateTo}   onChange={(v) => onChange({ ...filters, dateTo: v })}   min={filters.dateFrom} />
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(EMPTY_ADV)}
+        className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+      >
+        Clear all filters
+      </button>
+    </div>
+  );
+}
+
+// ── Table header ──────────────────────────────────────────────────────────
+
+const ROW_COLS = "2fr 1fr 1fr 1fr 1.8fr 1.8fr 1.2fr 1.6fr";
+
+function RxTableHeader() {
+  return (
+    <div
+      className="grid items-center gap-3 rounded-xl border border-border bg-muted/60 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-foreground"
+      style={{ gridTemplateColumns: ROW_COLS }}
+    >
+      <span>Patient</span>
+      <span>Rx No.</span>
+      <span>Date</span>
+      <span>Chamber</span>
+      <span>Diagnosis</span>
+      <span>Medicines</span>
+      <span>Follow-Up</span>
+      <span className="text-center">Actions</span>
+    </div>
+  );
+}
+
+// ── PrescriptionCard ───────────────────────────────────────────────────────
+
+function PrescriptionCard({
+  rx, idx,
+  onPreview,
+  onPrint,
+  onFollowUp,
+}: {
+  rx: Prescription;
+  idx: number;
+  onPreview: () => void;
+  onPrint: () => void;
+  onFollowUp: () => void;
+}) {
+  const patient = rx.patient;
+  const meds    = rx.medicines ?? [];
+  const diags   = rx.diagnoses ?? [];
+
+  const ageStr = formatAge(patient);
+  const sexStr = genderShort(patient.gender);
+  const ageSex = [ageStr, sexStr].filter(Boolean).join("/");
+
+  const fuStatus = followUpStatus(rx.followUpDate);
+  const fuClass  = {
+    future:  "text-emerald-700 dark:text-emerald-400",
+    today:   "text-amber-600 dark:text-amber-400",
+    overdue: "text-red-600 dark:text-red-400",
+    none:    "text-muted-foreground",
+  }[fuStatus];
+
+  return (
+    <div
+      className={cn(
+        "grid items-center gap-3 border-b border-border px-4 py-3 text-sm last:border-0 transition-colors hover:bg-muted/30",
+        idx % 2 === 1 && "bg-muted/10"
+      )}
+      style={{ gridTemplateColumns: ROW_COLS }}
+    >
+      {/* Patient */}
+      <div className="min-w-0">
+        <p className="font-semibold text-foreground truncate">{patient.name}</p>
+        <p className="text-xs text-muted-foreground">
+          {[ageSex, patient.phone].filter(Boolean).join(" · ")}
+        </p>
       </div>
 
-      {/* Body */}
-      <div className="px-4 py-3 space-y-2">
-        {rx.chiefComplaints && (
-          <div>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Chief Complaints</span>
-            <p className="text-sm text-foreground mt-0.5 leading-snug">{rx.chiefComplaints}</p>
-          </div>
-        )}
+      {/* Rx No */}
+      <span className="font-mono text-xs text-primary">#{rx.prescriptionNo}</span>
 
-        {meds.length > 0 && (
-          <div>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Medicines ({meds.length})
-            </span>
-            <div className="mt-1 space-y-1">
-              {(expanded ? meds : meds.slice(0, 3)).map((m, i) => (
-                <div key={i} className="flex items-baseline gap-1.5 text-sm">
-                  <span className="font-medium text-foreground">{m.brandName}</span>
-                  {m.strength && <span className="text-xs text-muted-foreground">{m.strength}</span>}
-                  <span className="text-xs text-muted-foreground">— {m.dose} · {m.duration}</span>
-                </div>
-              ))}
-              {meds.length > 3 && (
-                <button
-                  onClick={() => setExpanded(e => !e)}
-                  className="text-xs text-primary hover:underline"
-                >
-                  {expanded ? "Show less" : `+${meds.length - 3} more`}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+      {/* Date */}
+      <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(rx.createdAt)}</span>
 
-        {rx.advice && (
-          <div>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Advice</span>
-            <p className="text-sm text-muted-foreground mt-0.5 leading-snug">{rx.advice}</p>
-          </div>
-        )}
+      {/* Chamber */}
+      <span className="text-xs text-muted-foreground truncate">{rx.chamber.name}</span>
 
-        {rx.followUpDate && (
-          <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg px-3 py-1.5 w-fit">
-            <Clock className="h-3 w-3 shrink-0" />
-            Follow-up: {formatDate(rx.followUpDate)}
-          </div>
+      {/* Diagnosis */}
+      <div className="flex flex-wrap gap-1 min-w-0">
+        {diags.length === 0 ? (
+          <span className="text-xs text-muted-foreground/50 italic">—</span>
+        ) : (
+          <>
+            {diags.slice(0, 2).map((d, i) => (
+              <span key={i} className="rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-semibold text-teal-800 dark:bg-teal-900/40 dark:text-teal-300 truncate max-w-[120px]">
+                {d.name}
+              </span>
+            ))}
+            {diags.length > 2 && (
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">+{diags.length - 2}</span>
+            )}
+          </>
         )}
+      </div>
+
+      {/* Medicines */}
+      <div className="min-w-0">
+        {meds.length === 0 ? (
+          <span className="text-xs text-muted-foreground/50 italic">—</span>
+        ) : (
+          <p className="text-xs text-muted-foreground truncate">
+            {meds.slice(0, 2).map((m) => m.brandName).join(", ")}
+            {meds.length > 2 && <span className="text-muted-foreground/60"> +{meds.length - 2}</span>}
+          </p>
+        )}
+      </div>
+
+      {/* Follow-up */}
+      <div className={cn("text-xs font-medium whitespace-nowrap", fuClass)}>
+        {fuStatus === "none" ? (
+          <span className="text-muted-foreground/40 italic">—</span>
+        ) : fuStatus === "today" ? (
+          "Today"
+        ) : (
+          formatDate(rx.followUpDate)
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-center gap-1.5 flex-nowrap">
+        <button
+          type="button"
+          onClick={onPreview}
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground whitespace-nowrap hover:bg-muted transition-colors"
+        >
+          <Eye className="h-3.5 w-3.5 shrink-0" /> Preview
+        </button>
+        <button
+          type="button"
+          onClick={onPrint}
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground whitespace-nowrap hover:bg-muted transition-colors"
+        >
+          <Printer className="h-3.5 w-3.5 shrink-0" /> Print
+        </button>
+        <button
+          type="button"
+          onClick={onFollowUp}
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground whitespace-nowrap hover:bg-muted transition-colors"
+        >
+          <CalendarPlus className="h-3.5 w-3.5 shrink-0" /> Follow-Up
+        </button>
       </div>
     </div>
   );
 }
 
-// ── Patient Rx Drawer ──────────────────────────────────────────────────────
-
-function PatientRxDrawer({
-  patientId,
-  onClose,
-  onLoad,
-}: {
-  patientId: string;
-  onClose: () => void;
-  onLoad: (patient: Patient, rx: ProfilePrescription) => void;
-}) {
-  const token = useSessionStore((s) => s.accessToken) ?? "";
-
-  const { data: profile, isLoading } = useQuery<PatientProfile>({
-    queryKey: ["patient-profile", patientId],
-    queryFn: () => fetchPatientProfile(patientId, token),
-    enabled: !!token && !!patientId,
-  });
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const rxs = profile?.prescriptions ?? [];
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex">
-      <div className="flex-1 bg-black/40" onClick={onClose} />
-      <div className="relative flex h-full w-full max-w-xl flex-col bg-background shadow-2xl">
-        {/* Header */}
-        <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
-          <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Old Rx</h2>
-            {profile && (
-              <span className="text-sm text-muted-foreground">— {profile.name}</span>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Patient info strip */}
-        {profile && (
-          <div className="shrink-0 border-b bg-muted/20 px-5 py-3 flex items-center gap-4 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <User className="h-3.5 w-3.5" />
-              <span className="font-medium text-foreground">{profile.name}</span>
-            </div>
-            {profile.phone && (
-              <div className="flex items-center gap-1.5">
-                <Phone className="h-3.5 w-3.5" />
-                <span>{profile.phone}</span>
-              </div>
-            )}
-            {(profile.ageYears || profile.ageMonths || profile.ageDays) && (
-              <span>Age: <span className="text-foreground font-medium">{formatAge(profile)}</span></span>
-            )}
-            {profile.registrationNo && (
-              <span className="font-mono text-xs">{profile.registrationNo}</span>
-            )}
-          </div>
-        )}
-
-        {/* Scrollable prescription list */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-3">
-          {isLoading ? (
-            <div className="flex h-48 items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : rxs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground gap-3">
-              <FileText className="h-10 w-10 opacity-30" />
-              <p className="text-sm">No prescriptions found for this patient</p>
-            </div>
-          ) : (
-            rxs.map((rx) => (
-              <RxCard
-                key={rx.id}
-                rx={rx}
-                onLoad={() => onLoad(profile!, rx)}
-              />
-            ))
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// ── Old Rx Page ────────────────────────────────────────────────────────────
+// ── OldRxPage ──────────────────────────────────────────────────────────────
 
 export function OldRxPage() {
-  const token = useSessionStore((s) => s.accessToken) ?? "";
+  const token  = useSessionStore((s) => s.accessToken) ?? "";
   const router = useRouter();
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Global search
+  const [q,        setQ]        = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+
+  // Advanced search panel
+  const [advOpen,  setAdvOpen]  = useState(false);
+  const [adv,      setAdv]      = useState<AdvancedFilters>(EMPTY_ADV);
+  const [debouncedAdv, setDebouncedAdv] = useState<AdvancedFilters>(EMPTY_ADV);
+
+  // Pagination
   const [page, setPage] = useState(1);
-  const [drawerPatientId, setDrawerPatientId] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
+  // Preview sidebar
+  const [sidebarRx,    setSidebarRx]    = useState<Prescription | null>(null);
+  const [sidebarPrint, setSidebarPrint] = useState(false);
 
+  // Debounce q
   useEffect(() => {
-    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
+    const t = setTimeout(() => { setDebouncedQ(q); setPage(1); }, 350);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [q]);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["patients", debouncedSearch, page],
-    queryFn: () => fetchPatients({ q: debouncedSearch || undefined, page, limit: 20 }, token),
+  // Debounce advanced filters
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedAdv(adv); setPage(1); }, 400);
+    return () => clearTimeout(t);
+  }, [adv]);
+
+  // Reset page when search changes
+  useEffect(() => { setPage(1); }, [debouncedQ, debouncedAdv]);
+
+  const advActive = Object.values(adv).some(Boolean);
+
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ["old-rx", debouncedQ, debouncedAdv, page],
+    queryFn: () => fetchPrescriptions({
+      q:           debouncedQ || undefined,
+      patientName: debouncedAdv.patientName  || undefined,
+      phone:       debouncedAdv.phone        || undefined,
+      drug:        debouncedAdv.drug         || undefined,
+      diagnosis:   debouncedAdv.diagnosis    || undefined,
+      complaint:   debouncedAdv.complaint    || undefined,
+      dateFrom:    debouncedAdv.dateFrom     || undefined,
+      dateTo:      debouncedAdv.dateTo       || undefined,
+      page,
+      limit: 20,
+    }, token),
     enabled: !!token,
     staleTime: 30_000,
   });
 
-  const patients = data?.data ?? [];
-  const meta = data?.meta;
-  const totalPages = meta?.totalPages ?? 1;
+  const prescriptions = data?.data ?? [];
+  const meta          = data?.meta;
+  const totalPages    = meta?.totalPages ?? 1;
 
-  const handleLoad = useCallback((patient: Patient, rx: ProfilePrescription) => {
-    const { prescriptions: _p, ...patientOnly } = patient as Patient & { prescriptions?: unknown };
+  function handleFollowUp(rx: Prescription) {
+    const { prescriptions: _p, ...patientOnly } = rx.patient as typeof rx.patient & { prescriptions?: unknown };
     try { localStorage.setItem("rx-followup-patient", JSON.stringify(patientOnly)); } catch {}
-    try { localStorage.setItem("rx-followup-rx", JSON.stringify(rx)); } catch {}
+    try {
+      const rxForBuilder = {
+        id: rx.id,
+        prescriptionNo: rx.prescriptionNo,
+        createdAt: rx.createdAt,
+        status: rx.status,
+        chiefComplaints: rx.chiefComplaints,
+        examination: rx.examination,
+        advice: rx.advice,
+        followUpDate: rx.followUpDate,
+        doctor: { displayName: rx.doctor?.displayName ?? "" },
+        chamber: { name: rx.chamber?.name ?? "" },
+        medicines: rx.medicines,
+      };
+      localStorage.setItem("rx-followup-rx", JSON.stringify(rxForBuilder));
+    } catch {}
     router.push("/prescriptions/new");
-  }, [router]);
+  }
 
   return (
-    <div className="space-y-5">
-      {/* ── Page header ── */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-          <History className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-lg font-bold text-foreground">Old Rx</h1>
-          <p className="text-xs text-muted-foreground">Browse &amp; reload previous prescriptions</p>
-        </div>
-      </div>
+    <div className="space-y-4">
 
       {/* ── Search ── */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Search patient by name, phone, reg no…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-        />
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          {/* Main search */}
+          <div className="relative flex-1 max-w-lg">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search patient, diagnosis, medicine, complaint…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="w-full rounded-xl border border-input bg-background pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          {/* Advanced toggle */}
+          <button
+            type="button"
+            onClick={() => setAdvOpen((o) => !o)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors",
+              advOpen || advActive
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:bg-muted"
+            )}
+          >
+            {advOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            Advanced{advActive ? " ●" : ""}
+          </button>
+
+          {/* Results count */}
+          {meta && (
+            <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
+              {isFetching
+                ? "Loading…"
+                : `Showing ${prescriptions.length} of ${meta.total} prescription${meta.total !== 1 ? "s" : ""}`}
+            </span>
+          )}
+        </div>
+
+        <AdvancedSearch open={advOpen} filters={adv} onChange={setAdv} />
       </div>
 
-      {/* ── Patient list ── */}
+      {/* ── Prescription list ── */}
       {isLoading ? (
-        <div className="flex h-40 items-center justify-center">
+        <div className="flex items-center justify-center py-20">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      ) : patients.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground gap-3">
-          <FileText className="h-10 w-10 opacity-30" />
-          <p className="text-sm">No patients found</p>
+      ) : prescriptions.length === 0 ? (
+        <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
+          {(q || advActive) ? "No prescriptions match your search." : "No prescriptions recorded yet."}
         </div>
       ) : (
-        <div className="rounded-xl border border-border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                <th className="px-4 py-3">Patient</th>
-                <th className="px-4 py-3">Reg No.</th>
-                <th className="px-4 py-3">Age</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Last Visit</th>
-                <th className="px-4 py-3 text-right">Old Rx</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {patients.map((p) => (
-                <tr
-                  key={p.id}
-                  className="hover:bg-muted/30 transition-colors"
-                >
-                  <td className="px-4 py-3 font-medium text-foreground">{p.name}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                    {p.registrationNo ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{formatAge(p)}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{p.phone ?? "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {p.lastVisitAt ? formatDate(p.lastVisitAt) : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setDrawerPatientId(p.id)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
-                    >
-                      <History className="h-3.5 w-3.5" />
-                      View Old Rx
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <RxTableHeader />
+          {prescriptions.map((rx, idx) => (
+            <PrescriptionCard
+              key={rx.id}
+              rx={rx}
+              idx={idx}
+              onPreview={() => { setSidebarPrint(false); setSidebarRx(rx); }}
+              onPrint={()   => { setSidebarPrint(true);  setSidebarRx(rx); }}
+              onFollowUp={() => handleFollowUp(rx)}
+            />
+          ))}
         </div>
       )}
 
       {/* ── Pagination ── */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-3 pt-2">
           <button
             disabled={page <= 1}
-            onClick={() => setPage(p => p - 1)}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg border border-border text-sm transition-colors",
-              page <= 1 ? "cursor-not-allowed opacity-40" : "hover:bg-muted"
-            )}
+            onClick={() => setPage((p) => p - 1)}
+            className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:pointer-events-none"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" /> Prev
           </button>
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </span>
+          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
           <button
             disabled={page >= totalPages}
-            onClick={() => setPage(p => p + 1)}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg border border-border text-sm transition-colors",
-              page >= totalPages ? "cursor-not-allowed opacity-40" : "hover:bg-muted"
-            )}
+            onClick={() => setPage((p) => p + 1)}
+            className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:pointer-events-none"
           >
-            <ChevronRight className="h-4 w-4" />
+            Next <ChevronRight className="h-4 w-4" />
           </button>
         </div>
       )}
 
-      {/* ── Drawer ── */}
-      {mounted && drawerPatientId && (
-        <PatientRxDrawer
-          patientId={drawerPatientId}
-          onClose={() => setDrawerPatientId(null)}
-          onLoad={handleLoad}
+      {/* ── Print / Preview sidebar ── */}
+      {sidebarRx && (
+        <PrescriptionPrintSidebar
+          prescription={sidebarRx}
+          autoPrint={sidebarPrint}
+          onClose={() => setSidebarRx(null)}
+          onEdit={() => { setSidebarRx(null); handleFollowUp(sidebarRx); }}
         />
       )}
     </div>
