@@ -1752,11 +1752,6 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="mx-auto max-w-3xl p-4 lg:p-6">
-      {/* Close */}
-      <div className="mb-4 flex justify-end">
-        <Button size="sm" variant="ghost" onClick={onClose}><X className="h-4 w-4" /></Button>
-      </div>
-
       {/* Top add bar — same layout as image */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
         <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
