@@ -1715,9 +1715,9 @@ type FormSched = {
 type FormSchedules = Record<string, FormSched>;
 
 const DEFAULT_SCHED: FormSched = {
-  schedule: "3",
-  scheduleDoses: ["1", "1", "1"],
-  durationValue: "7",
+  schedule: "None",
+  scheduleDoses: [],
+  durationValue: "0",
   durationUnit: "Day",
   continueMedicine: false,
 };
@@ -1783,9 +1783,10 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   }
 
   function setSchedCount(form: string, count: string) {
+    if (count === "None") { patchSched(form, { schedule: "None", scheduleDoses: [] }); return; }
     const n = Math.max(1, Math.min(6, parseInt(count, 10) || 1));
     const current = getSched(form);
-    const doses = Array.from({ length: n }, (_, i) => current.scheduleDoses[i] ?? "1");
+    const doses = Array.from({ length: n }, (_, i) => current.scheduleDoses[i] ?? "0");
     patchSched(form, { schedule: String(n), scheduleDoses: doses });
   }
 
@@ -1868,7 +1869,8 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
         ) : allForms.map((form) => {
           const pos   = getPos(form);
           const sched = getSched(form);
-          const count = Math.max(1, Math.min(6, parseInt(sched.schedule, 10) || 1));
+          const isNone = sched.schedule === "None";
+          const count = isNone ? 0 : Math.max(1, Math.min(6, parseInt(sched.schedule, 10) || 1));
           return (
             <div key={form}
               className="grid grid-cols-[160px_auto_1fr] items-center gap-4 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
@@ -1889,24 +1891,26 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                   <span className="text-xs text-muted-foreground">Schedule</span>
                   <select className={cn(selCls, "w-14")} value={sched.schedule}
                     onChange={(e) => setSchedCount(form, e.target.value)}>
-                    {["1","2","3","4","5","6"].map((n) => <option key={n} value={n}>{n}</option>)}
+                    {["None","1","2","3","4","5","6"].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </div>
 
-                {/* Dose inputs */}
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: count }, (_, i) => (
-                    <div key={i} className="flex items-center gap-0.5">
-                      <input type="number" min="0" className={numCls}
-                        value={sched.scheduleDoses[i] ?? ""}
-                        onChange={(e) => setSchedDose(form, i, e.target.value)} />
-                      {i < count - 1 && <span className="select-none text-xs text-muted-foreground">+</span>}
-                    </div>
-                  ))}
-                </div>
+                {/* Dose inputs — hidden when None */}
+                {!isNone && (
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: count }, (_, i) => (
+                      <div key={i} className="flex items-center gap-0.5">
+                        <input type="number" min="0" className={numCls}
+                          value={sched.scheduleDoses[i] ?? ""}
+                          onChange={(e) => setSchedDose(form, i, e.target.value)} />
+                        {i < count - 1 && <span className="select-none text-xs text-muted-foreground">+</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                {/* Duration (hidden when Continue) */}
-                {!sched.continueMedicine && (
+                {/* Duration and Continue — hidden when None */}
+                {!isNone && !sched.continueMedicine && (
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-muted-foreground">for</span>
                     <input type="number" min="0" className={numCls}
@@ -1918,14 +1922,14 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                     </select>
                   </div>
                 )}
-
-                {/* Continue */}
-                <label className="flex cursor-pointer select-none items-center gap-1.5">
-                  <span className="text-xs font-semibold">Continue</span>
-                  <input type="checkbox" className="h-4 w-4 cursor-pointer accent-primary"
-                    checked={sched.continueMedicine}
-                    onChange={(e) => patchSched(form, { continueMedicine: e.target.checked })} />
-                </label>
+                {!isNone && (
+                  <label className="flex cursor-pointer select-none items-center gap-1.5">
+                    <span className="text-xs font-semibold">Continue</span>
+                    <input type="checkbox" className="h-4 w-4 cursor-pointer accent-primary"
+                      checked={sched.continueMedicine}
+                      onChange={(e) => patchSched(form, { continueMedicine: e.target.checked })} />
+                  </label>
+                )}
               </div>
             </div>
           );
