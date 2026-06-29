@@ -6029,14 +6029,40 @@ type MedicationSidebarProps = {
   onStatus: (tone: "success" | "warning", text: string) => void;
 };
 
-const FAV_KEY = "rx-medicine-freq";
-function loadFavourites(): Record<string, number> {
+const FAV_KEY = "rx-medicine-fav-v2";
+type FavEntry = { manual: boolean; removed: boolean; usages: string[] };
+type FavStore = Record<string, FavEntry>;
+
+function loadFavStore(): FavStore {
   if (typeof window === "undefined") return {};
   try { return JSON.parse(localStorage.getItem(FAV_KEY) ?? "{}"); } catch { return {}; }
 }
-function incrementFavourite(id: string) {
-  const f = loadFavourites(); f[id] = (f[id] ?? 0) + 1;
-  localStorage.setItem(FAV_KEY, JSON.stringify(f));
+function saveFavStore(store: FavStore) {
+  localStorage.setItem(FAV_KEY, JSON.stringify(store));
+}
+function isFavourite(entry: FavEntry | undefined): boolean {
+  if (!entry) return false;
+  if (entry.removed) return false;
+  if (entry.manual) return true;
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  return entry.usages.filter((t) => new Date(t).getTime() >= cutoff).length >= 2;
+}
+function recordUsage(id: string) {
+  const store = loadFavStore();
+  const entry = store[id] ?? { manual: false, removed: false, usages: [] };
+  entry.usages = [...entry.usages, new Date().toISOString()].slice(-50);
+  store[id] = entry;
+  saveFavStore(store);
+}
+function toggleManualFavourite(id: string, store: FavStore): FavStore {
+  const entry = store[id] ?? { manual: false, removed: false, usages: [] };
+  if (isFavourite(entry)) {
+    // remove: clear manual flag and mark removed to override auto
+    return { ...store, [id]: { ...entry, manual: false, removed: true } };
+  } else {
+    // add: set manual, clear removed
+    return { ...store, [id]: { ...entry, manual: true, removed: false } };
+  }
 }
 
 function MedicationSidebar({
@@ -6061,7 +6087,7 @@ function MedicationSidebar({
   const [expandedIdx, setExpandedIdx]   = useState<number | null>(null);
   const [customMedicine, setCustomMedicine] = useState<CustomMedicineFormState>(initialCustomMedicineForm);
   const [showDoses, setShowDoses]       = useState(false);
-  const [favVersion, setFavVersion]     = useState(0);
+  const [favStore, setFavStore]         = useState<FavStore>(() => loadFavStore());
 
   const { data: dosageFormOptions } = useQuery({
     queryKey: ["medicine-dosage-forms"],
@@ -6072,10 +6098,12 @@ function MedicationSidebar({
 
   // ── Sorted results (favourites first) ───────────────────────────────────
   const sortedResults = useMemo(() => {
-    const favs = loadFavourites();
-    return [...searchResults].sort((a, b) => (favs[b.id] ?? 0) - (favs[a.id] ?? 0));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchResults, favVersion]);
+    return [...searchResults].sort((a, b) => {
+      const af = isFavourite(favStore[a.id]) ? 1 : 0;
+      const bf = isFavourite(favStore[b.id]) ? 1 : 0;
+      return bf - af;
+    });
+  }, [searchResults, favStore]);
 
   // ── Build RxMedicine from form state ────────────────────────────────────
   function buildRxMedicine(form: CustomMedicineFormState): RxMedicine {
@@ -6125,9 +6153,9 @@ function MedicationSidebar({
     const defaults = customMedicineDefaultsForType(medicineType, item.brandName);
     const form: CustomMedicineFormState = { ...defaults, unit: item.dosageForm || defaults.unit };
 
-    // Increment favourite counter
-    incrementFavourite(item.id);
-    setFavVersion((v) => v + 1);
+    // Record usage (auto-favourite after 2 uses in 24 h)
+    recordUsage(item.id);
+    setFavStore(loadFavStore());
 
     // Auto-add to prescription immediately
     onAddCustomMedicine(buildRxMedicine(form));
@@ -6214,7 +6242,6 @@ function MedicationSidebar({
 
   const scheduleCount = Number.isNaN(Number.parseInt(customMedicine.schedule, 10))
     ? 0 : Number.parseInt(customMedicine.schedule, 10);
-  const favs = loadFavourites();
 
   return (
     <RightDrawer title="Medication" onClose={onClose}>
@@ -6248,32 +6275,52 @@ function MedicationSidebar({
               ) : (
                 <div className="grid grid-cols-3 gap-px bg-border">
                   {sortedResults.map((item) => {
-                    const isFav = (favs[item.id] ?? 0) > 0;
+                    const fav = isFavourite(favStore[item.id]);
                     return (
-                      <button
-                        key={item.id}
-                        className="flex flex-col gap-0.5 bg-popover px-1.5 py-1.5 text-left transition-colors hover:bg-muted/60"
-                        type="button"
-                        onClick={() => selectMedicine(item)}
-                      >
-                        {/* Row 1: Brand (Strength) + dosage form badge */}
-                        <div className="flex min-w-0 items-start gap-0.5">
-                          {isFav && <Star className="mt-0.5 h-2.5 w-2.5 shrink-0 fill-amber-400 text-amber-400" />}
-                          <span className="min-w-0 flex-1 truncate text-[10px] font-bold leading-tight text-foreground">
-                            {item.brandName}{item.strength ? ` (${item.strength})` : ""}
-                          </span>
-                        </div>
-                        {item.dosageForm && (
-                          <span className="w-fit rounded border border-border bg-muted px-1 py-px text-[8px] font-medium text-muted-foreground">
-                            {item.dosageForm}
-                          </span>
-                        )}
-                        {/* Row 2: Generic · Company */}
-                        <span className="truncate text-[9px] text-primary/80">{item.genericName}</span>
-                        {item.companyName && (
-                          <span className="truncate text-[9px] text-muted-foreground">{item.companyName}</span>
-                        )}
-                      </button>
+                      <div key={item.id} className="group relative flex flex-col bg-popover">
+                        <button
+                          className="flex flex-1 flex-col gap-0.5 px-1.5 py-1.5 text-left transition-colors hover:bg-muted/60"
+                          type="button"
+                          onClick={() => selectMedicine(item)}
+                        >
+                          {/* Row 1: Brand (Strength) */}
+                          <div className="flex min-w-0 items-start gap-0.5 pr-4">
+                            <span className="min-w-0 flex-1 truncate text-[10px] font-bold leading-tight text-foreground">
+                              {item.brandName}{item.strength ? ` (${item.strength})` : ""}
+                            </span>
+                          </div>
+                          {/* Dosage form badge */}
+                          {item.dosageForm && (
+                            <span className="w-fit rounded border border-border bg-muted px-1 py-px text-[8px] font-medium text-muted-foreground">
+                              {item.dosageForm}
+                            </span>
+                          )}
+                          {/* Generic · Company */}
+                          <span className="truncate text-[9px] text-primary/80">{item.genericName}</span>
+                          {item.companyName && (
+                            <span className="truncate text-[9px] text-muted-foreground">{item.companyName}</span>
+                          )}
+                        </button>
+                        {/* Star toggle (always visible when fav, hover to show otherwise) */}
+                        <button
+                          type="button"
+                          aria-label={fav ? "Remove favourite" : "Add favourite"}
+                          className={cn(
+                            "absolute right-1 top-1 rounded p-0.5 transition",
+                            fav
+                              ? "text-amber-400 hover:text-amber-500"
+                              : "text-muted-foreground/30 opacity-0 hover:text-amber-400 group-hover:opacity-100"
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = toggleManualFavourite(item.id, favStore);
+                            saveFavStore(next);
+                            setFavStore(next);
+                          }}
+                        >
+                          <Star className={cn("h-3 w-3", fav && "fill-amber-400")} />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
