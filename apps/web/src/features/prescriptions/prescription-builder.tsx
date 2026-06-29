@@ -63,7 +63,6 @@ import {
 } from "@/lib/api";
 import { DOSE_PATTERNS, MEAL_INSTRUCTIONS } from "@/lib/prescription-constants";
 import { getDosageFormPosition } from "@/lib/dosage-form-position";
-import { getActiveSched } from "@/lib/dosage-form-schedule";
 import { cn, toTitleCase } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useSearchParams } from "next/navigation";
@@ -6193,20 +6192,7 @@ function MedicationSidebar({
 
     const medicineType = item.dosageForm || "Tab.";
     const defaults = customMedicineDefaultsForType(medicineType, item.brandName);
-    let form: CustomMedicineFormState = { ...defaults, unit: item.dosageForm || defaults.unit };
-    // Auto-apply saved schedule from Drug Formation Order settings
-    const savedSched = getActiveSched(item.dosageForm);
-    if (savedSched) {
-      const n = parseInt(savedSched.schedule, 10) || 0;
-      form = {
-        ...form,
-        schedule: savedSched.schedule,
-        scheduleDoses: Array.from({ length: n }, (_, i) => savedSched.scheduleDoses[i] ?? "0"),
-        durationValue: savedSched.durationValue,
-        durationUnit: savedSched.durationUnit,
-        continueMedicine: savedSched.continueMedicine,
-      };
-    }
+    const form: CustomMedicineFormState = { ...defaults, unit: item.dosageForm || defaults.unit };
 
     // Record usage (auto-favourite after 2 uses in 24 h)
     recordUsage(item.id);
@@ -6646,26 +6632,18 @@ function ExpandedMedicineForm({
         </select>
 
         {/* 2. Schedule */}
-        {(() => {
-          const formSched = getActiveSched(form.unit);
-          return (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Schedule</span>
-              <select
-                className="h-8 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                value={form.schedule}
-                onChange={(event) => onScheduleChange(event.target.value)}
-              >
-                {formSched && (
-                  <option value={formSched.schedule}>{form.unit}</option>
-                )}
-                {["1", "2", "3", "4", "5", "6"].map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-          );
-        })()}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Schedule</span>
+          <select
+            className="h-8 w-14 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+            value={form.schedule}
+            onChange={(event) => onScheduleChange(event.target.value)}
+          >
+            {["1", "2", "3", "4", "5", "6"].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
 
         {/* Dose inputs */}
         <div className="flex flex-wrap items-center gap-1">

@@ -1702,8 +1702,19 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
 
 import type { DosageFormPositions } from "@/lib/dosage-form-position";
 import { IMAGE_DEFAULTS, loadDosageFormPositions, saveDosageFormPositions } from "@/lib/dosage-form-position";
-import type { FormSched, FormSchedules } from "@/lib/dosage-form-schedule";
-import { loadFormSchedules, saveFormSchedules } from "@/lib/dosage-form-schedule";
+
+const SCHEDULE_KEY = "rx-dosage-form-schedule";
+
+type FormSched = {
+  schedule: string;         // "None" | "1"–"6"
+  scheduleDoses: string[];
+  durationValue: string;
+  durationUnit: string;
+  continueMedicine: boolean;
+  // used when schedule === "None": [text, digit1-9, text, eye-side]
+  noneFields: [string, string, string, string];
+};
+type FormSchedules = Record<string, FormSched>;
 
 const DEFAULT_SCHED: FormSched = {
   schedule: "3",
@@ -1714,8 +1725,20 @@ const DEFAULT_SCHED: FormSched = {
   noneFields: ["1 Drop", "1", "Times Daily", "Both Eye"],
 };
 
-const loadSchedules  = loadFormSchedules;
-const saveSchedules  = saveFormSchedules;
+function loadSchedules(): FormSchedules {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(SCHEDULE_KEY) ?? "{}") as Record<string, unknown>;
+    const result: FormSchedules = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (v && typeof v === "object" && !Array.isArray(v)) result[k] = v as FormSched;
+    }
+    return result;
+  } catch { return {}; }
+}
+function saveSchedules(s: FormSchedules) {
+  try { localStorage.setItem(SCHEDULE_KEY, JSON.stringify(s)); } catch {}
+}
 
 function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   const token = useSessionStore((s) => s.accessToken) ?? "";
@@ -1880,8 +1903,46 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                   </select>
                 </div>
 
-                {/* None → empty; 1-6 → full schedule row */}
-                {!isNone && (
+                {/* None → 4 custom fields */}
+                {isNone ? (
+                  <>
+                    <input type="text" className={cn(numCls, "w-16")}
+                      value={sched.noneFields[0]}
+                      onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[0]=e.target.value; patchSched(form,{noneFields:f}); }} />
+                    <select className={cn(selCls, "w-14")}
+                      value={sched.noneFields[1]}
+                      onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[1]=e.target.value; patchSched(form,{noneFields:f}); }}>
+                      {["1","2","3","4","5","6","7","8","9"].map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <input type="text" className={cn(numCls, "w-20")}
+                      value={sched.noneFields[2]}
+                      onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[2]=e.target.value; patchSched(form,{noneFields:f}); }} />
+                    <select className={cn(selCls, "w-24")}
+                      value={sched.noneFields[3]}
+                      onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[3]=e.target.value; patchSched(form,{noneFields:f}); }}>
+                      {["Right Eye","Left Eye","Both Eye"].map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    {/* Duration — same as normal schedule */}
+                    {!sched.continueMedicine && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">for</span>
+                        <input type="number" min="0" className={numCls}
+                          value={sched.durationValue}
+                          onChange={(e) => patchSched(form, { durationValue: e.target.value })} />
+                        <select className={cn(selCls, "w-20")} value={sched.durationUnit}
+                          onChange={(e) => patchSched(form, { durationUnit: e.target.value })}>
+                          {["Day","Month","Year"].map((u) => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <label className="flex cursor-pointer select-none items-center gap-1.5">
+                      <span className="text-xs font-semibold">Continue</span>
+                      <input type="checkbox" className="h-4 w-4 cursor-pointer accent-primary"
+                        checked={sched.continueMedicine}
+                        onChange={(e) => patchSched(form, { continueMedicine: e.target.checked })} />
+                    </label>
+                  </>
+                ) : (
                   <>
                     {/* Dose inputs */}
                     <div className="flex items-center gap-1">
@@ -1919,6 +1980,15 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                   </>
                 )}
               </div>
+
+              {/* Per-row Save */}
+              <button
+                type="button"
+                className="ml-2 shrink-0 rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                onClick={() => saveSchedules(schedules)}
+              >
+                Save
+              </button>
             </div>
           );
         })}
