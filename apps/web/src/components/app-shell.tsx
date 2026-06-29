@@ -1818,7 +1818,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   const selCls = "h-8 rounded-sm border bg-background px-1 text-sm outline-none focus:ring-1 focus:ring-primary";
 
   return (
-    <div className="mx-auto max-w-5xl p-4 lg:p-6">
+    <div className="mx-auto max-w-full overflow-x-auto p-4 lg:p-6">
       {/* Top add bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
         <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
@@ -1861,12 +1861,13 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      {/* List */}
-      <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
-        <div className="grid grid-cols-[160px_auto_1fr] items-center gap-4 border-b bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground">
-          <span>Formation</span>
-          <span className="text-center">Position</span>
-          <span>Schedule</span>
+      {/* List — horizontally scrollable so every row stays on one line */}
+      <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
+        <div className="min-w-max">
+        <div className="flex items-center gap-4 border-b bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground">
+          <span className="w-36 shrink-0">Formation</span>
+          <span className="w-[136px] shrink-0 text-center">Position</span>
+          <span className="shrink-0">Schedule</span>
         </div>
 
         {allForms.length === 0 ? (
@@ -1880,19 +1881,19 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
           const count = isNone ? 0 : Math.max(1, Math.min(6, parseInt(sched.schedule, 10) || 1));
           return (
             <div key={form}
-              className="grid grid-cols-[160px_auto_1fr] items-center gap-4 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
+              className="flex items-center gap-4 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
 
               {/* Formation name */}
-              <span className="truncate text-sm font-medium text-foreground">{form}</span>
+              <span className="w-36 shrink-0 truncate text-sm font-medium text-foreground">{form}</span>
 
               {/* Position */}
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex w-[136px] shrink-0 items-center gap-1">
                 <button type="button" className={rowBtn(pos === "before")} onClick={() => toggle(form, "before")}>Before</button>
                 <button type="button" className={rowBtn(pos === "after")}  onClick={() => toggle(form, "after")}>After</button>
               </div>
 
               {/* Schedule row — mirrors ExpandedMedicineForm */}
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <div className="flex items-center gap-x-2">
                 {/* Schedule count */}
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">Schedule</span>
@@ -1982,6 +1983,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
             </div>
           );
         })}
+        </div>{/* end min-w-max */}
       </div>
 
       {/* Save & Exit */}
