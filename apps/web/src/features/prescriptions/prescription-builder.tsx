@@ -6583,6 +6583,7 @@ function ExpandedMedicineForm({
   schedCount: number;
 }) {
   const [remarksInput, setRemarksInput] = useState("");
+  const [showRemarkDialog, setShowRemarkDialog] = useState(false);
   const [remarksLibrary, setRemarksLibrary] = useState<string[]>(() => loadRemarksLibrary());
 
   function addRemark() {
@@ -6591,11 +6592,11 @@ function ExpandedMedicineForm({
     const next = remarksLibrary.includes(tag) ? remarksLibrary : [...remarksLibrary, tag];
     setRemarksLibrary(next);
     saveRemarksLibrary(next);
-    // auto-select the newly added remark
     if (!form.remarksTags.includes(tag)) {
       onUpdate({ remarksTags: [...form.remarksTags, tag] });
     }
     setRemarksInput("");
+    setShowRemarkDialog(false);
   }
 
   function toggleRemark(tag: string) {
@@ -6698,57 +6699,67 @@ function ExpandedMedicineForm({
         </label>
       </div>
 
-      {/* Remarks chips */}
-      <div className="space-y-1.5">
-        {/* Chip library */}
-        {remarksLibrary.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {remarksLibrary.map((tag) => {
-              const selected = form.remarksTags.includes(tag);
-              return (
-                <div key={tag} className="group flex items-center gap-0">
-                  <button
-                    type="button"
-                    className={cn(
-                      "rounded-l-full border px-2.5 py-0.5 text-xs font-medium transition",
-                      selected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
-                    )}
-                    onClick={() => toggleRemark(tag)}
-                  >
-                    {tag}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Remove "${tag}"`}
-                    className="rounded-r-full border border-l-0 border-border bg-muted px-1 py-0.5 text-[10px] text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                    onClick={() => removeFromLibrary(tag)}
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+      {/* Remarks chips + inline Add button */}
+      <div className="flex flex-wrap items-center gap-1">
+        {remarksLibrary.map((tag) => {
+          const selected = form.remarksTags.includes(tag);
+          return (
+            <div key={tag} className="group flex items-center gap-0">
+              <button
+                type="button"
+                className={cn(
+                  "rounded-l-full border px-2.5 py-0.5 text-xs font-medium transition",
+                  selected
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
+                )}
+                onClick={() => toggleRemark(tag)}
+              >
+                {tag}
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove "${tag}"`}
+                className="rounded-r-full border border-l-0 border-border bg-muted px-1 py-0.5 text-[10px] text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                onClick={() => removeFromLibrary(tag)}
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          );
+        })}
 
-        {/* Add remarks input */}
-        <div className="flex gap-1.5">
-          <Input
-            className="h-7 flex-1 bg-background text-xs"
-            placeholder="Type a remark and press Add…"
-            value={remarksInput}
-            onChange={(e) => setRemarksInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRemark(); } }}
-          />
+        {/* Add Remarks button + popover */}
+        <div className="relative">
           <button
             type="button"
-            className="h-7 whitespace-nowrap rounded-sm border border-border bg-muted px-2.5 text-xs font-medium text-foreground hover:bg-muted/70"
-            onClick={addRemark}
+            className="rounded-full border border-dashed border-border px-2.5 py-0.5 text-xs text-muted-foreground transition hover:border-primary hover:text-primary"
+            onClick={() => setShowRemarkDialog((v) => !v)}
           >
-            Add Remarks
+            + Add Remarks
           </button>
+          {showRemarkDialog && (
+            <div className="absolute left-0 top-7 z-50 flex items-center gap-1.5 rounded-lg border border-border bg-card p-2 shadow-lg">
+              <Input
+                autoFocus
+                className="h-7 w-44 bg-background text-xs"
+                placeholder="Type a remark…"
+                value={remarksInput}
+                onChange={(e) => setRemarksInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); addRemark(); }
+                  if (e.key === "Escape") { setShowRemarkDialog(false); setRemarksInput(""); }
+                }}
+              />
+              <button
+                type="button"
+                className="h-7 whitespace-nowrap rounded-sm bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                onClick={addRemark}
+              >
+                Add
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
