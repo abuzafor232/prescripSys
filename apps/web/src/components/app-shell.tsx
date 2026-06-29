@@ -1722,7 +1722,7 @@ const DEFAULT_SCHED: FormSched = {
   durationValue: "0",
   durationUnit: "Day",
   continueMedicine: false,
-  noneFields: ["", "1", "", "Both Eye"],
+  noneFields: ["1 Drop", "1", "Times Daily", "Both Eye"],
 };
 
 function loadSchedules(): FormSchedules {
@@ -1776,7 +1776,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   function getSched(form: string): FormSched {
     const v = schedules[form];
     if (!v || typeof v !== "object" || !("scheduleDoses" in v)) return { ...DEFAULT_SCHED };
-    return { ...DEFAULT_SCHED, ...v, noneFields: (v.noneFields ?? ["","1","","Both Eye"]) };
+    return { ...DEFAULT_SCHED, ...v, noneFields: (v.noneFields ?? ["1 Drop","1","Times Daily","Both Eye"]) };
   }
 
   function patchSched(form: string, patch: Partial<FormSched>) {
@@ -1788,7 +1788,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   function setSchedCount(form: string, count: string) {
     if (count === "None") {
       const cur = getSched(form);
-      patchSched(form, { schedule: "None", scheduleDoses: [], noneFields: cur.noneFields ?? ["","1","","Both Eye"] });
+      patchSched(form, { schedule: "None", scheduleDoses: [], noneFields: cur.noneFields ?? ["1 Drop","1","Times Daily","Both Eye"] });
       return;
     }
     const n = Math.max(1, Math.min(6, parseInt(count, 10) || 1));
@@ -1980,6 +1980,15 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                   </>
                 )}
               </div>
+
+              {/* Per-row Save */}
+              <button
+                type="button"
+                className="ml-2 shrink-0 rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                onClick={() => saveSchedules(schedules)}
+              >
+                Save
+              </button>
             </div>
           );
         })}
