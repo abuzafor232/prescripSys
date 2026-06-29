@@ -63,7 +63,7 @@ import {
 } from "@/lib/api";
 import { DOSE_PATTERNS, MEAL_INSTRUCTIONS } from "@/lib/prescription-constants";
 import { getDosageFormPosition } from "@/lib/dosage-form-position";
-import { getActiveSched } from "@/lib/dosage-form-schedule";
+import { getActiveSched, getMatchingFormKey } from "@/lib/dosage-form-schedule";
 import { cn, toTitleCase } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useSearchParams } from "next/navigation";
@@ -6195,9 +6195,10 @@ function MedicationSidebar({
     const defaults = customMedicineDefaultsForType(medicineType, item.brandName);
     let form: CustomMedicineFormState = { ...defaults, unit: item.dosageForm || defaults.unit };
     // Auto-apply saved schedule from Drug Formation Order settings
+    // Uses normalised matching so "Eye Drop" == "Eye Drops" etc.
     const savedSched = getActiveSched(item.dosageForm);
-    if (savedSched) {
-      const n = parseInt(savedSched.schedule, 10) || 0;
+    if (savedSched && savedSched.schedule !== "None") {
+      const n = Math.max(0, parseInt(savedSched.schedule, 10) || 0);
       form = {
         ...form,
         schedule: savedSched.schedule,
@@ -6647,17 +6648,31 @@ function ExpandedMedicineForm({
 
         {/* 2. Schedule */}
         {(() => {
-          const formSched = getActiveSched(form.unit);
+          const matchedKey = getMatchingFormKey(form.unit);
+          const formSched  = matchedKey ? getActiveSched(form.unit) : null;
           return (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">Schedule</span>
               <select
                 className="h-8 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
                 value={form.schedule}
-                onChange={(event) => onScheduleChange(event.target.value)}
+                onChange={(event) => {
+                  if (formSched && event.target.value === "__form__") {
+                    const n = parseInt(formSched.schedule, 10) || 0;
+                    onScheduleChange(formSched.schedule);
+                    onUpdate({
+                      scheduleDoses: Array.from({ length: n }, (_, i) => formSched.scheduleDoses[i] ?? "0"),
+                      durationValue: formSched.durationValue,
+                      durationUnit: formSched.durationUnit,
+                      continueMedicine: formSched.continueMedicine,
+                    });
+                  } else {
+                    onScheduleChange(event.target.value);
+                  }
+                }}
               >
                 {formSched && (
-                  <option value={formSched.schedule}>{form.unit}</option>
+                  <option value={form.schedule}>{matchedKey}</option>
                 )}
                 {["1", "2", "3", "4", "5", "6"].map((n) => (
                   <option key={n} value={n}>{n}</option>
