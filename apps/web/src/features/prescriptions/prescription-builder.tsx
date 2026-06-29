@@ -6446,14 +6446,17 @@ function MedicationSidebar({
                       {session.search.strength && (
                         <span className="shrink-0 text-xs font-normal text-muted-foreground">({session.search.strength})</span>
                       )}
-                      {!isExpanded && doseLabel && (
+                      {!isExpanded && (doseLabel || form.remarksTags.length > 0 || form.remarks.trim()) && (
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          &nbsp;{doseLabel}
+                          {doseLabel && <>&nbsp;{doseLabel}</>}
                           {form.continueMedicine
                             ? " · Continue"
                             : form.durationValue && form.durationValue !== "0"
                               ? ` · ${form.durationValue} ${form.durationUnit}`
                               : ""}
+                          {[...form.remarksTags, form.remarks.trim()].filter(Boolean).map((r, i) => (
+                            <span key={i}> · {r}</span>
+                          ))}
                         </span>
                       )}
                     </button>
