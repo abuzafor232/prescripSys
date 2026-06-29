@@ -1921,6 +1921,25 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                       onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[3]=e.target.value; patchSched(form,{noneFields:f}); }}>
                       {["Right Eye","Left Eye","Both Eye"].map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
+                    {/* Duration — same as normal schedule */}
+                    {!sched.continueMedicine && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">for</span>
+                        <input type="number" min="0" className={numCls}
+                          value={sched.durationValue}
+                          onChange={(e) => patchSched(form, { durationValue: e.target.value })} />
+                        <select className={cn(selCls, "w-20")} value={sched.durationUnit}
+                          onChange={(e) => patchSched(form, { durationUnit: e.target.value })}>
+                          {["Day","Month","Year"].map((u) => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <label className="flex cursor-pointer select-none items-center gap-1.5">
+                      <span className="text-xs font-semibold">Continue</span>
+                      <input type="checkbox" className="h-4 w-4 cursor-pointer accent-primary"
+                        checked={sched.continueMedicine}
+                        onChange={(e) => patchSched(form, { continueMedicine: e.target.checked })} />
+                    </label>
                   </>
                 ) : (
                   <>
