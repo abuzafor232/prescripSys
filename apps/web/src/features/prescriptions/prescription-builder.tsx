@@ -430,9 +430,9 @@ const initialNotes: Record<NoteKey, string> = {
   complaint: "",
   history: "",
   findings: "",
-  investigation: "CBC\nS. Creatinine",
-  diagnosis: "Acute URTI",
-  advice: "Drink adequate water\nReview if fever persists",
+  investigation: "",
+  diagnosis: "",
+  advice: "",
   followUp: "",
   referral: ""
 };
