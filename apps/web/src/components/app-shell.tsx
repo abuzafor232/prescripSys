@@ -1704,11 +1704,29 @@ import type { DosageFormPositions } from "@/lib/dosage-form-position";
 import { IMAGE_DEFAULTS, loadDosageFormPositions, saveDosageFormPositions } from "@/lib/dosage-form-position";
 
 const SCHEDULE_KEY = "rx-dosage-form-schedule";
-function loadSchedules(): Record<string, string> {
+
+type FormSched = {
+  schedule: string;         // "1"–"6"
+  scheduleDoses: string[];  // one entry per schedule count
+  durationValue: string;
+  durationUnit: string;
+  continueMedicine: boolean;
+};
+type FormSchedules = Record<string, FormSched>;
+
+const DEFAULT_SCHED: FormSched = {
+  schedule: "3",
+  scheduleDoses: ["1", "1", "1"],
+  durationValue: "7",
+  durationUnit: "Day",
+  continueMedicine: false,
+};
+
+function loadSchedules(): FormSchedules {
   if (typeof window === "undefined") return {};
   try { return JSON.parse(localStorage.getItem(SCHEDULE_KEY) ?? "{}"); } catch { return {}; }
 }
-function saveSchedules(s: Record<string, string>) {
+function saveSchedules(s: FormSchedules) {
   try { localStorage.setItem(SCHEDULE_KEY, JSON.stringify(s)); } catch {}
 }
 
@@ -1717,7 +1735,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
   const [apiForms, setApiForms] = useState<string[]>([]);
   const [positions, setPositions] = useState<DosageFormPositions>(() => loadDosageFormPositions());
-  const [schedules, setSchedules] = useState<Record<string, string>>(() => loadSchedules());
+  const [schedules, setSchedules] = useState<FormSchedules>(() => loadSchedules());
   const [newForm, setNewForm]     = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [newPos, setNewPos]       = useState<"before" | "after">("before");
@@ -1745,10 +1763,27 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
     saveDosageFormPositions(next);
   }
 
-  function setSchedule(form: string, value: string) {
-    const next = { ...schedules, [form]: value };
+  function getSched(form: string): FormSched {
+    return schedules[form] ?? { ...DEFAULT_SCHED };
+  }
+
+  function patchSched(form: string, patch: Partial<FormSched>) {
+    const next = { ...schedules, [form]: { ...getSched(form), ...patch } };
     setSchedules(next);
     saveSchedules(next);
+  }
+
+  function setSchedCount(form: string, count: string) {
+    const n = Math.max(1, Math.min(6, parseInt(count, 10) || 1));
+    const current = getSched(form);
+    const doses = Array.from({ length: n }, (_, i) => current.scheduleDoses[i] ?? "1");
+    patchSched(form, { schedule: String(n), scheduleDoses: doses });
+  }
+
+  function setSchedDose(form: string, i: number, val: string) {
+    const doses = [...getSched(form).scheduleDoses];
+    doses[i] = val;
+    patchSched(form, { scheduleDoses: doses });
   }
 
   function handleAdd() {
@@ -1759,13 +1794,14 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   }
 
   const rowBtn = (active: boolean) =>
-    cn(
-      "px-3 py-1 rounded text-xs font-semibold transition-colors",
-      active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
-    );
+    cn("px-3 py-1 rounded text-xs font-semibold transition-colors",
+      active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70");
+
+  const numCls = "h-8 w-12 rounded-sm border bg-background px-1 text-center text-sm font-semibold text-red-600 outline-none focus:ring-1 focus:ring-primary";
+  const selCls = "h-8 rounded-sm border bg-background px-1 text-sm outline-none focus:ring-1 focus:ring-primary";
 
   return (
-    <div className="mx-auto max-w-4xl p-4 lg:p-6">
+    <div className="mx-auto max-w-5xl p-4 lg:p-6">
       {/* Top add bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
         <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
@@ -1780,21 +1816,17 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
           />
           {searchOpen && apiForms.filter((f) => f.toLowerCase().includes(newForm.toLowerCase())).length > 0 && (
             <div className="absolute left-0 top-full z-50 mt-0.5 max-h-48 w-full overflow-y-auto rounded border bg-popover shadow-lg">
-              {apiForms
-                .filter((f) => f.toLowerCase().includes(newForm.toLowerCase()))
-                .map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    onMouseDown={() => { setNewForm(f); setNewPos(getPos(f)); setSearchOpen(false); }}
-                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-muted"
-                  >
-                    <span>{f}</span>
-                    <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold", getPos(f) === "before" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
-                      {getPos(f) === "before" ? "Before" : "After"}
-                    </span>
-                  </button>
-                ))}
+              {apiForms.filter((f) => f.toLowerCase().includes(newForm.toLowerCase())).map((f) => (
+                <button key={f} type="button"
+                  onMouseDown={() => { setNewForm(f); setNewPos(getPos(f)); setSearchOpen(false); }}
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-muted">
+                  <span>{f}</span>
+                  <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                    getPos(f) === "before" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
+                    {getPos(f) === "before" ? "Before" : "After"}
+                  </span>
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -1814,8 +1846,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
       {/* List */}
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
-        {/* Header */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground">
+        <div className="grid grid-cols-[160px_auto_1fr] items-center gap-4 border-b bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground">
           <span>Formation</span>
           <span className="text-center">Position</span>
           <span>Schedule</span>
@@ -1826,22 +1857,67 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading…
           </div>
         ) : allForms.map((form) => {
-          const pos = getPos(form);
+          const pos   = getPos(form);
+          const sched = getSched(form);
+          const count = Math.max(1, Math.min(6, parseInt(sched.schedule, 10) || 1));
           return (
             <div key={form}
-              className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
-              <span className="text-sm font-medium text-foreground">{form}</span>
+              className="grid grid-cols-[160px_auto_1fr] items-center gap-4 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
+
+              {/* Formation name */}
+              <span className="truncate text-sm font-medium text-foreground">{form}</span>
+
+              {/* Position */}
               <div className="flex shrink-0 items-center gap-1">
                 <button type="button" className={rowBtn(pos === "before")} onClick={() => toggle(form, "before")}>Before</button>
                 <button type="button" className={rowBtn(pos === "after")}  onClick={() => toggle(form, "after")}>After</button>
               </div>
-              <input
-                type="text"
-                className="h-8 w-full rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-                placeholder="e.g. 1 Tab 3 Times Daily"
-                value={schedules[form] ?? ""}
-                onChange={(e) => setSchedule(form, e.target.value)}
-              />
+
+              {/* Schedule row — mirrors ExpandedMedicineForm */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {/* Schedule count */}
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">Schedule</span>
+                  <select className={cn(selCls, "w-14")} value={sched.schedule}
+                    onChange={(e) => setSchedCount(form, e.target.value)}>
+                    {["1","2","3","4","5","6"].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+
+                {/* Dose inputs */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: count }, (_, i) => (
+                    <div key={i} className="flex items-center gap-0.5">
+                      <input type="number" min="0" className={numCls}
+                        value={sched.scheduleDoses[i] ?? ""}
+                        onChange={(e) => setSchedDose(form, i, e.target.value)} />
+                      {i < count - 1 && <span className="select-none text-xs text-muted-foreground">+</span>}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Duration (hidden when Continue) */}
+                {!sched.continueMedicine && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">for</span>
+                    <input type="number" min="0" className={numCls}
+                      value={sched.durationValue}
+                      onChange={(e) => patchSched(form, { durationValue: e.target.value })} />
+                    <select className={cn(selCls, "w-20")} value={sched.durationUnit}
+                      onChange={(e) => patchSched(form, { durationUnit: e.target.value })}>
+                      {["Day","Month","Year"].map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {/* Continue */}
+                <label className="flex cursor-pointer select-none items-center gap-1.5">
+                  <span className="text-xs font-semibold">Continue</span>
+                  <input type="checkbox" className="h-4 w-4 cursor-pointer accent-primary"
+                    checked={sched.continueMedicine}
+                    onChange={(e) => patchSched(form, { continueMedicine: e.target.checked })} />
+                </label>
+              </div>
             </div>
           );
         })}
@@ -1849,11 +1925,9 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
       {/* Save & Exit */}
       <div className="mt-4 flex justify-end">
-        <button
-          type="button"
+        <button type="button"
           onClick={() => { saveDosageFormPositions(positions); saveSchedules(schedules); onClose(); }}
-          className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-        >
+          className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
           Save &amp; Exit
         </button>
       </div>
