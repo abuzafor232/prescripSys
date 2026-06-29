@@ -6295,25 +6295,18 @@ function MedicationSidebar({
                       </div>
                     ) : filteredResults.map((item) => {
                       const fav = isFavourite(favStore[item.id]);
-                      const titleName = [item.dosageForm, item.brandName].filter(Boolean).join(" ");
+                      const titleName = [item.dosageForm, item.brandName, item.strength].filter(Boolean).join(" ");
                       return (
                         <div key={item.id} className="group relative">
                           <button
-                            className="w-full rounded-md bg-amber-50 px-2.5 py-2 text-left transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/40"
+                            className="w-full rounded-md bg-muted px-2.5 py-2 text-left transition-colors hover:bg-muted/70"
                             type="button"
                             onClick={() => selectMedicine(item)}
                           >
-                            {/* Line 1: Name left, Strength right */}
-                            <div className="flex items-start justify-between gap-1">
-                              <span className="min-w-0 flex-1 truncate text-[11px] font-bold leading-snug text-foreground">
-                                {titleName}
-                              </span>
-                              {item.strength && (
-                                <span className="ml-1 shrink-0 text-[10px] text-muted-foreground">
-                                  {item.strength}
-                                </span>
-                              )}
-                            </div>
+                            {/* Line 1: Dosage Form + Brand + Strength together */}
+                            <span className="block truncate text-[11px] font-bold leading-snug text-foreground">
+                              {titleName}
+                            </span>
                             {/* Line 2: Generic left, Company right */}
                             <div className="mt-0.5 flex items-center justify-between gap-1">
                               <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
