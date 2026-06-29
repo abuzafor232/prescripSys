@@ -1752,17 +1752,6 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="mx-auto max-w-3xl p-4 lg:p-6">
-      {/* Save & Exit */}
-      <div className="mb-4 flex justify-end">
-        <button
-          type="button"
-          onClick={() => { saveDosageFormPositions(positions); onClose(); }}
-          className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          Save &amp; Exit
-        </button>
-      </div>
-
       {/* Top add bar — same layout as image */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
         <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
@@ -1813,6 +1802,17 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
             </div>
           );
         })}
+      </div>
+
+      {/* Save & Exit */}
+      <div className="mt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => { saveDosageFormPositions(positions); onClose(); }}
+          className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Save &amp; Exit
+        </button>
       </div>
     </div>
   );
