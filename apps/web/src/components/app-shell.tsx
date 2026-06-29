@@ -1724,7 +1724,14 @@ const DEFAULT_SCHED: FormSched = {
 
 function loadSchedules(): FormSchedules {
   if (typeof window === "undefined") return {};
-  try { return JSON.parse(localStorage.getItem(SCHEDULE_KEY) ?? "{}"); } catch { return {}; }
+  try {
+    const raw = JSON.parse(localStorage.getItem(SCHEDULE_KEY) ?? "{}") as Record<string, unknown>;
+    const result: FormSchedules = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (v && typeof v === "object" && !Array.isArray(v)) result[k] = v as FormSched;
+    }
+    return result;
+  } catch { return {}; }
 }
 function saveSchedules(s: FormSchedules) {
   try { localStorage.setItem(SCHEDULE_KEY, JSON.stringify(s)); } catch {}
@@ -1764,7 +1771,9 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   }
 
   function getSched(form: string): FormSched {
-    return schedules[form] ?? { ...DEFAULT_SCHED };
+    const v = schedules[form];
+    if (!v || typeof v !== "object" || !("scheduleDoses" in v)) return { ...DEFAULT_SCHED };
+    return v;
   }
 
   function patchSched(form: string, patch: Partial<FormSched>) {
