@@ -6134,13 +6134,16 @@ function MedicationSidebar({
     onUpdateMedicine(session.prescIdx, buildRxMedicine(formToSave));
   }
 
-  // ── Update form state (syncs to sessions array too) ──────────────────────
+  // ── Update form state + immediately sync to prescription ────────────────
   function updateCustomMedicine(patch: Partial<CustomMedicineFormState>) {
-    setCustomMedicine((curr) => ({ ...curr, ...patch }));
+    const merged = { ...customMedicine, ...patch };
+    setCustomMedicine(merged);
     if (expandedIdx !== null) {
       setSessions((prev) =>
-        prev.map((s, i) => i === expandedIdx ? { ...s, form: { ...s.form, ...patch } } : s)
+        prev.map((s, i) => i === expandedIdx ? { ...s, form: merged } : s)
       );
+      const session = sessions[expandedIdx];
+      if (session) onUpdateMedicine(session.prescIdx, buildRxMedicine(merged));
     }
   }
 
@@ -6243,8 +6246,13 @@ function MedicationSidebar({
   const scheduleCount = Number.isNaN(Number.parseInt(customMedicine.schedule, 10))
     ? 0 : Number.parseInt(customMedicine.schedule, 10);
 
+  function handleClose() {
+    saveExpanded();
+    onClose();
+  }
+
   return (
-    <RightDrawer title="Medication" onClose={onClose}>
+    <RightDrawer title="Medication" onClose={handleClose}>
       <div className="space-y-3 pt-3">
 
         {/* ── Medicine search ──────────────────────────────────────────── */}
@@ -6273,43 +6281,48 @@ function MedicationSidebar({
               ) : sortedResults.length === 0 ? (
                 <div className="px-3 py-3 text-sm text-muted-foreground">No medicines found</div>
               ) : (
-                <div className="grid grid-cols-3 gap-px bg-border">
+                <div className="divide-y divide-border">
                   {sortedResults.map((item) => {
                     const fav = isFavourite(favStore[item.id]);
                     return (
-                      <div key={item.id} className="group relative flex flex-col bg-popover">
+                      <div key={item.id} className="group relative flex items-center bg-popover hover:bg-muted/50">
                         <button
-                          className="flex flex-1 flex-col gap-0.5 px-1.5 py-1.5 text-left transition-colors hover:bg-muted/60"
+                          className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 pr-8 text-left"
                           type="button"
                           onClick={() => selectMedicine(item)}
                         >
-                          {/* Row 1: Brand (Strength) */}
-                          <div className="flex min-w-0 items-start gap-0.5 pr-4">
-                            <span className="min-w-0 flex-1 truncate text-[10px] font-bold leading-tight text-foreground">
+                          {/* Row 1: Brand (Strength) > Dosage Form */}
+                          <div className="flex min-w-0 items-center gap-2">
+                            {fav && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />}
+                            <span className="truncate text-sm font-semibold text-foreground">
                               {item.brandName}{item.strength ? ` (${item.strength})` : ""}
                             </span>
+                            {item.dosageForm && (
+                              <span className="ml-auto shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                {item.dosageForm}
+                              </span>
+                            )}
                           </div>
-                          {/* Dosage form badge */}
-                          {item.dosageForm && (
-                            <span className="w-fit rounded border border-border bg-muted px-1 py-px text-[8px] font-medium text-muted-foreground">
-                              {item.dosageForm}
-                            </span>
-                          )}
-                          {/* Generic · Company */}
-                          <span className="truncate text-[9px] text-primary/80">{item.genericName}</span>
-                          {item.companyName && (
-                            <span className="truncate text-[9px] text-muted-foreground">{item.companyName}</span>
-                          )}
+                          {/* Row 2: Generic > Company */}
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <span className="truncate text-xs text-primary/80">{item.genericName}</span>
+                            {item.companyName && (
+                              <>
+                                <span className="shrink-0 text-[10px] text-muted-foreground/40">·</span>
+                                <span className="truncate text-xs text-muted-foreground">{item.companyName}</span>
+                              </>
+                            )}
+                          </div>
                         </button>
-                        {/* Star toggle (always visible when fav, hover to show otherwise) */}
+                        {/* Star toggle */}
                         <button
                           type="button"
                           aria-label={fav ? "Remove favourite" : "Add favourite"}
                           className={cn(
-                            "absolute right-1 top-1 rounded p-0.5 transition",
+                            "absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 transition",
                             fav
                               ? "text-amber-400 hover:text-amber-500"
-                              : "text-muted-foreground/30 opacity-0 hover:text-amber-400 group-hover:opacity-100"
+                              : "text-muted-foreground/20 opacity-0 hover:text-amber-400 group-hover:opacity-100"
                           )}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -6318,7 +6331,7 @@ function MedicationSidebar({
                             setFavStore(next);
                           }}
                         >
-                          <Star className={cn("h-3 w-3", fav && "fill-amber-400")} />
+                          <Star className={cn("h-3.5 w-3.5", fav && "fill-amber-400")} />
                         </button>
                       </div>
                     );
