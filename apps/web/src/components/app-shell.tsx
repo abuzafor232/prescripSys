@@ -1795,7 +1795,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
         </button>
         <button type="button" disabled={!newForm.trim()} onClick={handleAdd}
           className="flex items-center gap-1 rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40">
-          <Plus className="h-3 w-3" />Add
+          Save
         </button>
       </div>
 
