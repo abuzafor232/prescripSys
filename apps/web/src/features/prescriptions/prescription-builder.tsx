@@ -6426,10 +6426,7 @@ function MedicationSidebar({
             {sessions.map((session, idx) => {
               const isExpanded = expandedIdx === idx;
               const form = isExpanded ? customMedicine : session.form;
-              const isNamedSchedule = Number.isNaN(Number.parseInt(form.schedule, 10)) && form.schedule !== "";
-              const doseLabel = isNamedSchedule
-                ? form.scheduleDoses.filter(Boolean).join(" ")
-                : form.scheduleDoses.filter(Boolean).join("+");
+              const doseLabel = form.scheduleDoses.filter(Boolean).join("+");
               const sessSchedCount = Number.isNaN(Number.parseInt(form.schedule, 10))
                 ? 0 : Number.parseInt(form.schedule, 10);
               return (
@@ -6587,28 +6584,6 @@ function ExpandedMedicineForm({
 }) {
   const [remarksInput, setRemarksInput] = useState("");
   const [showRemarkDialog, setShowRemarkDialog] = useState(false);
-
-  // Find a saved "None"-mode schedule in Drug Formation Order that matches the current dosage form
-  const namedSched = useMemo(() => {
-    if (typeof window === "undefined" || !form.unit) return null;
-    try {
-      const raw = JSON.parse(localStorage.getItem("rx-dosage-form-schedule") ?? "{}") as Record<string, unknown>;
-      const norm = (s: string) => s.toUpperCase().replace(/S$/, "").trim();
-      const target = norm(form.unit);
-      for (const [key, val] of Object.entries(raw)) {
-        if (
-          norm(key) === target &&
-          val && typeof val === "object" && !Array.isArray(val) &&
-          (val as Record<string, unknown>).schedule === "None"
-        ) {
-          return { key, noneFields: ((val as Record<string, unknown>).noneFields as string[] | undefined) ?? ["1 Drop", "1", "Times Daily", "Both Eye"] };
-        }
-      }
-    } catch {}
-    return null;
-  }, [form.unit]);
-
-  const isNamedSchedule = Number.isNaN(Number.parseInt(form.schedule, 10)) && form.schedule !== "";
   const [remarksLibrary, setRemarksLibrary] = useState<string[]>(() => loadRemarksLibrary());
 
   function addRemark() {
@@ -6660,73 +6635,34 @@ function ExpandedMedicineForm({
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">Schedule</span>
           <select
-            className="h-8 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+            className="h-8 w-14 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
             value={form.schedule}
-            onChange={(event) => {
-              const val = event.target.value;
-              if (Number.isNaN(Number.parseInt(val, 10))) {
-                // Named schedule (e.g. "Eye Drop") → load saved noneFields
-                const nf = namedSched?.noneFields ?? ["1 Drop", "1", "Times Daily", "Both Eye"];
-                onUpdate({ schedule: val, scheduleDoses: [...nf] });
-              } else {
-                onScheduleChange(val);
-              }
-            }}
+            onChange={(event) => onScheduleChange(event.target.value)}
           >
-            {namedSched && <option value={namedSched.key}>{namedSched.key}</option>}
             {["1", "2", "3", "4", "5", "6"].map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
         </div>
 
-        {/* Dose inputs — 4-box mode for named schedule, numeric mode otherwise */}
-        {isNamedSchedule ? (
-          <div className="flex flex-wrap items-center gap-1">
-            <Input
-              className="h-8 w-20 rounded-sm bg-background px-2 text-sm font-semibold text-red-600"
-              value={form.scheduleDoses[0] ?? ""}
-              onChange={(e) => { const d = [...form.scheduleDoses]; d[0] = e.target.value; onUpdate({ scheduleDoses: d }); }}
-            />
-            <select
-              className="h-8 rounded-sm border bg-background px-2 text-sm outline-none"
-              value={form.scheduleDoses[1] ?? "1"}
-              onChange={(e) => { const d = [...form.scheduleDoses]; d[1] = e.target.value; onUpdate({ scheduleDoses: d }); }}
-            >
-              {["1","2","3","4","5","6","7","8","9"].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <Input
-              className="h-8 w-24 rounded-sm bg-background px-2 text-sm font-semibold text-red-600"
-              value={form.scheduleDoses[2] ?? ""}
-              onChange={(e) => { const d = [...form.scheduleDoses]; d[2] = e.target.value; onUpdate({ scheduleDoses: d }); }}
-            />
-            <select
-              className="h-8 rounded-sm border bg-background px-2 text-sm outline-none"
-              value={form.scheduleDoses[3] ?? "Both Eye"}
-              onChange={(e) => { const d = [...form.scheduleDoses]; d[3] = e.target.value; onUpdate({ scheduleDoses: d }); }}
-            >
-              {["Right Eye", "Left Eye", "Both Eye"].map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-1">
-            {Array.from({ length: schedCount }, (_, i) => (
-              <div key={i} className="flex items-center gap-0.5">
-                <Input
-                  className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
-                  inputMode="decimal"
-                  min="0"
-                  type="number"
-                  value={form.scheduleDoses[i] ?? ""}
-                  onChange={(event) => onScheduleDose(i, event.target.value)}
-                />
-                {i < schedCount - 1 && (
-                  <span className="select-none text-xs text-muted-foreground">+</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Dose inputs */}
+        <div className="flex flex-wrap items-center gap-1">
+          {Array.from({ length: schedCount }, (_, i) => (
+            <div key={i} className="flex items-center gap-0.5">
+              <Input
+                className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
+                inputMode="decimal"
+                min="0"
+                type="number"
+                value={form.scheduleDoses[i] ?? ""}
+                onChange={(event) => onScheduleDose(i, event.target.value)}
+              />
+              {i < schedCount - 1 && (
+                <span className="select-none text-xs text-muted-foreground">+</span>
+              )}
+            </div>
+          ))}
+        </div>
 
         {/* 3. for (hidden when Continue is checked) */}
         {!form.continueMedicine && (
