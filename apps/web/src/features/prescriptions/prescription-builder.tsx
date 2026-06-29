@@ -991,7 +991,7 @@ export function PrescriptionBuilder() {
   const medicineSearch = useQuery({
     queryKey: ["medicine-search", debouncedMedicineQuery, token],
     enabled: debouncedMedicineQuery.length > 1 && Boolean(token),
-    queryFn: () => fetchMedicineList({ q: debouncedMedicineQuery, limit: 8 }, token!)
+    queryFn: () => fetchMedicineList({ q: debouncedMedicineQuery, limit: 40 }, token!)
   });
 
   const doctorsQuery = useQuery({

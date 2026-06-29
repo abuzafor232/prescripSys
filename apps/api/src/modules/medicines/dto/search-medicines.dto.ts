@@ -10,6 +10,6 @@ export class SearchMedicinesDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(50)
-  limit = 20;
+  @Max(100)
+  limit = 40;
 }
