@@ -1706,11 +1706,13 @@ import { IMAGE_DEFAULTS, loadDosageFormPositions, saveDosageFormPositions } from
 const SCHEDULE_KEY = "rx-dosage-form-schedule";
 
 type FormSched = {
-  schedule: string;         // "1"–"6"
-  scheduleDoses: string[];  // one entry per schedule count
+  schedule: string;         // "None" | "1"–"6"
+  scheduleDoses: string[];
   durationValue: string;
   durationUnit: string;
   continueMedicine: boolean;
+  // used when schedule === "None": [text, digit1-9, text, eye-side]
+  noneFields: [string, string, string, string];
 };
 type FormSchedules = Record<string, FormSched>;
 
@@ -1720,6 +1722,7 @@ const DEFAULT_SCHED: FormSched = {
   durationValue: "0",
   durationUnit: "Day",
   continueMedicine: false,
+  noneFields: ["", "1", "", "Both Eye"],
 };
 
 function loadSchedules(): FormSchedules {
@@ -1773,7 +1776,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   function getSched(form: string): FormSched {
     const v = schedules[form];
     if (!v || typeof v !== "object" || !("scheduleDoses" in v)) return { ...DEFAULT_SCHED };
-    return v;
+    return { ...DEFAULT_SCHED, ...v, noneFields: (v.noneFields ?? ["","1","","Both Eye"]) };
   }
 
   function patchSched(form: string, patch: Partial<FormSched>) {
@@ -1783,7 +1786,11 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   }
 
   function setSchedCount(form: string, count: string) {
-    if (count === "None") { patchSched(form, { schedule: "None", scheduleDoses: [] }); return; }
+    if (count === "None") {
+      const cur = getSched(form);
+      patchSched(form, { schedule: "None", scheduleDoses: [], noneFields: cur.noneFields ?? ["","1","","Both Eye"] });
+      return;
+    }
     const n = Math.max(1, Math.min(6, parseInt(count, 10) || 1));
     const current = getSched(form);
     const doses = Array.from({ length: n }, (_, i) => current.scheduleDoses[i] ?? "0");
@@ -1895,40 +1902,62 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                   </select>
                 </div>
 
-                {/* Dose inputs — hidden when None */}
-                {!isNone && (
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: count }, (_, i) => (
-                      <div key={i} className="flex items-center gap-0.5">
-                        <input type="number" min="0" className={numCls}
-                          value={sched.scheduleDoses[i] ?? ""}
-                          onChange={(e) => setSchedDose(form, i, e.target.value)} />
-                        {i < count - 1 && <span className="select-none text-xs text-muted-foreground">+</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Duration and Continue — hidden when None */}
-                {!isNone && !sched.continueMedicine && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground">for</span>
-                    <input type="number" min="0" className={numCls}
-                      value={sched.durationValue}
-                      onChange={(e) => patchSched(form, { durationValue: e.target.value })} />
-                    <select className={cn(selCls, "w-20")} value={sched.durationUnit}
-                      onChange={(e) => patchSched(form, { durationUnit: e.target.value })}>
-                      {["Day","Month","Year"].map((u) => <option key={u} value={u}>{u}</option>)}
+                {/* None → 4 custom fields */}
+                {isNone ? (
+                  <>
+                    <input type="text" className={cn(numCls, "w-16")}
+                      value={sched.noneFields[0]}
+                      onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[0]=e.target.value; patchSched(form,{noneFields:f}); }} />
+                    <select className={cn(selCls, "w-14")}
+                      value={sched.noneFields[1]}
+                      onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[1]=e.target.value; patchSched(form,{noneFields:f}); }}>
+                      {["1","2","3","4","5","6","7","8","9"].map((n) => <option key={n} value={n}>{n}</option>)}
                     </select>
-                  </div>
-                )}
-                {!isNone && (
-                  <label className="flex cursor-pointer select-none items-center gap-1.5">
-                    <span className="text-xs font-semibold">Continue</span>
-                    <input type="checkbox" className="h-4 w-4 cursor-pointer accent-primary"
-                      checked={sched.continueMedicine}
-                      onChange={(e) => patchSched(form, { continueMedicine: e.target.checked })} />
-                  </label>
+                    <input type="text" className={cn(numCls, "w-20")}
+                      value={sched.noneFields[2]}
+                      onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[2]=e.target.value; patchSched(form,{noneFields:f}); }} />
+                    <select className={cn(selCls, "w-24")}
+                      value={sched.noneFields[3]}
+                      onChange={(e) => { const f = [...sched.noneFields] as [string,string,string,string]; f[3]=e.target.value; patchSched(form,{noneFields:f}); }}>
+                      {["Right Eye","Left Eye","Both Eye"].map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    {/* Dose inputs */}
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: count }, (_, i) => (
+                        <div key={i} className="flex items-center gap-0.5">
+                          <input type="number" min="0" className={numCls}
+                            value={sched.scheduleDoses[i] ?? ""}
+                            onChange={(e) => setSchedDose(form, i, e.target.value)} />
+                          {i < count - 1 && <span className="select-none text-xs text-muted-foreground">+</span>}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Duration */}
+                    {!sched.continueMedicine && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">for</span>
+                        <input type="number" min="0" className={numCls}
+                          value={sched.durationValue}
+                          onChange={(e) => patchSched(form, { durationValue: e.target.value })} />
+                        <select className={cn(selCls, "w-20")} value={sched.durationUnit}
+                          onChange={(e) => patchSched(form, { durationUnit: e.target.value })}>
+                          {["Day","Month","Year"].map((u) => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Continue */}
+                    <label className="flex cursor-pointer select-none items-center gap-1.5">
+                      <span className="text-xs font-semibold">Continue</span>
+                      <input type="checkbox" className="h-4 w-4 cursor-pointer accent-primary"
+                        checked={sched.continueMedicine}
+                        onChange={(e) => patchSched(form, { continueMedicine: e.target.checked })} />
+                    </label>
+                  </>
                 )}
               </div>
             </div>
