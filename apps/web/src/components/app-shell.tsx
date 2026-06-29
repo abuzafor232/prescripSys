@@ -1715,8 +1715,8 @@ type FormSched = {
 type FormSchedules = Record<string, FormSched>;
 
 const DEFAULT_SCHED: FormSched = {
-  schedule: "None",
-  scheduleDoses: [],
+  schedule: "3",
+  scheduleDoses: ["0", "0", "0"],
   durationValue: "0",
   durationUnit: "Day",
   continueMedicine: false,
