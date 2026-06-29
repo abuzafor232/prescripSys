@@ -916,8 +916,11 @@ export function PrescriptionBuilder() {
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [patientForm, setPatientForm] = useState<PatientFormState>(initialPatientForm);
   const [patientFormError, setPatientFormError] = useState("");
-  const [medicineQuery, setMedicineQuery] = useState("");
-  const [medicationNote, setMedicationNote] = useState("");
+  const [medicineQuery, setMedicineQuery]           = useState("");
+  const [medicationNote, setMedicationNote]         = useState("");
+  const [medicationSessions, setMedicationSessions] = useState<MedicineSession[]>([]);
+  const [medicationExpandedIdx, setMedicationExpandedIdx] = useState<number | null>(null);
+  const [medicationCustomForm, setMedicationCustomForm]   = useState<CustomMedicineFormState>(initialCustomMedicineForm);
   const [medicines, setMedicines] = useState<RxMedicine[]>([]);
   const [complaints, setComplaints] = useState<ComplaintEntry[]>([]);
   const [histories, setHistories] = useState<HistoryEntry[]>([]);
@@ -3058,13 +3061,19 @@ export function PrescriptionBuilder() {
           showSearchPanel={showSearchPanel}
           value={medicationNote}
           waitingForDebounce={waitingForDebounce}
+          sessions={medicationSessions}
+          expandedIdx={medicationExpandedIdx}
+          customForm={medicationCustomForm}
           onAddMedicine={addMedicine}
           onAddCustomMedicine={addCustomMedicine}
           onUpdateMedicine={updateMedicine}
           onChange={setMedicationNote}
-          onClear={() => clearPanel("medication")}
+          onClear={() => { clearPanel("medication"); setMedicationSessions([]); setMedicationExpandedIdx(null); setMedicationCustomForm(initialCustomMedicineForm); }}
           onClose={() => setActivePanel(null)}
           onQueryChange={setMedicineQuery}
+          onSessionsChange={setMedicationSessions}
+          onExpandedIdxChange={setMedicationExpandedIdx}
+          onCustomFormChange={setMedicationCustomForm}
           onStatus={showStatus}
         />
       ) : activePanel === "advice" ? (
@@ -6020,6 +6029,9 @@ type MedicationSidebarProps = {
   showSearchPanel: boolean;
   value: string;
   waitingForDebounce: boolean;
+  sessions: MedicineSession[];
+  expandedIdx: number | null;
+  customForm: CustomMedicineFormState;
   onAddMedicine: (item: MedicineSearchResult) => void;
   onAddCustomMedicine: (medicine: RxMedicine) => void;
   onUpdateMedicine: (index: number, patch: Partial<RxMedicine>) => void;
@@ -6027,6 +6039,9 @@ type MedicationSidebarProps = {
   onClear: () => void;
   onClose: () => void;
   onQueryChange: (value: string) => void;
+  onSessionsChange: (s: MedicineSession[]) => void;
+  onExpandedIdxChange: (i: number | null) => void;
+  onCustomFormChange: (f: CustomMedicineFormState) => void;
   onStatus: (tone: "success" | "warning", text: string) => void;
 };
 
@@ -6074,6 +6089,9 @@ function MedicationSidebar({
   showSearchPanel,
   value,
   waitingForDebounce,
+  sessions,
+  expandedIdx,
+  customForm,
   onAddMedicine,
   onAddCustomMedicine,
   onUpdateMedicine,
@@ -6081,13 +6099,16 @@ function MedicationSidebar({
   onClear,
   onClose,
   onQueryChange,
+  onSessionsChange,
+  onExpandedIdxChange,
+  onCustomFormChange,
   onStatus
 }: MedicationSidebarProps) {
   const token = useSessionStore((s) => s.accessToken) ?? "";
-  const [sessions, setSessions]         = useState<MedicineSession[]>([]);
-  const [expandedIdx, setExpandedIdx]   = useState<number | null>(null);
-  const [customMedicine, setCustomMedicine] = useState<CustomMedicineFormState>(initialCustomMedicineForm);
-  const [showDoses, setShowDoses]       = useState(false);
+  const setSessions   = onSessionsChange;
+  const setExpandedIdx = onExpandedIdxChange;
+  const customMedicine = customForm;
+  const [showDoses, setShowDoses] = useState(false);
   const [favStore, setFavStore]         = useState<FavStore>(() => loadFavStore());
   const [dosageFilter, setDosageFilter] = useState<string | null>(null);
 
@@ -6154,11 +6175,9 @@ function MedicationSidebar({
   // ── Update form state + immediately sync to prescription ────────────────
   function updateCustomMedicine(patch: Partial<CustomMedicineFormState>) {
     const merged = { ...customMedicine, ...patch };
-    setCustomMedicine(merged);
+    onCustomFormChange(merged);
     if (expandedIdx !== null) {
-      setSessions((prev) =>
-        prev.map((s, i) => i === expandedIdx ? { ...s, form: merged } : s)
-      );
+      setSessions(sessions.map((s, i) => i === expandedIdx ? { ...s, form: merged } : s));
       const session = sessions[expandedIdx];
       if (session) onUpdateMedicine(session.prescIdx, buildRxMedicine(merged));
     }
@@ -6181,9 +6200,9 @@ function MedicationSidebar({
     onAddCustomMedicine(buildRxMedicine(form));
 
     const newIdx = sessions.length;
-    setSessions((prev) => [...prev, { search: item, form, prescIdx: medicines.length }]);
+    setSessions([...sessions, { search: item, form, prescIdx: medicines.length }]);
     setExpandedIdx(newIdx);
-    setCustomMedicine(form);
+    onCustomFormChange(form);
     setShowDoses(false);
     onQueryChange("");
   }
@@ -6196,7 +6215,7 @@ function MedicationSidebar({
     } else {
       saveExpanded();
       setExpandedIdx(idx);
-      setCustomMedicine(sessions[idx].form);
+      onCustomFormChange(sessions[idx].form);
       setShowDoses(false);
     }
   }
@@ -6487,9 +6506,9 @@ function MedicationSidebar({
                       className="absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
                       type="button"
                       onClick={() => {
-                        setSessions((prev) => prev.filter((_, i) => i !== idx));
-                        setExpandedIdx((prev) =>
-                          prev === null ? null : prev === idx ? null : prev > idx ? prev - 1 : prev
+                        setSessions(sessions.filter((_, i) => i !== idx));
+                        setExpandedIdx(
+                          expandedIdx === null ? null : expandedIdx === idx ? null : expandedIdx > idx ? expandedIdx - 1 : expandedIdx
                         );
                       }}
                     >
