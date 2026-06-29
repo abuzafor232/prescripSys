@@ -6112,6 +6112,8 @@ function MedicationSidebar({
   const [favStore, setFavStore]         = useState<FavStore>(() => loadFavStore());
   const [dosageFilter, setDosageFilter] = useState<string | null>(null);
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const { data: dosageFormOptions } = useQuery({
     queryKey: ["medicine-dosage-forms"],
     queryFn: () => apiFetch<string[]>("/medicines/dosage-forms", { token }),
@@ -6205,6 +6207,8 @@ function MedicationSidebar({
     onCustomFormChange(form);
     setShowDoses(false);
     onQueryChange("");
+    // Keep focus in search box so user can immediately search next medicine
+    setTimeout(() => searchInputRef.current?.focus(), 0);
   }
 
   // ── Toggle expand / collapse a session ──────────────────────────────────
@@ -6295,6 +6299,7 @@ function MedicationSidebar({
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             autoFocus
             className="h-9 bg-background pl-9 focus-visible:ring-primary"
             placeholder="Search medicine by name or generic…"
