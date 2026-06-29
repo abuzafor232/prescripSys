@@ -1765,9 +1765,9 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
             placeholder="Search formation…"
             className="h-8 w-full rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
           />
-          {searchOpen && available.filter((f) => f.toLowerCase().includes(newForm.toLowerCase())).length > 0 && (
+          {searchOpen && apiForms.filter((f) => f.toLowerCase().includes(newForm.toLowerCase())).length > 0 && (
             <div className="absolute left-0 top-full z-50 mt-0.5 max-h-48 w-full overflow-y-auto rounded border bg-popover shadow-lg">
-              {available
+              {apiForms
                 .filter((f) => f.toLowerCase().includes(newForm.toLowerCase()))
                 .map((f) => (
                   <button
