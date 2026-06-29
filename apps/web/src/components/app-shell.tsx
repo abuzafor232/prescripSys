@@ -1899,8 +1899,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                   <span className="text-xs text-muted-foreground">Schedule</span>
                   <select className={cn(selCls, "w-14")} value={sched.schedule}
                     onChange={(e) => setSchedCount(form, e.target.value)}>
-                    <option value="None">{form}</option>
-                    {["1","2","3","4","5","6"].map((n) => <option key={n} value={n}>{n}</option>)}
+                    {["None","1","2","3","4","5","6"].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </div>
 
