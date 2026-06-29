@@ -1702,16 +1702,18 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
 
 import type { DosageFormPositions } from "@/lib/dosage-form-position";
 import { IMAGE_DEFAULTS, loadDosageFormPositions, saveDosageFormPositions } from "@/lib/dosage-form-position";
+import type { FormSchedules } from "@/lib/dosage-form-schedule";
+import { defaultDoseUnit, getFormSchedule, loadFormSchedules, saveFormSchedules } from "@/lib/dosage-form-schedule";
 
 function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   const token = useSessionStore((s) => s.accessToken) ?? "";
 
   const [apiForms, setApiForms] = useState<string[]>([]);
-  // positions stores USER overrides only; defaults come from IMAGE_DEFAULTS via getDosageFormPosition
   const [positions, setPositions] = useState<DosageFormPositions>(() => loadDosageFormPositions());
-  const [newForm, setNewForm]         = useState("");
-  const [searchOpen, setSearchOpen]   = useState(false);
-  const [newPos, setNewPos]           = useState<"before" | "after">("before");
+  const [schedules, setSchedules] = useState<FormSchedules>(() => loadFormSchedules());
+  const [newForm, setNewForm]     = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [newPos, setNewPos]       = useState<"before" | "after">("before");
 
   useEffect(() => {
     if (!token) return;
@@ -1720,10 +1722,8 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
       .catch(() => {});
   }, [token]);
 
-  // All forms in the panel = API forms + any extras the user added
   const extraForms = Object.keys(positions).filter((f) => !apiForms.includes(f));
   const allForms   = [...apiForms, ...extraForms];
-  const available  = apiForms.filter((f) => !allForms.includes(f));
 
   function getPos(form: string): "before" | "after" {
     if (form in positions) return positions[form];
@@ -1736,6 +1736,17 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
     const next = { ...positions, [form]: pos };
     setPositions(next);
     saveDosageFormPositions(next);
+  }
+
+  function getSched(form: string) {
+    return schedules[form] ?? getFormSchedule(form);
+  }
+
+  function updateSched(form: string, patch: Partial<{ doseAmount: string; doseUnit: string; frequency: string }>) {
+    const current = getSched(form);
+    const next = { ...schedules, [form]: { ...current, ...patch } };
+    setSchedules(next);
+    saveFormSchedules(next);
   }
 
   function handleAdd() {
@@ -1751,9 +1762,12 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
       active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
     );
 
+  const numInput = "h-8 w-14 rounded border bg-background px-2 text-center text-sm font-semibold text-red-600 outline-none focus:ring-1 focus:ring-primary";
+  const unitInput = "h-8 w-16 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary";
+
   return (
-    <div className="mx-auto max-w-3xl p-4 lg:p-6">
-      {/* Top add bar — same layout as image */}
+    <div className="mx-auto max-w-4xl p-4 lg:p-6">
+      {/* Top add bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
         <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
         <div className="relative flex-1 min-w-40">
@@ -1799,21 +1813,58 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      {/* List */}
+      {/* List with header */}
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+        {/* Column header */}
+        <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground">
+          <span className="flex-1">Formation</span>
+          <span className="w-24 shrink-0 text-center">Position</span>
+          <span className="shrink-0 text-center">Schedule</span>
+        </div>
+
         {allForms.length === 0 ? (
           <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading…
           </div>
         ) : allForms.map((form) => {
-          const pos = getPos(form);
+          const pos   = getPos(form);
+          const sched = getSched(form);
           return (
             <div key={form}
-              className="flex items-center justify-between gap-3 border-b px-4 py-2.5 last:border-0 hover:bg-muted/20 transition-colors">
-              <span className="text-sm font-medium text-foreground">{form}</span>
-              <div className="flex shrink-0 items-center gap-1">
+              className="flex flex-wrap items-center gap-3 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
+              {/* Formation name */}
+              <span className="flex-1 text-sm font-medium text-foreground">{form}</span>
+
+              {/* Position toggle */}
+              <div className="flex w-24 shrink-0 items-center gap-1">
                 <button type="button" className={rowBtn(pos === "before")} onClick={() => toggle(form, "before")}>Before</button>
                 <button type="button" className={rowBtn(pos === "after")}  onClick={() => toggle(form, "after")}>After</button>
+              </div>
+
+              {/* Schedule: [amount] [unit] [frequency] Times Daily */}
+              <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="number"
+                  min="0"
+                  className={numInput}
+                  value={sched.doseAmount}
+                  onChange={(e) => updateSched(form, { doseAmount: e.target.value })}
+                />
+                <input
+                  type="text"
+                  className={unitInput}
+                  value={sched.doseUnit}
+                  onChange={(e) => updateSched(form, { doseUnit: e.target.value })}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  className={numInput}
+                  value={sched.frequency}
+                  onChange={(e) => updateSched(form, { frequency: e.target.value })}
+                  placeholder="×"
+                />
+                <span className="whitespace-nowrap">Times Daily</span>
               </div>
             </div>
           );
@@ -1824,7 +1875,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
       <div className="mt-4 flex justify-end">
         <button
           type="button"
-          onClick={() => { saveDosageFormPositions(positions); onClose(); }}
+          onClick={() => { saveDosageFormPositions(positions); saveFormSchedules(schedules); onClose(); }}
           className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Save &amp; Exit
