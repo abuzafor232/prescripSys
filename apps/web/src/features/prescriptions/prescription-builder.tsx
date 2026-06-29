@@ -6432,7 +6432,7 @@ function MedicationSidebar({
               return (
                 <div key={idx} className="overflow-hidden rounded-md border border-border bg-card">
                   {/* Card header */}
-                  <div className="relative flex items-center gap-1.5 border-b border-border bg-muted/50 px-2 py-1.5 pr-8">
+                  <div className="relative flex items-center gap-1.5 border-b border-border bg-muted/50 px-2 py-1.5 pr-16">
                     <span className="shrink-0 text-xs font-bold text-muted-foreground">{idx + 1}.</span>
                     <button
                       type="button"
@@ -6446,10 +6446,17 @@ function MedicationSidebar({
                       {session.search.strength && (
                         <span className="shrink-0 text-xs font-normal text-muted-foreground">({session.search.strength})</span>
                       )}
+                      {!isExpanded && doseLabel && (
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          &nbsp;{doseLabel}
+                          {form.continueMedicine
+                            ? " · Continue"
+                            : form.durationValue && form.durationValue !== "0"
+                              ? ` · ${form.durationValue} ${form.durationUnit}`
+                              : ""}
+                        </span>
+                      )}
                     </button>
-                    {!isExpanded && doseLabel && (
-                      <span className="shrink-0 text-xs text-muted-foreground">{doseLabel} {form.unit}</span>
-                    )}
                     {isExpanded && (
                       <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1">
                         <button
@@ -6508,7 +6515,7 @@ function MedicationSidebar({
                     )}
                     <button
                       aria-label="Remove"
-                      className="absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold text-white transition-colors hover:bg-red-600"
                       type="button"
                       onClick={() => {
                         setSessions(sessions.filter((_, i) => i !== idx));
