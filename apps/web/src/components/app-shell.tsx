@@ -41,7 +41,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
-import { fetchCurrentUser, logoutSession, refreshAccessToken, loginWithPassword } from "@/lib/api";
+import { fetchCurrentUser, logoutSession, refreshAccessToken, loginWithPassword, apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useSessionHydrated, useSessionStore } from "@/stores/session-store";
 
@@ -1696,6 +1696,172 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ─── Drug Formation Order ────────────────────────────────────────────────────
+
+const DRUG_FORM_ORDER_KEY = "rx-dosage-form-order";
+
+export function loadDosageFormOrder(): string[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(DRUG_FORM_ORDER_KEY) ?? "[]") as string[]; }
+  catch { return []; }
+}
+
+function saveDosageFormOrder(order: string[]) {
+  try { localStorage.setItem(DRUG_FORM_ORDER_KEY, JSON.stringify(order)); } catch {}
+}
+
+function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
+  const token = useSessionStore((s) => s.accessToken) ?? "";
+
+  const [apiForms, setApiForms] = useState<string[]>([]);
+  const [order, setOrder]       = useState<string[]>(() => loadDosageFormOrder());
+  const [newForm, setNewForm]   = useState("");
+  const [insertMode, setInsertMode] = useState<"before" | "after">("after");
+  const [savedIdx, setSavedIdx]     = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    apiFetch<string[]>("/medicines/dosage-forms", { token })
+      .then((forms) => {
+        setApiForms(forms);
+        setOrder((prev) => {
+          if (prev.length > 0) return prev;
+          saveDosageFormOrder(forms);
+          return forms;
+        });
+      })
+      .catch(() => {});
+  }, [token]);
+
+  const available = apiForms.filter((f) => !order.includes(f));
+
+  function commitOrder(next: string[]) {
+    setOrder(next);
+    saveDosageFormOrder(next);
+  }
+
+  function moveUp(idx: number) {
+    if (idx === 0) return;
+    const next = [...order];
+    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+    commitOrder(next);
+  }
+
+  function moveDown(idx: number) {
+    if (idx === order.length - 1) return;
+    const next = [...order];
+    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+    commitOrder(next);
+  }
+
+  function handleAdd() {
+    const name = newForm.trim();
+    if (!name || order.includes(name)) return;
+    const next = insertMode === "before" ? [name, ...order] : [...order, name];
+    commitOrder(next);
+    setNewForm("");
+  }
+
+  function handleUpdate(idx: number) {
+    saveDosageFormOrder(order);
+    setSavedIdx(idx);
+    setTimeout(() => setSavedIdx(null), 1500);
+  }
+
+  const btnBase = "px-3 py-1 rounded text-xs font-semibold transition-colors";
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-5 p-4 lg:p-6">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-base font-bold text-foreground">Drug Formation Order</h1>
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Add new formation row */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
+        <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
+        <select
+          value={newForm}
+          onChange={(e) => setNewForm(e.target.value)}
+          className="h-8 flex-1 min-w-40 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+        >
+          <option value="">Select a formation</option>
+          {available.map((f) => <option key={f} value={f}>{f}</option>)}
+          <option value="__custom__" disabled>── or type below ──</option>
+        </select>
+        {/* Manual type */}
+        <input
+          value={newForm}
+          onChange={(e) => setNewForm(e.target.value)}
+          placeholder="or type name…"
+          className="h-8 w-36 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+        />
+        <button
+          type="button"
+          className={cn(btnBase, insertMode === "before" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70")}
+          onClick={() => setInsertMode("before")}
+        >Before</button>
+        <button
+          type="button"
+          className={cn(btnBase, insertMode === "after" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70")}
+          onClick={() => setInsertMode("after")}
+        >After</button>
+        <button
+          type="button"
+          disabled={!newForm.trim()}
+          onClick={handleAdd}
+          className={cn(btnBase, "flex items-center gap-1 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed")}
+        >
+          <Plus className="h-3 w-3" />Add
+        </button>
+      </div>
+
+      {/* Ordered list */}
+      <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+        {order.length === 0 ? (
+          <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading formations…
+          </div>
+        ) : order.map((form, idx) => (
+          <div
+            key={form}
+            className={cn(
+              "flex items-center justify-between gap-3 border-b px-4 py-2.5 last:border-0 transition-colors",
+              savedIdx === idx ? "bg-primary/5" : "hover:bg-muted/30"
+            )}
+          >
+            <span className="text-sm font-medium text-foreground">{form}</span>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => moveUp(idx)}
+                disabled={idx === 0}
+                className={cn(btnBase, idx === 0 ? "bg-muted text-muted-foreground opacity-50 cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90")}
+              >Before</button>
+              <button
+                type="button"
+                onClick={() => moveDown(idx)}
+                disabled={idx === order.length - 1}
+                className={cn(btnBase, idx === order.length - 1 ? "bg-muted text-muted-foreground opacity-50 cursor-not-allowed" : "bg-cyan-500 text-white hover:bg-cyan-600")}
+              >After</button>
+              <button
+                type="button"
+                onClick={() => handleUpdate(idx)}
+                className="flex items-center gap-1 rounded bg-teal-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-teal-700"
+              >
+                {savedIdx === idx ? "✓ Saved" : "↻ Update"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Chamber Settings Dialog ─────────────────────────────────────────────────
 
 function AppShellChamberSettingsDialog({
@@ -1794,8 +1960,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [verifyError, setVerifyError] = useState("");
   const [verifying, setVerifying] = useState(false);
   const verifyCallback = useRef<() => void>(() => {});
-  const [settingsOpen,      setSettingsOpen]      = useState(false);
-  const [apptSettingsOpen,  setApptSettingsOpen]  = useState(false);
+  const [settingsOpen,        setSettingsOpen]        = useState(false);
+  const [apptSettingsOpen,    setApptSettingsOpen]    = useState(false);
+  const [drugFormOrderOpen,   setDrugFormOrderOpen]   = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const avatarRef    = useRef<HTMLDivElement>(null);
@@ -2209,6 +2376,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
                     Appointment Settings
                   </button>
+
+                  {/* Drug Formation Order */}
+                  <button
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground transition hover:bg-muted"
+                    onClick={() => { setSettingsOpen(false); setDrugFormOrderOpen(true); }}
+                  >
+                    <Pill className="h-3.5 w-3.5 text-muted-foreground" />
+                    Drug Formation Order
+                  </button>
                 </div>
               )}
             </div>
@@ -2278,6 +2454,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 }
               }}
             />
+          ) : drugFormOrderOpen ? (
+            <DrugFormationOrderPanel onClose={() => setDrugFormOrderOpen(false)} />
           ) : children}
         </main>
       </div>
