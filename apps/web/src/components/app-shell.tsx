@@ -1740,7 +1740,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
   function handleAdd() {
     const name = newForm.trim();
-    if (!name || allForms.includes(name)) return;
+    if (!name) return;
     toggle(name, newPos);
     setNewForm("");
   }
@@ -1773,10 +1773,13 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                   <button
                     key={f}
                     type="button"
-                    onMouseDown={() => { setNewForm(f); setSearchOpen(false); }}
-                    className="flex w-full items-center px-3 py-1.5 text-left text-xs hover:bg-muted"
+                    onMouseDown={() => { setNewForm(f); setNewPos(getPos(f)); setSearchOpen(false); }}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-muted"
                   >
-                    {f}
+                    <span>{f}</span>
+                    <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold", getPos(f) === "before" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
+                      {getPos(f) === "before" ? "Before" : "After"}
+                    </span>
                   </button>
                 ))}
             </div>
