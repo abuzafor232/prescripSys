@@ -1703,15 +1703,24 @@ function AppointmentSettingsModal({ onClose }: { onClose: () => void }) {
 import type { DosageFormPositions } from "@/lib/dosage-form-position";
 import { IMAGE_DEFAULTS, loadDosageFormPositions, saveDosageFormPositions } from "@/lib/dosage-form-position";
 
+const SCHEDULE_KEY = "rx-dosage-form-schedule";
+function loadSchedules(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem(SCHEDULE_KEY) ?? "{}"); } catch { return {}; }
+}
+function saveSchedules(s: Record<string, string>) {
+  try { localStorage.setItem(SCHEDULE_KEY, JSON.stringify(s)); } catch {}
+}
+
 function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   const token = useSessionStore((s) => s.accessToken) ?? "";
 
   const [apiForms, setApiForms] = useState<string[]>([]);
-  // positions stores USER overrides only; defaults come from IMAGE_DEFAULTS via getDosageFormPosition
   const [positions, setPositions] = useState<DosageFormPositions>(() => loadDosageFormPositions());
-  const [newForm, setNewForm]         = useState("");
-  const [searchOpen, setSearchOpen]   = useState(false);
-  const [newPos, setNewPos]           = useState<"before" | "after">("before");
+  const [schedules, setSchedules] = useState<Record<string, string>>(() => loadSchedules());
+  const [newForm, setNewForm]     = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [newPos, setNewPos]       = useState<"before" | "after">("before");
 
   useEffect(() => {
     if (!token) return;
@@ -1720,10 +1729,8 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
       .catch(() => {});
   }, [token]);
 
-  // All forms in the panel = API forms + any extras the user added
   const extraForms = Object.keys(positions).filter((f) => !apiForms.includes(f));
   const allForms   = [...apiForms, ...extraForms];
-  const available  = apiForms.filter((f) => !allForms.includes(f));
 
   function getPos(form: string): "before" | "after" {
     if (form in positions) return positions[form];
@@ -1736,6 +1743,12 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
     const next = { ...positions, [form]: pos };
     setPositions(next);
     saveDosageFormPositions(next);
+  }
+
+  function setSchedule(form: string, value: string) {
+    const next = { ...schedules, [form]: value };
+    setSchedules(next);
+    saveSchedules(next);
   }
 
   function handleAdd() {
@@ -1752,8 +1765,8 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
     );
 
   return (
-    <div className="mx-auto max-w-3xl p-4 lg:p-6">
-      {/* Top add bar — same layout as image */}
+    <div className="mx-auto max-w-4xl p-4 lg:p-6">
+      {/* Top add bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
         <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
         <div className="relative flex-1 min-w-40">
@@ -1801,6 +1814,13 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
       {/* List */}
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+        {/* Header */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground">
+          <span>Formation</span>
+          <span className="text-center">Position</span>
+          <span>Schedule</span>
+        </div>
+
         {allForms.length === 0 ? (
           <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading…
@@ -1809,12 +1829,19 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
           const pos = getPos(form);
           return (
             <div key={form}
-              className="flex items-center justify-between gap-3 border-b px-4 py-2.5 last:border-0 hover:bg-muted/20 transition-colors">
+              className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
               <span className="text-sm font-medium text-foreground">{form}</span>
               <div className="flex shrink-0 items-center gap-1">
                 <button type="button" className={rowBtn(pos === "before")} onClick={() => toggle(form, "before")}>Before</button>
                 <button type="button" className={rowBtn(pos === "after")}  onClick={() => toggle(form, "after")}>After</button>
               </div>
+              <input
+                type="text"
+                className="h-8 w-full rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                placeholder="e.g. 1 Tab 3 Times Daily"
+                value={schedules[form] ?? ""}
+                onChange={(e) => setSchedule(form, e.target.value)}
+              />
             </div>
           );
         })}
@@ -1824,7 +1851,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
       <div className="mt-4 flex justify-end">
         <button
           type="button"
-          onClick={() => { saveDosageFormPositions(positions); onClose(); }}
+          onClick={() => { saveDosageFormPositions(positions); saveSchedules(schedules); onClose(); }}
           className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Save &amp; Exit
