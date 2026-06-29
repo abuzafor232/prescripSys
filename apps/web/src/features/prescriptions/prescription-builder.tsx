@@ -6098,22 +6098,23 @@ function MedicationSidebar({
     staleTime: 10 * 60_000
   });
 
-  // ── Sorted results: best match first, then alphabetical; favourites float to top in each group ──
+  // ── Sorted results: favourites always first, then best match, then A-Z ──
   const sortedResults = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const fav  = (r: MedicineSearchResult) => (isFavourite(favStore[r.id]) ? 0 : 1);
-    const best = (r: MedicineSearchResult) => {
+    const isFav = (r: MedicineSearchResult) => isFavourite(favStore[r.id]);
+    const matchScore = (r: MedicineSearchResult) => {
       const name = r.brandName.toLowerCase();
       if (name === q) return 0;
       if (name.startsWith(q)) return 1;
       return 2;
     };
     return [...searchResults].sort((a, b) => {
-      const groupA = best(a), groupB = best(b);
-      if (groupA !== groupB) return groupA - groupB;           // best-match group first
-      if (fav(a) !== fav(b)) return fav(a) - fav(b);          // favourites first within group
-      if (groupA === 2) return a.brandName.localeCompare(b.brandName); // alphabetical for "others"
-      return 0;                                                // keep API order for best matches
+      const fa = isFav(a), fb = isFav(b);
+      if (fa !== fb) return fa ? -1 : 1;                                  // all favourites first
+      const ma = matchScore(a), mb = matchScore(b);
+      if (ma !== mb) return ma - mb;                                       // best match next
+      if (ma === 2) return a.brandName.localeCompare(b.brandName);        // A-Z for others
+      return 0;
     });
   }, [searchResults, favStore, query]);
 
