@@ -6088,6 +6088,7 @@ function MedicationSidebar({
   const [customMedicine, setCustomMedicine] = useState<CustomMedicineFormState>(initialCustomMedicineForm);
   const [showDoses, setShowDoses]       = useState(false);
   const [favStore, setFavStore]         = useState<FavStore>(() => loadFavStore());
+  const [dosageFilter, setDosageFilter] = useState<string | null>(null);
 
   const { data: dosageFormOptions } = useQuery({
     queryKey: ["medicine-dosage-forms"],
@@ -6104,6 +6105,10 @@ function MedicationSidebar({
       return bf - af;
     });
   }, [searchResults, favStore]);
+
+  const filteredResults = dosageFilter
+    ? sortedResults.filter((r) => r.dosageForm === dosageFilter)
+    : sortedResults;
 
   // ── Build RxMedicine from form state ────────────────────────────────────
   function buildRxMedicine(form: CustomMedicineFormState): RxMedicine {
@@ -6281,62 +6286,103 @@ function MedicationSidebar({
               ) : sortedResults.length === 0 ? (
                 <div className="px-3 py-3 text-sm text-muted-foreground">No medicines found</div>
               ) : (
-                <div className="divide-y divide-border">
-                  {sortedResults.map((item) => {
-                    const fav = isFavourite(favStore[item.id]);
-                    return (
-                      <div key={item.id} className="group relative flex items-center bg-popover hover:bg-muted/50">
-                        <button
-                          className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 pr-8 text-left"
-                          type="button"
-                          onClick={() => selectMedicine(item)}
-                        >
-                          {/* Row 1: Brand (Strength) > Dosage Form */}
-                          <div className="flex min-w-0 items-center gap-2">
-                            {fav && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />}
-                            <span className="truncate text-sm font-semibold text-foreground">
-                              {item.brandName}{item.strength ? ` (${item.strength})` : ""}
-                            </span>
-                            {item.dosageForm && (
-                              <span className="ml-auto shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                {item.dosageForm}
-                              </span>
-                            )}
-                          </div>
-                          {/* Row 2: Generic > Company */}
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <span className="truncate text-xs text-primary/80">{item.genericName}</span>
-                            {item.companyName && (
-                              <>
-                                <span className="shrink-0 text-[10px] text-muted-foreground/40">·</span>
-                                <span className="truncate text-xs text-muted-foreground">{item.companyName}</span>
-                              </>
-                            )}
-                          </div>
-                        </button>
-                        {/* Star toggle */}
-                        <button
-                          type="button"
-                          aria-label={fav ? "Remove favourite" : "Add favourite"}
-                          className={cn(
-                            "absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 transition",
-                            fav
-                              ? "text-amber-400 hover:text-amber-500"
-                              : "text-muted-foreground/20 opacity-0 hover:text-amber-400 group-hover:opacity-100"
-                          )}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const next = toggleManualFavourite(item.id, favStore);
-                            saveFavStore(next);
-                            setFavStore(next);
-                          }}
-                        >
-                          <Star className={cn("h-3.5 w-3.5", fav && "fill-amber-400")} />
-                        </button>
+                <>
+                  {/* Results grid — 2 columns, amber cards */}
+                  <div className="grid grid-cols-2 gap-1 p-1.5">
+                    {filteredResults.length === 0 ? (
+                      <div className="col-span-2 px-3 py-3 text-sm text-muted-foreground">
+                        No {dosageFilter} results
                       </div>
-                    );
-                  })}
-                </div>
+                    ) : filteredResults.map((item) => {
+                      const fav = isFavourite(favStore[item.id]);
+                      const titleName = [item.dosageForm, item.brandName].filter(Boolean).join(" ");
+                      return (
+                        <div key={item.id} className="group relative">
+                          <button
+                            className="w-full rounded-md bg-amber-50 px-2.5 py-2 text-left transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/40"
+                            type="button"
+                            onClick={() => selectMedicine(item)}
+                          >
+                            {/* Line 1: Name left, Strength right */}
+                            <div className="flex items-start justify-between gap-1">
+                              <span className="min-w-0 flex-1 truncate text-[11px] font-bold leading-snug text-foreground">
+                                {titleName}
+                              </span>
+                              {item.strength && (
+                                <span className="ml-1 shrink-0 text-[10px] text-muted-foreground">
+                                  {item.strength}
+                                </span>
+                              )}
+                            </div>
+                            {/* Line 2: Generic left, Company right */}
+                            <div className="mt-0.5 flex items-center justify-between gap-1">
+                              <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
+                                {item.genericName}
+                              </span>
+                              {item.companyName && (
+                                <span className="shrink-0 text-[10px] text-muted-foreground">
+                                  {item.companyName}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                          {/* Star toggle */}
+                          <button
+                            type="button"
+                            aria-label={fav ? "Remove favourite" : "Add favourite"}
+                            className={cn(
+                              "absolute right-1 top-1 rounded p-0.5 transition",
+                              fav
+                                ? "text-amber-500"
+                                : "text-muted-foreground/20 opacity-0 hover:text-amber-500 group-hover:opacity-100"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const next = toggleManualFavourite(item.id, favStore);
+                              saveFavStore(next);
+                              setFavStore(next);
+                            }}
+                          >
+                            <Star className={cn("h-3 w-3", fav && "fill-amber-400")} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Dosage form filter chips */}
+                  {dosageFormOptions && dosageFormOptions.length > 0 && (
+                    <div className="flex gap-1 overflow-x-auto border-t border-border px-2 py-1.5 [scrollbar-width:none]">
+                      <button
+                        type="button"
+                        className={cn(
+                          "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition",
+                          !dosageFilter
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground hover:bg-muted/70"
+                        )}
+                        onClick={() => setDosageFilter(null)}
+                      >
+                        RESET
+                      </button>
+                      {dosageFormOptions.map((form) => (
+                        <button
+                          key={form}
+                          type="button"
+                          className={cn(
+                            "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition",
+                            dosageFilter === form
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover:bg-muted/70"
+                          )}
+                          onClick={() => setDosageFilter(form === dosageFilter ? null : form)}
+                        >
+                          {form.replace(".", "").toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ) : null}
