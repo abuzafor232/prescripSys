@@ -62,6 +62,7 @@ import {
   sendPrescriptionEmail
 } from "@/lib/api";
 import { DOSE_PATTERNS, MEAL_INSTRUCTIONS } from "@/lib/prescription-constants";
+import { getDosageFormPosition } from "@/lib/dosage-form-position";
 import { cn, toTitleCase } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useSearchParams } from "next/navigation";
@@ -6295,7 +6296,10 @@ function MedicationSidebar({
                       </div>
                     ) : filteredResults.map((item) => {
                       const fav = isFavourite(favStore[item.id]);
-                      const titleName = [item.dosageForm, item.brandName, item.strength].filter(Boolean).join(" ");
+                      const pos = getDosageFormPosition(item.dosageForm);
+                      const titleName = pos === "before"
+                        ? [item.dosageForm, item.brandName, item.strength].filter(Boolean).join(" ")
+                        : [item.brandName, item.strength, item.dosageForm].filter(Boolean).join(" ");
                       return (
                         <div key={item.id} className="group relative">
                           <button
