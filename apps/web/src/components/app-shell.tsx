@@ -1709,8 +1709,9 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   const [apiForms, setApiForms] = useState<string[]>([]);
   // positions stores USER overrides only; defaults come from IMAGE_DEFAULTS via getDosageFormPosition
   const [positions, setPositions] = useState<DosageFormPositions>(() => loadDosageFormPositions());
-  const [newForm, setNewForm]     = useState("");
-  const [newPos, setNewPos]       = useState<"before" | "after">("before");
+  const [newForm, setNewForm]         = useState("");
+  const [searchOpen, setSearchOpen]   = useState(false);
+  const [newPos, setNewPos]           = useState<"before" | "after">("before");
 
   useEffect(() => {
     if (!token) return;
@@ -1755,20 +1756,32 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
       {/* Top add bar — same layout as image */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
         <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
-        <select
-          value={newForm}
-          onChange={(e) => setNewForm(e.target.value)}
-          className="h-8 flex-1 min-w-40 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-        >
-          <option value="">Select a formation</option>
-          {available.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <input
-          value={newForm}
-          onChange={(e) => setNewForm(e.target.value)}
-          placeholder="or type name…"
-          className="h-8 w-32 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-        />
+        <div className="relative flex-1 min-w-40">
+          <input
+            value={newForm}
+            onChange={(e) => { setNewForm(e.target.value); setSearchOpen(true); }}
+            onFocus={() => setSearchOpen(true)}
+            onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+            placeholder="Search formation…"
+            className="h-8 w-full rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+          />
+          {searchOpen && available.filter((f) => f.toLowerCase().includes(newForm.toLowerCase())).length > 0 && (
+            <div className="absolute left-0 top-full z-50 mt-0.5 max-h-48 w-full overflow-y-auto rounded border bg-popover shadow-lg">
+              {available
+                .filter((f) => f.toLowerCase().includes(newForm.toLowerCase()))
+                .map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onMouseDown={() => { setNewForm(f); setSearchOpen(false); }}
+                    className="flex w-full items-center px-3 py-1.5 text-left text-xs hover:bg-muted"
+                  >
+                    {f}
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
         <button type="button" onClick={() => setNewPos("before")}
           className={cn("px-3 py-1 rounded text-xs font-semibold transition-colors", newPos === "before" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70")}>
           Before
