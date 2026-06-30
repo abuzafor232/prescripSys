@@ -1750,8 +1750,8 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   const [positions, setPositions] = useState<DosageFormPositions>(() => loadDosageFormPositions());
   const [schedules, setSchedules] = useState<FormSchedules>(() => loadSchedules());
   const [newForm, setNewForm]     = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
   const [newPos, setNewPos]       = useState<"before" | "after">("before");
+  const [filterQuery, setFilterQuery] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -1830,31 +1830,12 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
       {/* Top add bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
         <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
-        <div className="relative flex-1 min-w-40">
-          <input
-            value={newForm}
-            onChange={(e) => { setNewForm(e.target.value); setSearchOpen(true); }}
-            onFocus={() => setSearchOpen(true)}
-            onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
-            placeholder="Search formation…"
-            className="h-8 w-full rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-          />
-          {searchOpen && apiForms.filter((f) => f.toLowerCase().includes(newForm.toLowerCase())).length > 0 && (
-            <div className="absolute left-0 top-full z-50 mt-0.5 max-h-48 w-full overflow-y-auto rounded border bg-popover shadow-lg">
-              {apiForms.filter((f) => f.toLowerCase().includes(newForm.toLowerCase())).map((f) => (
-                <button key={f} type="button"
-                  onMouseDown={() => { setNewForm(f); setNewPos(getPos(f)); setSearchOpen(false); }}
-                  className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-muted">
-                  <span>{f}</span>
-                  <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                    getPos(f) === "before" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
-                    {getPos(f) === "before" ? "Before" : "After"}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <input
+          value={newForm}
+          onChange={(e) => setNewForm(e.target.value)}
+          placeholder="Formation name…"
+          className="h-8 flex-1 min-w-32 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+        />
         <button type="button" onClick={() => setNewPos("before")}
           className={cn("px-3 py-1 rounded text-xs font-semibold transition-colors", newPos === "before" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70")}>
           Before
@@ -1874,6 +1855,16 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
+      {/* Filter */}
+      <div className="mb-2">
+        <input
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          placeholder="Search formations…"
+          className="h-8 w-full rounded border bg-background px-3 text-xs outline-none focus:ring-1 focus:ring-primary"
+        />
+      </div>
+
       {/* List — horizontally scrollable so every row stays on one line */}
       <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
         <div className="min-w-max">
@@ -1887,7 +1878,7 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
           <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading…
           </div>
-        ) : allForms.map((form) => {
+        ) : allForms.filter((f) => !filterQuery.trim() || f.toLowerCase().includes(filterQuery.toLowerCase())).map((form) => {
           const pos   = getPos(form);
           const sched = getSched(form);
           const isEyeDrop = sched.schedule === "Eye Drop";
