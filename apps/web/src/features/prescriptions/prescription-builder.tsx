@@ -6480,9 +6480,12 @@ function MedicationSidebar({
               const isExpanded = expandedIdx === idx;
               const form = isExpanded ? customMedicine : session.form;
               const isEyeDropSched = form.schedule === "Eye Drop";
+              const isNoneSched = form.schedule === "None";
               const doseLabel = isEyeDropSched
                 ? form.noneFields.filter(Boolean).join(" ")
-                : form.scheduleDoses.filter(Boolean).join("+");
+                : isNoneSched
+                  ? form.customText
+                  : form.scheduleDoses.filter(Boolean).join("+");
               const sessSchedCount = Number.isNaN(Number.parseInt(form.schedule, 10))
                 ? 0 : Number.parseInt(form.schedule, 10);
               return (
@@ -6690,6 +6693,7 @@ function ExpandedMedicineForm({
         {/* 2. Schedule */}
         {(() => {
           const isEyeDrop = form.schedule === "Eye Drop";
+          const isNone = form.schedule === "None";
           function patchNone(i: number, v: string) {
             const f = [...form.noneFields] as [string, string, string, string];
             f[i] = v;
@@ -6704,12 +6708,24 @@ function ExpandedMedicineForm({
                   value={form.schedule}
                   onChange={(event) => onScheduleChange(event.target.value)}
                 >
+                  {isNone && <option value="None">None</option>}
                   {isEyeDrop && <option value="Eye Drop">Eye Drop</option>}
                   {["1", "2", "3", "4", "5", "6"].map((n) => (
                     <option key={n} value={n}>{n}</option>
                   ))}
                 </select>
               </div>
+
+              {/* None → custom text textarea */}
+              {isNone && (
+                <textarea
+                  rows={1}
+                  className="w-80 resize-y rounded-md border border-input bg-background px-3 py-1.5 text-sm leading-snug outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                  placeholder="Write custom schedule..."
+                  value={form.customText}
+                  onChange={(e) => onUpdate({ customText: e.target.value })}
+                />
+              )}
 
               {/* 4-box mode for Eye Drop schedule */}
               {isEyeDrop ? (
