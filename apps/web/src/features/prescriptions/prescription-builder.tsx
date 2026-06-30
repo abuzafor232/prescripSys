@@ -6500,11 +6500,13 @@ function MedicationSidebar({
                     >
                       <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition", isExpanded ? "" : "-rotate-90")} />
                       <span className="truncate text-sm font-bold uppercase tracking-wide text-foreground">
-                        {session.search.brandName}
+                        {(() => {
+                          const pos = getDosageFormPosition(session.search.dosageForm);
+                          return pos === "before"
+                            ? [session.search.dosageForm, session.search.brandName, session.search.strength].filter(Boolean).join(" ")
+                            : [session.search.brandName, session.search.strength, session.search.dosageForm].filter(Boolean).join(" ");
+                        })()}
                       </span>
-                      {session.search.strength && (
-                        <span className="shrink-0 text-xs font-normal text-muted-foreground">({session.search.strength})</span>
-                      )}
                       {!isExpanded && (doseLabel || form.remarksTags.length > 0 || form.remarks.trim()) && (
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {doseLabel && <>&nbsp;{doseLabel}</>}
