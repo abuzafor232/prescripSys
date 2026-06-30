@@ -3,6 +3,7 @@ import { RedisService } from "../redis/redis.service";
 import { MedicineImportService } from "./medicine-import.service";
 import { MedicineRepository } from "./medicine.repository";
 import { CreateMedicineDto } from "./dto/create-medicine.dto";
+import { UpdateMedicineDto } from "./dto/update-medicine.dto";
 import { ListMedicinesDto } from "./dto/list-medicines.dto";
 import { SearchMedicinesDto } from "./dto/search-medicines.dto";
 
@@ -28,6 +29,12 @@ export class MedicinesService {
 
   async create(dto: CreateMedicineDto) {
     const result = await this.repository.create(dto);
+    await this.redis.delByPrefix("tenant:");
+    return result;
+  }
+
+  async update(id: string, dto: UpdateMedicineDto) {
+    const result = await this.repository.update(id, dto);
     await this.redis.delByPrefix("tenant:");
     return result;
   }

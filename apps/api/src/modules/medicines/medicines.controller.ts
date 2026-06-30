@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@bd-prescription/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -7,6 +7,7 @@ import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import type { RequestUser } from "../../common/types/request-user";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateMedicineDto } from "./dto/create-medicine.dto";
+import { UpdateMedicineDto } from "./dto/update-medicine.dto";
 import { ImportMedicinesDto } from "./dto/import-medicines.dto";
 import { ListMedicinesDto } from "./dto/list-medicines.dto";
 import { SearchMedicinesDto } from "./dto/search-medicines.dto";
@@ -42,6 +43,12 @@ export class MedicinesController {
   @Post()
   create(@Body() dto: CreateMedicineDto) {
     return this.medicines.create(dto);
+  }
+
+  @Permissions(PERMISSIONS.MEDICINES_MANAGE)
+  @Patch(":id")
+  update(@Param("id") id: string, @Body() dto: UpdateMedicineDto) {
+    return this.medicines.update(id, dto);
   }
 
   @Permissions(PERMISSIONS.MEDICINES_MANAGE)

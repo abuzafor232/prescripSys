@@ -402,6 +402,14 @@ export function createMedicine(input: CreateMedicineInput, token: string) {
   });
 }
 
+export function updateMedicine(id: string, input: Partial<CreateMedicineInput>, token: string) {
+  return apiFetch<MedicineListItem>(`/medicines/${id}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(input)
+  });
+}
+
 export function fetchMedicineList(
   params: { q?: string; searchType?: "trade" | "generic"; page?: number; limit?: number },
   token: string

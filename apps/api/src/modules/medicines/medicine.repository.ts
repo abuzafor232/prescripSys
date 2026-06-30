@@ -7,6 +7,7 @@ import {
   normalizeSearchText
 } from "../../common/utils/search-normalizer";
 import { CreateMedicineDto } from "./dto/create-medicine.dto";
+import { UpdateMedicineDto } from "./dto/update-medicine.dto";
 import { ListMedicinesDto } from "./dto/list-medicines.dto";
 
 export type MedicineSearchRow = {
@@ -174,6 +175,44 @@ export class MedicineRepository {
       data:  rows,
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) }
     };
+  }
+
+  async update(id: string, dto: UpdateMedicineDto) {
+    const data: Prisma.MedicineUpdateInput = {};
+    if (dto.brandName   !== undefined) {
+      data.brandName        = dto.brandName;
+      data.normalizedBrand  = normalizeSearchText(dto.brandName);
+    }
+    if (dto.genericName !== undefined) {
+      data.genericName       = dto.genericName;
+      data.normalizedGeneric = normalizeSearchText(dto.genericName);
+    }
+    if (dto.strength    !== undefined) data.strength    = dto.strength    || null;
+    if (dto.dosageForm  !== undefined) data.dosageForm  = dto.dosageForm  || null;
+    if (dto.companyName !== undefined) {
+      data.companyName        = dto.companyName || null;
+      data.normalizedCompany  = dto.companyName ? normalizeSearchText(dto.companyName) : null;
+    }
+    if (dto.darNo !== undefined) data.darNo = dto.darNo || null;
+
+    const updated = await this.prisma.medicine.update({ where: { id }, data, select: {
+      id: true, brandName: true, genericName: true, strength: true,
+      companyName: true, dosageForm: true, darNo: true
+    }});
+
+    // Rebuild searchText after all field updates
+    await this.prisma.medicine.update({
+      where: { id },
+      data: { searchText: buildMedicineSearchText({
+        brandName:   updated.brandName,
+        genericName: updated.genericName,
+        companyName: updated.companyName ?? undefined,
+        dosageForm:  updated.dosageForm  ?? undefined,
+        strength:    updated.strength    ?? undefined,
+      })}
+    });
+
+    return updated;
   }
 
   async dosageForms(): Promise<string[]> {
