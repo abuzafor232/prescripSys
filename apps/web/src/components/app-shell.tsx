@@ -1756,7 +1756,23 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!token) return;
     apiFetch<string[]>("/medicines/dosage-forms", { token })
-      .then(setApiForms)
+      .then((forms) => {
+        setApiForms(forms);
+        // Seed localStorage with effective schedule for every formation so the
+        // prescription builder always finds a match (even for defaults never changed).
+        const stored = loadSchedules();
+        const full: FormSchedules = { ...stored };
+        for (const f of forms) {
+          if (!(f in full)) {
+            const v = stored[f];
+            full[f] = (v && typeof v === "object" && "scheduleDoses" in v)
+              ? { ...DEFAULT_SCHED, ...v, noneFields: v.noneFields ?? DEFAULT_SCHED.noneFields, customText: v.customText ?? "" }
+              : { ...DEFAULT_SCHED };
+          }
+        }
+        saveSchedules(full);
+        setSchedules(full);
+      })
       .catch(() => {});
   }, [token]);
 
@@ -1836,7 +1852,15 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
           className="h-8 flex-1 rounded border bg-background px-3 text-xs outline-none focus:ring-1 focus:ring-primary"
         />
         <button type="button"
-          onClick={() => { saveDosageFormPositions(positions); saveSchedules(schedules); onClose(); }}
+          onClick={() => {
+            saveDosageFormPositions(positions);
+            // Write effective schedule for EVERY formation (including those still at default)
+            // so that selectMedicine in the prescription builder always finds a match.
+            const full: FormSchedules = {};
+            for (const f of allForms) full[f] = getSched(f);
+            saveSchedules(full);
+            onClose();
+          }}
           className="shrink-0 rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
           Save &amp; Exit
         </button>
