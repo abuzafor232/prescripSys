@@ -731,6 +731,7 @@ type CustomMedicineFormState = {
   instructionTags: string[];
   remarks: string;
   remarksTags: string[];
+  noneFields: [string, string, string, string];
 };
 
 const medicineSearchTypeOptions = ["Trade", "Generic", "Strength"];
@@ -820,7 +821,8 @@ const initialCustomMedicineForm: CustomMedicineFormState = {
   durationUnit: "Day",
   instructionTags: [],
   remarks: "",
-  remarksTags: []
+  remarksTags: [],
+  noneFields: ["1 Drop", "1", "Times Daily", "Both Eye"]
 };
 
 function customMedicineDefaultsForType(
@@ -6224,6 +6226,16 @@ function MedicationSidebar({
           durationUnit: String(savedSched.durationUnit || form.durationUnit),
           continueMedicine: !!(savedSched.continueMedicine),
         };
+      } else if (schedStr === "Eye Drop") {
+        const nf = (savedSched.noneFields as string[] | undefined) ?? ["1 Drop", "1", "Times Daily", "Both Eye"];
+        form = {
+          ...form,
+          schedule: "Eye Drop",
+          noneFields: [nf[0] ?? "1 Drop", nf[1] ?? "1", nf[2] ?? "Times Daily", nf[3] ?? "Both Eye"],
+          durationValue: String(savedSched.durationValue || form.durationValue),
+          durationUnit: String(savedSched.durationUnit || form.durationUnit),
+          continueMedicine: !!(savedSched.continueMedicine),
+        };
       } else if (schedStr === "None" && savedSched.customText) {
         form = {
           ...form,
@@ -6467,7 +6479,10 @@ function MedicationSidebar({
             {sessions.map((session, idx) => {
               const isExpanded = expandedIdx === idx;
               const form = isExpanded ? customMedicine : session.form;
-              const doseLabel = form.scheduleDoses.filter(Boolean).join("+");
+              const isEyeDropSched = form.schedule === "Eye Drop";
+              const doseLabel = isEyeDropSched
+                ? form.noneFields.filter(Boolean).join(" ")
+                : form.scheduleDoses.filter(Boolean).join("+");
               const sessSchedCount = Number.isNaN(Number.parseInt(form.schedule, 10))
                 ? 0 : Number.parseInt(form.schedule, 10);
               return (
@@ -6673,37 +6688,84 @@ function ExpandedMedicineForm({
         </select>
 
         {/* 2. Schedule */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">Schedule</span>
-          <select
-            className="h-8 w-14 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-            value={form.schedule}
-            onChange={(event) => onScheduleChange(event.target.value)}
-          >
-            {["1", "2", "3", "4", "5", "6"].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </div>
+        {(() => {
+          const isEyeDrop = form.schedule === "Eye Drop";
+          function patchNone(i: number, v: string) {
+            const f = [...form.noneFields] as [string, string, string, string];
+            f[i] = v;
+            onUpdate({ noneFields: f });
+          }
+          return (
+            <>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Schedule</span>
+                <select
+                  className="h-8 rounded-sm border bg-background px-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                  value={form.schedule}
+                  onChange={(event) => onScheduleChange(event.target.value)}
+                >
+                  {isEyeDrop && <option value="Eye Drop">Eye Drop</option>}
+                  {["1", "2", "3", "4", "5", "6"].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
 
-        {/* Dose inputs */}
-        <div className="flex flex-wrap items-center gap-1">
-          {Array.from({ length: schedCount }, (_, i) => (
-            <div key={i} className="flex items-center gap-0.5">
-              <Input
-                className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
-                inputMode="decimal"
-                min="0"
-                type="number"
-                value={form.scheduleDoses[i] ?? ""}
-                onChange={(event) => onScheduleDose(i, event.target.value)}
-              />
-              {i < schedCount - 1 && (
-                <span className="select-none text-xs text-muted-foreground">+</span>
+              {/* 4-box mode for Eye Drop schedule */}
+              {isEyeDrop ? (
+                <div className="flex flex-wrap items-center gap-1">
+                  <Input
+                    className="h-8 w-20 rounded-sm bg-background px-2 text-sm font-semibold text-red-600"
+                    value={form.noneFields[0]}
+                    onChange={(e) => patchNone(0, e.target.value)}
+                  />
+                  <select
+                    className="h-8 w-14 rounded-sm border bg-background px-2 text-sm outline-none"
+                    value={form.noneFields[1]}
+                    onChange={(e) => patchNone(1, e.target.value)}
+                  >
+                    {["1","2","3","4","5","6","7","8","9"].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                  <Input
+                    className="h-8 w-24 rounded-sm bg-background px-2 text-sm font-semibold text-red-600"
+                    value={form.noneFields[2]}
+                    onChange={(e) => patchNone(2, e.target.value)}
+                  />
+                  <select
+                    className="h-8 w-24 rounded-sm border bg-background px-2 text-sm outline-none"
+                    value={form.noneFields[3]}
+                    onChange={(e) => patchNone(3, e.target.value)}
+                  >
+                    {["Right Eye", "Left Eye", "Both Eye"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                /* Standard numeric dose inputs */
+                <div className="flex flex-wrap items-center gap-1">
+                  {Array.from({ length: schedCount }, (_, i) => (
+                    <div key={i} className="flex items-center gap-0.5">
+                      <Input
+                        className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
+                        inputMode="decimal"
+                        min="0"
+                        type="number"
+                        value={form.scheduleDoses[i] ?? ""}
+                        onChange={(event) => onScheduleDose(i, event.target.value)}
+                      />
+                      {i < schedCount - 1 && (
+                        <span className="select-none text-xs text-muted-foreground">+</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
-            </div>
-          ))}
-        </div>
+            </>
+          );
+        })()}
 
         {/* 3. for (hidden when Continue is checked) */}
         {!form.continueMedicine && (
