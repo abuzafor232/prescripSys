@@ -1720,7 +1720,7 @@ type FormSchedules = Record<string, FormSched>;
 
 const DEFAULT_SCHED: FormSched = {
   schedule: "3",
-  scheduleDoses: ["0", "0", "0"],
+  scheduleDoses: ["1", "1", "1"],
   durationValue: "0",
   durationUnit: "Day",
   continueMedicine: false,
@@ -1761,13 +1761,21 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
         // Seed localStorage with effective schedule for every formation so the
         // prescription builder always finds a match (even for defaults never changed).
         const stored = loadSchedules();
-        const full: FormSchedules = { ...stored };
+        const full: FormSchedules = {};
         for (const f of forms) {
-          if (!(f in full)) {
-            const v = stored[f];
-            full[f] = (v && typeof v === "object" && "scheduleDoses" in v)
-              ? { ...DEFAULT_SCHED, ...v, noneFields: v.noneFields ?? DEFAULT_SCHED.noneFields, customText: v.customText ?? "" }
-              : { ...DEFAULT_SCHED };
+          const v = stored[f];
+          if (v && typeof v === "object" && "scheduleDoses" in v) {
+            // Migrate old all-zero doses to 1+1+1 default
+            const doses = (v.scheduleDoses as string[]);
+            const allZero = doses.length > 0 && doses.every((d) => d === "0");
+            full[f] = {
+              ...DEFAULT_SCHED, ...v,
+              scheduleDoses: allZero ? DEFAULT_SCHED.scheduleDoses : doses,
+              noneFields: v.noneFields ?? DEFAULT_SCHED.noneFields,
+              customText: v.customText ?? "",
+            };
+          } else {
+            full[f] = { ...DEFAULT_SCHED };
           }
         }
         saveSchedules(full);

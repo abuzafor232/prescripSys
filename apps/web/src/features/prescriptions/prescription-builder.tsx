@@ -6192,12 +6192,14 @@ function MedicationSidebar({
     if (!dosageForm || typeof window === "undefined") return null;
     try {
       const raw = JSON.parse(localStorage.getItem("rx-dosage-form-schedule") ?? "{}") as Record<string, unknown>;
+      const isObj = (v: unknown) => v && typeof v === "object" && !Array.isArray(v);
+      // 1. Exact match
+      if (isObj(raw[dosageForm])) return raw[dosageForm] as Record<string, unknown>;
+      // 2. Case-insensitive + singular/plural (strip trailing s)
       const norm = (s: string) => s.toUpperCase().replace(/S$/, "").trim();
       const target = norm(dosageForm);
       for (const [key, val] of Object.entries(raw)) {
-        if (norm(key) === target && val && typeof val === "object" && !Array.isArray(val)) {
-          return val as Record<string, unknown>;
-        }
+        if (norm(key) === target && isObj(val)) return val as Record<string, unknown>;
       }
     } catch {}
     return null;
