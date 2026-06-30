@@ -6201,6 +6201,7 @@ function MedicationSidebar({
       for (const [key, val] of Object.entries(raw)) {
         if (norm(key) === target && isObj(val)) return val as Record<string, unknown>;
       }
+      console.warn("[RxBuilder] No saved schedule found for dosageForm:", dosageForm, "| localStorage keys:", Object.keys(raw));
     } catch {}
     return null;
   }
@@ -6241,7 +6242,8 @@ function MedicationSidebar({
       } else if (schedStr === "None") {
         form = {
           ...form,
-          customText: String(savedSched.customText),
+          schedule: "None",
+          customText: String(savedSched.customText ?? ""),
           durationValue: String(savedSched.durationValue || form.durationValue),
           durationUnit: String(savedSched.durationUnit || form.durationUnit),
           continueMedicine: !!(savedSched.continueMedicine),
