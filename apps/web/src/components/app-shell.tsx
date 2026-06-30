@@ -1867,6 +1867,11 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
           className="flex items-center gap-1 rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40">
           Save
         </button>
+        <button type="button"
+          onClick={() => { saveDosageFormPositions(positions); saveSchedules(schedules); onClose(); }}
+          className="rounded-lg bg-primary px-4 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
+          Save &amp; Exit
+        </button>
       </div>
 
       {/* List — horizontally scrollable so every row stays on one line */}
@@ -2015,14 +2020,6 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
         </div>{/* end min-w-max */}
       </div>
 
-      {/* Save & Exit */}
-      <div className="mt-4 flex justify-end">
-        <button type="button"
-          onClick={() => { saveDosageFormPositions(positions); saveSchedules(schedules); onClose(); }}
-          className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
-          Save &amp; Exit
-        </button>
-      </div>
     </div>
   );
 }
