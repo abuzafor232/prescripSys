@@ -6708,7 +6708,7 @@ function ExpandedMedicineForm({
                   value={form.schedule}
                   onChange={(event) => onScheduleChange(event.target.value)}
                 >
-                  {isNone && <option value="None">None</option>}
+                  <option value="None">None</option>
                   {isEyeDrop && <option value="Eye Drop">Eye Drop</option>}
                   {["1", "2", "3", "4", "5", "6"].map((n) => (
                     <option key={n} value={n}>{n}</option>
