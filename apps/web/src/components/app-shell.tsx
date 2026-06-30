@@ -1706,13 +1706,15 @@ import { IMAGE_DEFAULTS, loadDosageFormPositions, saveDosageFormPositions } from
 const SCHEDULE_KEY = "rx-dosage-form-schedule";
 
 type FormSched = {
-  schedule: string;         // "None" | "1"–"6"
+  schedule: string;         // "None" | "Eye Drop" | "1"–"6"
   scheduleDoses: string[];
   durationValue: string;
   durationUnit: string;
   continueMedicine: boolean;
-  // used when schedule === "None": [text, digit1-9, text, eye-side]
+  // used when schedule === "Eye Drop": [text, digit1-9, text, eye-side]
   noneFields: [string, string, string, string];
+  // used when schedule === "None": free-form custom schedule text
+  customText: string;
 };
 type FormSchedules = Record<string, FormSched>;
 
@@ -1723,6 +1725,7 @@ const DEFAULT_SCHED: FormSched = {
   durationUnit: "Day",
   continueMedicine: false,
   noneFields: ["1 Drop", "1", "Times Daily", "Both Eye"],
+  customText: "",
 };
 
 function loadSchedules(): FormSchedules {
@@ -1787,7 +1790,8 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
   function setSchedCount(form: string, count: string) {
     if (count === "None") {
-      patchSched(form, { schedule: "None", scheduleDoses: [] });
+      const cur = getSched(form);
+      patchSched(form, { schedule: "None", scheduleDoses: [], customText: cur.customText ?? "" });
       return;
     }
     if (count === "Eye Drop") {
@@ -1882,7 +1886,8 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
           const pos   = getPos(form);
           const sched = getSched(form);
           const isEyeDrop = sched.schedule === "Eye Drop";
-          const count = isEyeDrop || sched.schedule === "None" ? 0 : Math.max(1, Math.min(6, parseInt(sched.schedule, 10) || 1));
+          const isNoneCustom = sched.schedule === "None";
+          const count = isEyeDrop || isNoneCustom ? 0 : Math.max(1, Math.min(6, parseInt(sched.schedule, 10) || 1));
           return (
             <div key={form}
               className="flex items-center gap-4 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
@@ -1906,6 +1911,16 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                     {["None","Eye Drop","1","2","3","4","5","6"].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </div>
+
+                {/* None → free-form custom text textarea */}
+                {isNoneCustom && (
+                  <textarea
+                    className="min-h-[60px] w-64 resize-y rounded-md border border-input bg-background px-3 py-1.5 text-sm leading-snug outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                    placeholder="কাস্টম শিডিউল লিখুন…"
+                    value={sched.customText ?? ""}
+                    onChange={(e) => patchSched(form, { customText: e.target.value })}
+                  />
+                )}
 
                 {/* Eye Drop → 4 custom fields */}
                 {isEyeDrop ? (
