@@ -93,6 +93,12 @@ async function main() {
   const existing = await prisma.medicine.count({ where: { source: SOURCE } });
   console.log(`Already in DB (source="${SOURCE}"): ${existing}`);
 
+  if (existing > 0) {
+    console.log("Import skipped — data already present.");
+    await prisma.$disconnect();
+    return;
+  }
+
   // Build records
   const records: Prisma.MedicineCreateManyInput[] = [];
   let invalid = 0;
