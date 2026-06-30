@@ -1915,8 +1915,9 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                 {/* None → free-form custom text textarea */}
                 {isNoneCustom && (
                   <textarea
-                    className="min-h-[60px] w-64 resize-y rounded-md border border-input bg-background px-3 py-1.5 text-sm leading-snug outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
-                    placeholder="কাস্টম শিডিউল লিখুন…"
+                    rows={1}
+                    className="w-80 resize-y rounded-md border border-input bg-background px-3 py-1.5 text-sm leading-snug outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+                    placeholder="Write custom schedule..."
                     value={sched.customText ?? ""}
                     onChange={(e) => patchSched(form, { customText: e.target.value })}
                   />
