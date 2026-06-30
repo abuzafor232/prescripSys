@@ -1787,8 +1787,12 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
   function setSchedCount(form: string, count: string) {
     if (count === "None") {
+      patchSched(form, { schedule: "None", scheduleDoses: [] });
+      return;
+    }
+    if (count === "Eye Drop") {
       const cur = getSched(form);
-      patchSched(form, { schedule: "None", scheduleDoses: [], noneFields: cur.noneFields ?? ["1 Drop","1","Times Daily","Both Eye"] });
+      patchSched(form, { schedule: "Eye Drop", scheduleDoses: [], noneFields: cur.noneFields ?? ["1 Drop","1","Times Daily","Both Eye"] });
       return;
     }
     const n = Math.max(1, Math.min(6, parseInt(count, 10) || 1));
@@ -1877,8 +1881,8 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
         ) : allForms.map((form) => {
           const pos   = getPos(form);
           const sched = getSched(form);
-          const isNone = sched.schedule === "None";
-          const count = isNone ? 0 : Math.max(1, Math.min(6, parseInt(sched.schedule, 10) || 1));
+          const isEyeDrop = sched.schedule === "Eye Drop";
+          const count = isEyeDrop || sched.schedule === "None" ? 0 : Math.max(1, Math.min(6, parseInt(sched.schedule, 10) || 1));
           return (
             <div key={form}
               className="flex items-center gap-4 border-b px-4 py-2 last:border-0 hover:bg-muted/20 transition-colors">
@@ -1899,12 +1903,12 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
                   <span className="text-xs text-muted-foreground">Schedule</span>
                   <select className={cn(selCls, "w-14")} value={sched.schedule}
                     onChange={(e) => setSchedCount(form, e.target.value)}>
-                    {["None","1","2","3","4","5","6"].map((n) => <option key={n} value={n}>{n}</option>)}
+                    {["None","Eye Drop","1","2","3","4","5","6"].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </div>
 
-                {/* None → 4 custom fields */}
-                {isNone ? (
+                {/* Eye Drop → 4 custom fields */}
+                {isEyeDrop ? (
                   <>
                     <input type="text" className={cn(numCls, "w-16")}
                       value={sched.noneFields[0]}
