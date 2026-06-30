@@ -1827,42 +1827,19 @@ function DrugFormationOrderPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="mx-auto max-w-full overflow-x-auto p-4 lg:p-6">
-      {/* Top add bar */}
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm">
-        <span className="w-28 shrink-0 text-xs font-semibold text-muted-foreground">Drug Formation</span>
-        <input
-          value={newForm}
-          onChange={(e) => setNewForm(e.target.value)}
-          placeholder="Formation name…"
-          className="h-8 flex-1 min-w-32 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-        />
-        <button type="button" onClick={() => setNewPos("before")}
-          className={cn("px-3 py-1 rounded text-xs font-semibold transition-colors", newPos === "before" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70")}>
-          Before
-        </button>
-        <button type="button" onClick={() => setNewPos("after")}
-          className={cn("px-3 py-1 rounded text-xs font-semibold transition-colors", newPos === "after" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70")}>
-          After
-        </button>
-        <button type="button" disabled={!newForm.trim()} onClick={handleAdd}
-          className="flex items-center gap-1 rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40">
-          Save
-        </button>
-        <button type="button"
-          onClick={() => { saveDosageFormPositions(positions); saveSchedules(schedules); onClose(); }}
-          className="rounded-lg bg-primary px-4 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
-          Save &amp; Exit
-        </button>
-      </div>
-
-      {/* Filter */}
-      <div className="mb-2">
+      {/* Top bar */}
+      <div className="mb-4 flex items-center gap-2">
         <input
           value={filterQuery}
           onChange={(e) => setFilterQuery(e.target.value)}
           placeholder="Search formations…"
-          className="h-8 w-full rounded border bg-background px-3 text-xs outline-none focus:ring-1 focus:ring-primary"
+          className="h-8 flex-1 rounded border bg-background px-3 text-xs outline-none focus:ring-1 focus:ring-primary"
         />
+        <button type="button"
+          onClick={() => { saveDosageFormPositions(positions); saveSchedules(schedules); onClose(); }}
+          className="shrink-0 rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
+          Save &amp; Exit
+        </button>
       </div>
 
       {/* List — horizontally scrollable so every row stays on one line */}
