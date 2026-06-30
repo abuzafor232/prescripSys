@@ -6236,7 +6236,7 @@ function MedicationSidebar({
           durationUnit: String(savedSched.durationUnit || form.durationUnit),
           continueMedicine: !!(savedSched.continueMedicine),
         };
-      } else if (schedStr === "None" && savedSched.customText) {
+      } else if (schedStr === "None") {
         form = {
           ...form,
           customText: String(savedSched.customText),
