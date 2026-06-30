@@ -6185,6 +6185,22 @@ function MedicationSidebar({
     }
   }
 
+  // ── Load saved Drug Formation Order schedule for a dosage form ──────────
+  function loadDrugFormationSched(dosageForm: string | null | undefined): Record<string, unknown> | null {
+    if (!dosageForm || typeof window === "undefined") return null;
+    try {
+      const raw = JSON.parse(localStorage.getItem("rx-dosage-form-schedule") ?? "{}") as Record<string, unknown>;
+      const norm = (s: string) => s.toUpperCase().replace(/S$/, "").trim();
+      const target = norm(dosageForm);
+      for (const [key, val] of Object.entries(raw)) {
+        if (norm(key) === target && val && typeof val === "object" && !Array.isArray(val)) {
+          return val as Record<string, unknown>;
+        }
+      }
+    } catch {}
+    return null;
+  }
+
   // ── Select medicine from search results ──────────────────────────────────
   function selectMedicine(item: MedicineSearchResult) {
     // Save current expanded session before switching
@@ -6192,7 +6208,32 @@ function MedicationSidebar({
 
     const medicineType = item.dosageForm || "Tab.";
     const defaults = customMedicineDefaultsForType(medicineType, item.brandName);
-    const form: CustomMedicineFormState = { ...defaults, unit: item.dosageForm || defaults.unit };
+    let form: CustomMedicineFormState = { ...defaults, unit: item.dosageForm || defaults.unit };
+
+    // Auto-apply saved schedule from Drug Formation Order
+    const savedSched = loadDrugFormationSched(item.dosageForm);
+    if (savedSched) {
+      const schedStr = String(savedSched.schedule ?? "");
+      const n = parseInt(schedStr, 10);
+      if (!isNaN(n)) {
+        form = {
+          ...form,
+          schedule: schedStr,
+          scheduleDoses: Array.from({ length: n }, (_, i) => String((savedSched.scheduleDoses as unknown[])[i] ?? "0")),
+          durationValue: String(savedSched.durationValue || form.durationValue),
+          durationUnit: String(savedSched.durationUnit || form.durationUnit),
+          continueMedicine: !!(savedSched.continueMedicine),
+        };
+      } else if (schedStr === "None" && savedSched.customText) {
+        form = {
+          ...form,
+          customText: String(savedSched.customText),
+          durationValue: String(savedSched.durationValue || form.durationValue),
+          durationUnit: String(savedSched.durationUnit || form.durationUnit),
+          continueMedicine: !!(savedSched.continueMedicine),
+        };
+      }
+    }
 
     // Record usage (auto-favourite after 2 uses in 24 h)
     recordUsage(item.id);
