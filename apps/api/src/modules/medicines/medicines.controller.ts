@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PERMISSIONS } from "@bd-prescription/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -49,6 +49,12 @@ export class MedicinesController {
   @Patch(":id")
   update(@Param("id") id: string, @Body() dto: UpdateMedicineDto) {
     return this.medicines.update(id, dto);
+  }
+
+  @Permissions(PERMISSIONS.MEDICINES_MANAGE)
+  @Delete(":id")
+  remove(@Param("id") id: string) {
+    return this.medicines.delete(id);
   }
 
   @Permissions(PERMISSIONS.MEDICINES_MANAGE)

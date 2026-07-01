@@ -1,11 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, ChevronLeft, ChevronRight, AlertCircle, Plus, X, Pill, Pencil } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, AlertCircle, Plus, X, Pill, Pencil, Trash2 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDebounce } from "@/hooks/use-debounce";
-import { createMedicine, updateMedicine, fetchMedicineList, type CreateMedicineInput, type MedicineListItem } from "@/lib/api";
+import { createMedicine, updateMedicine, deleteMedicine, fetchMedicineList, type CreateMedicineInput, type MedicineListItem } from "@/lib/api";
 import { useSessionStore } from "@/stores/session-store";
 
 // ── Add Drug Modal ────────────────────────────────────────────────────────────
@@ -128,6 +128,78 @@ function AddDrugModal({ token, onClose }: { token: string; onClose: () => void }
             </button>
           </div>
         </form>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── Delete Confirmation Dialog ────────────────────────────────────────────────
+
+function DeleteConfirmDialog({
+  token,
+  medicine,
+  onClose
+}: {
+  token: string;
+  medicine: MedicineListItem;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: () => deleteMedicine(medicine.id, token),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["medicines-list"] });
+      queryClient.invalidateQueries({ queryKey: ["medicines-total"] });
+      onClose();
+    },
+    onError: () => onClose()
+  });
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="text-base font-semibold text-foreground">Delete Medicine</h2>
+          <button
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="px-5 py-5">
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete{" "}
+            <span className="font-semibold text-foreground">
+              {medicine.brandName}
+              {medicine.strength ? ` ${medicine.strength}` : ""}
+            </span>
+            ? This action cannot be undone.
+          </p>
+
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              disabled={isPending}
+              className="h-9 rounded-lg border border-border px-5 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+            >
+              No
+            </button>
+            <button
+              onClick={() => mutate()}
+              disabled={isPending}
+              className="h-9 rounded-lg bg-destructive px-5 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60 transition-colors"
+            >
+              {isPending ? "Deleting…" : "Yes, Delete"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>,
     document.body
@@ -262,7 +334,8 @@ export function MedicinesPage() {
   const [searchType, setSearchType] = useState<"" | "trade" | "generic">("");
   const [page, setPage]             = useState(1);
   const [showAdd, setShowAdd]       = useState(false);
-  const [editMedicine, setEditMedicine] = useState<MedicineListItem | null>(null);
+  const [editMedicine, setEditMedicine]     = useState<MedicineListItem | null>(null);
+  const [deletingMedicine, setDeletingMedicine] = useState<MedicineListItem | null>(null);
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -350,7 +423,7 @@ export function MedicinesPage() {
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div
           className="grid border-b border-border bg-muted/50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-          style={{ gridTemplateColumns: "2fr 1fr 2fr 1.5fr 1fr 44px" }}
+          style={{ gridTemplateColumns: "2fr 1fr 2fr 1.5fr 1fr 80px" }}
         >
           <span>Trade Name</span>
           <span>Dosage Form</span>
@@ -372,7 +445,7 @@ export function MedicinesPage() {
               <div
                 key={m.id}
                 className="grid items-center gap-x-4 border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-muted/30 transition-colors"
-                style={{ gridTemplateColumns: "2fr 1fr 2fr 1.5fr 1fr 44px" }}
+                style={{ gridTemplateColumns: "2fr 1fr 2fr 1.5fr 1fr 80px" }}
               >
                 <span className="font-semibold text-foreground" title={m.brandName}>
                   {m.brandName}
@@ -390,13 +463,20 @@ export function MedicinesPage() {
                 <span className="text-muted-foreground" title={m.genericName}>{m.genericName}</span>
                 <span className="truncate text-muted-foreground" title={m.companyName ?? ""}>{m.companyName ?? "—"}</span>
                 <span className="font-mono text-xs text-muted-foreground">{m.darNo ?? "—"}</span>
-                <span className="flex justify-end">
+                <span className="flex items-center justify-end gap-1">
                   <button
                     onClick={() => setEditMedicine(m)}
                     title="Edit"
                     className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                   >
                     <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setDeletingMedicine(m)}
+                    title="Delete"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </span>
               </div>
@@ -434,6 +514,9 @@ export function MedicinesPage() {
       {showAdd && <AddDrugModal token={token} onClose={() => setShowAdd(false)} />}
       {editMedicine && (
         <EditDrugModal token={token} medicine={editMedicine} onClose={() => setEditMedicine(null)} />
+      )}
+      {deletingMedicine && (
+        <DeleteConfirmDialog token={token} medicine={deletingMedicine} onClose={() => setDeletingMedicine(null)} />
       )}
     </div>
   );

@@ -402,6 +402,10 @@ export function createMedicine(input: CreateMedicineInput, token: string) {
   });
 }
 
+export function deleteMedicine(id: string, token: string) {
+  return apiFetch<{ id: string }>(`/medicines/${id}`, { method: "DELETE", token });
+}
+
 export function updateMedicine(id: string, input: Partial<CreateMedicineInput>, token: string) {
   return apiFetch<MedicineListItem>(`/medicines/${id}`, {
     method: "PATCH",

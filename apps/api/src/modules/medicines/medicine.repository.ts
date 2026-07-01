@@ -215,6 +215,14 @@ export class MedicineRepository {
     return updated;
   }
 
+  async delete(id: string) {
+    return this.prisma.medicine.update({
+      where: { id },
+      data: { isActive: false },
+      select: { id: true }
+    });
+  }
+
   async dosageForms(): Promise<string[]> {
     const rows = await this.prisma.medicine.findMany({
       where: { isActive: true, tenantId: null, dosageForm: { not: null } },

@@ -39,6 +39,12 @@ export class MedicinesService {
     return result;
   }
 
+  async delete(id: string) {
+    const result = await this.repository.delete(id);
+    await this.redis.delByPrefix("tenant:");
+    return result;
+  }
+
   async list(dto: ListMedicinesDto) {
     return this.repository.list(dto);
   }
