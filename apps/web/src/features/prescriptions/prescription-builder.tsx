@@ -56,6 +56,7 @@ import {
   type CreatePrescriptionInput,
   type Prescription,
   type CreatePatientInput,
+  type MedicineListItem,
   type MedicineSearchResult,
   type Patient,
   type PatientGender,
@@ -800,6 +801,20 @@ const syrupSpoonOptions = ["1/2 Spoon", "1 Spoon", "2 Spoon", "3 Spoon", "4 Spoo
 const injectionUnitOptions = ["Vial", "ML", "CC"];
 const eyeDropCountOptions = ["1 Drop", "2 Drops", "3 Drops"];
 const customMedicineDurationUnitOptions = ["Day", "Month", "Year"];
+
+type SavedDoseEntry = {
+  id: string;
+  schedule: string;
+  scheduleDoses: string[];
+  unit: string;
+  noneFields: [string, string, string, string];
+  customText: string;
+  durationValue: string;
+  durationUnit: string;
+  continueMedicine: boolean;
+  intervalDoses?: CustomMedicineFormState[];
+  savedAt: string;
+};
 
 const initialCustomMedicineForm: CustomMedicineFormState = {
   medicineType: "Tab.",
@@ -1926,7 +1941,7 @@ export function PrescriptionBuilder() {
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{item.brandName}</span>
                           <span className="block truncate text-xs text-muted-foreground">
-                            {item.genericName} {item.strength}
+                            {item.genericName} {normalizeMg(item.strength)}
                           </span>
                         </span>
                         <Plus className="h-4 w-4 flex-none" />
@@ -3367,6 +3382,12 @@ function escHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Normalize "MG" / "Mg" → "mg" so unit is always lowercase */
+function normalizeMg(text: string | null | undefined): string {
+  if (!text) return text ?? "";
+  return text.replace(/mg/gi, "mg");
+}
+
 function sanitizePrintHtml(html: string): string {
   if (!html) return html;
   return html.replace(
@@ -3507,7 +3528,7 @@ export function buildPadHtml(prescription: Prescription, autoprint = true): stri
   const medsHtml = meds.length
     ? `<div style="font-style:italic;font-weight:700;font-size:15px;margin-bottom:4px">Rx</div>` +
       meds.map((m, i) => {
-        const title = [m.brandName, m.strength].filter(Boolean).join(" ");
+        const title = [m.brandName, normalizeMg(m.strength)].filter(Boolean).join(" ");
         const detail = [m.dose, m.instruction, m.duration].filter(Boolean).join("  ");
         return `<div style="margin-bottom:5px">
           <div style="font-weight:600;font-size:12px">${i + 1}. ${escHtml(title)}</div>
@@ -4205,7 +4226,7 @@ function RxPreviewModal({ prescriptionId, onClose }: { prescriptionId: string; o
     const medicineRows = rx.medicines.map((m, i) =>
       `<tr>
         <td style="padding:4px 8px;border-bottom:1px solid #eee">${i + 1}</td>
-        <td style="padding:4px 8px;border-bottom:1px solid #eee"><strong>${m.brandName}</strong>${m.genericName ? ` <small>(${m.genericName})</small>` : ""}${m.strength ? ` ${m.strength}` : ""}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee"><strong>${m.brandName}</strong>${m.genericName ? ` <small>(${m.genericName})</small>` : ""}${m.strength ? ` ${normalizeMg(m.strength)}` : ""}</td>
         <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.dose}</td>
         <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.duration}</td>
         <td style="padding:4px 8px;border-bottom:1px solid #eee">${m.instruction ?? "—"}</td>
@@ -4324,7 +4345,7 @@ function RxPreviewModal({ prescriptionId, onClose }: { prescriptionId: string; o
                             <td className="px-2 py-1.5 font-medium">
                               {m.brandName}
                               {m.genericName && <span className="ml-1 font-normal text-muted-foreground">({m.genericName})</span>}
-                              {m.strength && <span className="ml-1 text-muted-foreground">{m.strength}</span>}
+                              {m.strength && <span className="ml-1 text-muted-foreground">{normalizeMg(m.strength)}</span>}
                             </td>
                             <td className="px-2 py-1.5">{m.dose}</td>
                             <td className="px-2 py-1.5">{m.duration}</td>
@@ -6021,6 +6042,7 @@ type MedicineSession = {
   search: MedicineSearchResult;
   form: CustomMedicineFormState;
   prescIdx: number;
+  intervalDoses?: CustomMedicineFormState[];
 };
 
 type MedicationSidebarProps = {
@@ -6110,9 +6132,15 @@ function MedicationSidebar({
   const setSessions   = onSessionsChange;
   const setExpandedIdx = onExpandedIdxChange;
   const customMedicine = customForm;
-  const [showDoses, setShowDoses] = useState(false);
+  const [savedDosesOpen, setSavedDosesOpen] = useState(false);
+  const [savedDosesList, setSavedDosesList] = useState<SavedDoseEntry[]>([]);
+  const [savedDosesEditIdx, setSavedDosesEditIdx] = useState<number | null>(null);
+  const [savedDosesEditDraft, setSavedDosesEditDraft] = useState<SavedDoseEntry | null>(null);
+  const [savedDosesDeleteIdx, setSavedDosesDeleteIdx] = useState<number | null>(null);
   const [favStore, setFavStore]         = useState<FavStore>(() => loadFavStore());
   const [dosageFilter, setDosageFilter] = useState<string | null>(null);
+  const [altBrandsIdx, setAltBrandsIdx] = useState<number | null>(null);
+  const [altBrandsSearch, setAltBrandsSearch] = useState("");
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -6121,6 +6149,21 @@ function MedicationSidebar({
     queryFn: () => apiFetch<string[]>("/medicines/dosage-forms", { token }),
     enabled: !!token,
     staleTime: 10 * 60_000
+  });
+
+  const altBrandsSession = altBrandsIdx !== null ? sessions[altBrandsIdx] : null;
+  const altBrandsGeneric = altBrandsSession?.search.genericName ?? "";
+  const debouncedAltSearch = useDebounce(altBrandsSearch);
+  const altBrandsUserTyped = debouncedAltSearch.trim().length > 0;
+  const altBrandsQ = altBrandsUserTyped ? debouncedAltSearch.trim() : altBrandsGeneric;
+
+  const { data: altBrandsData, isFetching: altBrandsFetching, isError: altBrandsIsError } = useQuery({
+    queryKey: ["alt-brands", altBrandsIdx, altBrandsQ],
+    queryFn: () => fetchMedicineList({ q: altBrandsQ, limit: 50 }, token),
+    enabled: altBrandsIdx !== null && altBrandsQ.length >= 1 && !!token,
+    staleTime: 0,
+    gcTime: 0,
+    retry: 1
   });
 
   // ── Sorted results: favourites always first, then best match, then A-Z ──
@@ -6148,7 +6191,7 @@ function MedicationSidebar({
     : sortedResults;
 
   // ── Build RxMedicine from form state ────────────────────────────────────
-  function buildRxMedicine(form: CustomMedicineFormState): RxMedicine {
+  function buildRxMedicine(form: CustomMedicineFormState, intervalDoses?: CustomMedicineFormState[]): RxMedicine {
     const dose = form.scheduleDoses.map((d) => d.trim() || "0").join("+");
     const unit = form.unit === "n/a" ? "" : form.unit;
     const instruction = unit;
@@ -6156,6 +6199,14 @@ function MedicationSidebar({
       ...form.remarksTags,
       form.remarks.trim()
     ].filter(Boolean);
+    if (intervalDoses?.length) {
+      intervalDoses.forEach((id) => {
+        const idDose = id.scheduleDoses.map((v) => v.trim() || "0").join("+");
+        const idDur = formatCustomMedicineDuration(id);
+        const idRemarks = [...id.remarksTags, id.remarks.trim()].filter(Boolean).join(", ");
+        noteparts.push(`Interval: ${idDose}${idDur ? ", " + idDur : ""}${idRemarks ? " (" + idRemarks + ")" : ""}`);
+      });
+    }
     return {
       brandName: form.brandName.trim(),
       dosageForm: form.medicineType,
@@ -6173,7 +6224,7 @@ function MedicationSidebar({
     if (!session) return;
     // Use live customMedicine for the currently-expanded session to avoid stale closure
     const formToSave = idx === expandedIdx ? customMedicine : session.form;
-    onUpdateMedicine(session.prescIdx, buildRxMedicine(formToSave));
+    onUpdateMedicine(session.prescIdx, buildRxMedicine(formToSave, session.intervalDoses));
   }
 
   // ── Update form state + immediately sync to prescription ────────────────
@@ -6183,7 +6234,30 @@ function MedicationSidebar({
     if (expandedIdx !== null) {
       setSessions(sessions.map((s, i) => i === expandedIdx ? { ...s, form: merged } : s));
       const session = sessions[expandedIdx];
-      if (session) onUpdateMedicine(session.prescIdx, buildRxMedicine(merged));
+      if (session) onUpdateMedicine(session.prescIdx, buildRxMedicine(merged, session.intervalDoses));
+    }
+    // Auto-save dose when Continue is toggled on
+    if (patch.continueMedicine === true) {
+      const key = expandedIdx !== null
+        ? (() => { const g = sessions[expandedIdx]?.search.genericName; return g ? `rx-saved-doses:g:${g.toLowerCase()}` : null; })()
+        : null;
+      if (key) {
+        const prev: SavedDoseEntry[] = (() => { try { return JSON.parse(localStorage.getItem(key) ?? "[]"); } catch { return []; } })();
+        const entry: SavedDoseEntry = {
+          id: Date.now().toString(),
+          schedule: merged.schedule,
+          scheduleDoses: [...merged.scheduleDoses],
+          unit: merged.unit,
+          noneFields: [...merged.noneFields] as [string, string, string, string],
+          customText: merged.customText,
+          durationValue: merged.durationValue,
+          durationUnit: merged.durationUnit,
+          continueMedicine: true,
+          savedAt: new Date().toISOString()
+        };
+        localStorage.setItem(key, JSON.stringify([entry, ...prev].slice(0, 10)));
+        onStatus("success", "Saved as Continue.");
+      }
     }
   }
 
@@ -6251,18 +6325,56 @@ function MedicationSidebar({
       }
     }
 
+    // Auto-apply latest saved dose for this generic name (overrides Drug Formation Order defaults)
+    const genericSaved = loadSavedDosesByGeneric(item.genericName);
+    let autoIntervalDoses: CustomMedicineFormState[] | undefined;
+    if (genericSaved.length > 0) {
+      const latest = genericSaved[0];
+      autoIntervalDoses = latest.intervalDoses?.length ? latest.intervalDoses : undefined;
+      const n = Number.parseInt(latest.schedule, 10);
+      if (!Number.isNaN(n)) {
+        form = {
+          ...form,
+          schedule: latest.schedule,
+          scheduleDoses: Array.from({ length: n }, (_, i) => latest.scheduleDoses[i] ?? "0"),
+          unit: latest.unit || form.unit,
+          durationValue: latest.durationValue || form.durationValue,
+          durationUnit: latest.durationUnit || form.durationUnit,
+          continueMedicine: latest.continueMedicine ?? false,
+        };
+      } else if (latest.schedule === "Eye Drop") {
+        form = {
+          ...form,
+          schedule: "Eye Drop",
+          noneFields: latest.noneFields ?? form.noneFields,
+          durationValue: latest.durationValue || form.durationValue,
+          durationUnit: latest.durationUnit || form.durationUnit,
+          continueMedicine: latest.continueMedicine ?? false,
+        };
+      } else if (latest.schedule === "None") {
+        form = {
+          ...form,
+          schedule: "None",
+          customText: latest.customText || form.customText,
+          durationValue: latest.durationValue || form.durationValue,
+          durationUnit: latest.durationUnit || form.durationUnit,
+          continueMedicine: latest.continueMedicine ?? false,
+        };
+      }
+    }
+
     // Record usage (auto-favourite after 2 uses in 24 h)
     recordUsage(item.id);
     setFavStore(loadFavStore());
 
     // Auto-add to prescription immediately
-    onAddCustomMedicine(buildRxMedicine(form));
+    onAddCustomMedicine(buildRxMedicine(form, autoIntervalDoses));
 
     const newIdx = sessions.length;
-    setSessions([...sessions, { search: item, form, prescIdx: medicines.length }]);
+    setSessions([...sessions, { search: item, form, prescIdx: medicines.length, intervalDoses: autoIntervalDoses }]);
     setExpandedIdx(newIdx);
     onCustomFormChange(form);
-    setShowDoses(false);
+    setSavedDosesOpen(false);
     onQueryChange("");
     // Keep focus in search box so user can immediately search next medicine
     setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -6277,7 +6389,7 @@ function MedicationSidebar({
       saveExpanded();
       setExpandedIdx(idx);
       onCustomFormChange(sessions[idx].form);
-      setShowDoses(false);
+      setSavedDosesOpen(false);
     }
   }
 
@@ -6310,34 +6422,240 @@ function MedicationSidebar({
     updateCustomMedicine({ scheduleDoses: nextDoses });
   }
 
+  // ── Interval dose helpers ────────────────────────────────────────────────
+  function addIntervalDose() {
+    if (expandedIdx === null) return;
+    const newDose: CustomMedicineFormState = { ...customMedicine, remarksTags: [], remarks: "" };
+    const updatedSessions = sessions.map((s, i) =>
+      i === expandedIdx ? { ...s, intervalDoses: [...(s.intervalDoses ?? []), newDose] } : s
+    );
+    setSessions(updatedSessions);
+    const session = updatedSessions[expandedIdx];
+    if (session) onUpdateMedicine(session.prescIdx, buildRxMedicine(customMedicine, session.intervalDoses));
+  }
+
+  function updateIntervalDose(sessionIdx: number, doseIdx: number, patch: Partial<CustomMedicineFormState>) {
+    const updatedSessions = sessions.map((s, i) => {
+      if (i !== sessionIdx) return s;
+      const intervalDoses = [...(s.intervalDoses ?? [])];
+      intervalDoses[doseIdx] = { ...intervalDoses[doseIdx], ...patch };
+      return { ...s, intervalDoses };
+    });
+    setSessions(updatedSessions);
+    const session = updatedSessions[sessionIdx];
+    if (session) {
+      const formToUse = sessionIdx === expandedIdx ? customMedicine : session.form;
+      onUpdateMedicine(session.prescIdx, buildRxMedicine(formToUse, session.intervalDoses));
+    }
+  }
+
+  function updateIntervalDoseSchedule(sessionIdx: number, doseIdx: number, schedule: string) {
+    const count = Number.parseInt(schedule, 10);
+    const existing = sessions[sessionIdx]?.intervalDoses?.[doseIdx]?.scheduleDoses ?? [];
+    updateIntervalDose(sessionIdx, doseIdx, {
+      schedule,
+      scheduleDoses: Array.from(
+        { length: Number.isNaN(count) ? 0 : count },
+        (_, i) => existing[i] ?? "1"
+      )
+    });
+  }
+
+  function removeIntervalDose(sessionIdx: number, doseIdx: number) {
+    const updatedSessions = sessions.map((s, i) => {
+      if (i !== sessionIdx) return s;
+      return { ...s, intervalDoses: (s.intervalDoses ?? []).filter((_, di) => di !== doseIdx) };
+    });
+    setSessions(updatedSessions);
+    const session = updatedSessions[sessionIdx];
+    if (session) {
+      const formToUse = sessionIdx === expandedIdx ? customMedicine : session.form;
+      onUpdateMedicine(session.prescIdx, buildRxMedicine(formToUse, session.intervalDoses));
+    }
+  }
+
+  // ── Pick alternative brand ───────────────────────────────────────────────
+  function pickAltBrand(item: MedicineListItem) {
+    if (altBrandsIdx === null) return;
+    const session = sessions[altBrandsIdx];
+    if (!session) return;
+    const newForm: CustomMedicineFormState = {
+      ...session.form,
+      brandName: item.brandName,
+      medicineType: item.dosageForm || session.form.medicineType,
+      unit: item.dosageForm || session.form.unit
+    };
+    const newSearch: MedicineSearchResult = {
+      id: item.id,
+      brandName: item.brandName,
+      genericName: item.genericName,
+      companyName: item.companyName,
+      strength: item.strength,
+      dosageForm: item.dosageForm,
+      darNo: item.darNo
+    };
+    const updatedSessions = sessions.map((s, i) =>
+      i === altBrandsIdx ? { ...s, search: newSearch, form: newForm } : s
+    );
+    setSessions(updatedSessions);
+    onUpdateMedicine(session.prescIdx, buildRxMedicine(newForm, session.intervalDoses));
+    if (altBrandsIdx === expandedIdx) onCustomFormChange(newForm);
+    setAltBrandsIdx(null);
+    setAltBrandsSearch("");
+  }
+
   // ── Saved doses ──────────────────────────────────────────────────────────
   function savedDosesKey() {
     if (expandedIdx === null) return null;
-    return `rx-saved-doses:${sessions[expandedIdx]?.search.brandName.toLowerCase()}`;
+    const g = sessions[expandedIdx]?.search.genericName;
+    return g ? `rx-saved-doses:g:${g.toLowerCase()}` : null;
   }
 
-  function saveDose() {
-    const key = savedDosesKey();
-    if (!key) return;
-    const saved: object[] = JSON.parse(localStorage.getItem(key) ?? "[]");
-    const entry = {
-      schedule: customMedicine.schedule, scheduleDoses: customMedicine.scheduleDoses,
-      unit: customMedicine.unit, durationValue: customMedicine.durationValue,
-      durationUnit: customMedicine.durationUnit, savedAt: new Date().toISOString()
-    };
-    localStorage.setItem(key, JSON.stringify([entry, ...saved.slice(0, 4)]));
-    onStatus("success", "Dose saved.");
-  }
-
-  function loadSavedDoses(): { schedule: string; scheduleDoses: string[]; unit: string; durationValue: string; durationUnit: string; savedAt: string }[] {
+  function loadSavedDoses(): SavedDoseEntry[] {
     const key = savedDosesKey();
     if (!key) return [];
     try { return JSON.parse(localStorage.getItem(key) ?? "[]"); } catch { return []; }
   }
 
-  function applyDose(dose: { schedule: string; scheduleDoses: string[]; unit: string; durationValue: string; durationUnit: string }) {
-    updateCustomMedicine(dose);
-    setShowDoses(false);
+  function saveDose() {
+    const key = savedDosesKey();
+    if (!key) return;
+    const currentSession = expandedIdx !== null ? sessions[expandedIdx] : null;
+    const currentIntervalDoses = currentSession?.intervalDoses ?? [];
+    const prev = loadSavedDoses();
+    const isDuplicate = prev.some((e) => {
+      if (e.schedule !== customMedicine.schedule) return false;
+      if (e.unit !== customMedicine.unit) return false;
+      if (e.durationValue !== customMedicine.durationValue) return false;
+      if (e.durationUnit !== customMedicine.durationUnit) return false;
+      if ((e.continueMedicine ?? false) !== customMedicine.continueMedicine) return false;
+      if (e.schedule === "None") return (e.customText ?? "") === (customMedicine.customText ?? "");
+      if (e.schedule === "Eye Drop") return JSON.stringify(e.noneFields ?? []) === JSON.stringify(customMedicine.noneFields ?? []);
+      return e.scheduleDoses.join("+") === customMedicine.scheduleDoses.join("+");
+    });
+    if (isDuplicate) {
+      onStatus("warning", "This dose is already saved.");
+      return;
+    }
+    const entry: SavedDoseEntry = {
+      id: Date.now().toString(),
+      schedule: customMedicine.schedule,
+      scheduleDoses: [...customMedicine.scheduleDoses],
+      unit: customMedicine.unit,
+      noneFields: [...customMedicine.noneFields] as [string, string, string, string],
+      customText: customMedicine.customText,
+      durationValue: customMedicine.durationValue,
+      durationUnit: customMedicine.durationUnit,
+      continueMedicine: customMedicine.continueMedicine,
+      intervalDoses: currentIntervalDoses.length > 0 ? [...currentIntervalDoses] : undefined,
+      savedAt: new Date().toISOString()
+    };
+    localStorage.setItem(key, JSON.stringify([entry, ...prev].slice(0, 10)));
+    onStatus("success", "Dose saved.");
+  }
+
+  function openSavedDoses() {
+    setSavedDosesList(loadSavedDoses());
+    setSavedDosesEditIdx(null);
+    setSavedDosesEditDraft(null);
+    setSavedDosesOpen(true);
+  }
+
+  function applyDose(dose: SavedDoseEntry) {
+    const patch = {
+      schedule: dose.schedule,
+      scheduleDoses: dose.scheduleDoses,
+      unit: dose.unit,
+      noneFields: (dose.noneFields ?? ["1 Drop", "1", "Times Daily", "Both Eye"]) as [string, string, string, string],
+      customText: dose.customText ?? "",
+      durationValue: dose.durationValue,
+      durationUnit: dose.durationUnit,
+      continueMedicine: dose.continueMedicine ?? false
+    };
+    const merged = { ...customMedicine, ...patch };
+    const newIntervalDoses = dose.intervalDoses ?? [];
+    onCustomFormChange(merged);
+    if (expandedIdx !== null) {
+      const updatedSessions = sessions.map((s, i) =>
+        i === expandedIdx ? { ...s, form: merged, intervalDoses: newIntervalDoses.length > 0 ? newIntervalDoses : undefined } : s
+      );
+      setSessions(updatedSessions);
+      const session = updatedSessions[expandedIdx];
+      if (session) onUpdateMedicine(session.prescIdx, buildRxMedicine(merged, newIntervalDoses));
+    }
+    setSavedDosesOpen(false);
+  }
+
+  function deleteSavedDose(id: string) {
+    const key = savedDosesKey();
+    if (!key) return;
+    const updated = savedDosesList.filter((e) => e.id !== id);
+    setSavedDosesList(updated);
+    localStorage.setItem(key, JSON.stringify(updated));
+  }
+
+  function startEditDose(idx: number) {
+    setSavedDosesEditIdx(idx);
+    setSavedDosesEditDraft({ ...savedDosesList[idx] });
+  }
+
+  function confirmEditDose() {
+    if (savedDosesEditIdx === null || !savedDosesEditDraft) return;
+    const key = savedDosesKey();
+    if (!key) return;
+    const updated = savedDosesList.map((e, i) => i === savedDosesEditIdx ? savedDosesEditDraft : e);
+    setSavedDosesList(updated);
+    localStorage.setItem(key, JSON.stringify(updated));
+    setSavedDosesEditIdx(null);
+    setSavedDosesEditDraft(null);
+  }
+
+  function formatDoseEntry(e: SavedDoseEntry): string {
+    const durStr = e.continueMedicine
+      ? "Continue"
+      : (() => {
+          const durVal = e.durationValue?.trim();
+          const durNum = Number(durVal);
+          return durVal && durVal !== "0"
+            ? `${durVal} ${durNum === 1 ? e.durationUnit : `${e.durationUnit}s`}`
+            : "";
+        })();
+
+    let schedParts: string[] = [];
+    if (e.schedule === "Eye Drop") {
+      const [amt, count, freq, side] = e.noneFields ?? [];
+      const dosePart = [amt, count, freq].filter(Boolean).join(" ");
+      schedParts = [dosePart, side].filter(Boolean);
+    } else if (e.schedule === "None") {
+      const custom = e.customText?.trim();
+      if (custom) schedParts = [custom];
+    } else {
+      const n = Number.parseInt(e.schedule, 10);
+      if (!Number.isNaN(n)) {
+        const doses = e.scheduleDoses.slice(0, n).map((v) => v || "0").join("+");
+        schedParts = [`${doses} ${e.unit}`.trim()];
+      }
+    }
+
+    const main = [...schedParts, durStr].filter(Boolean).join(" - ");
+    if (!e.intervalDoses?.length) return main;
+    const intParts = e.intervalDoses.map((id) => {
+      const n2 = Number.parseInt(id.schedule, 10);
+      const idDosePart = !Number.isNaN(n2)
+        ? id.scheduleDoses.slice(0, n2).map((v) => v || "0").join("+")
+        : id.schedule === "Eye Drop"
+          ? [id.noneFields?.[0], id.noneFields?.[1], id.noneFields?.[2]].filter(Boolean).join(" ")
+          : id.customText?.trim() || "";
+      const idDurStr = id.continueMedicine
+        ? "Continue"
+        : (() => {
+            const v = id.durationValue?.trim();
+            const n = Number(v);
+            return v && v !== "0" ? `${v} ${n === 1 ? id.durationUnit : `${id.durationUnit}s`}` : "";
+          })();
+      return [idDosePart, idDurStr].filter(Boolean).join(" - ");
+    });
+    return `${main} → ${intParts.join(", ")}`;
   }
 
   const scheduleCount = Number.isNaN(Number.parseInt(customMedicine.schedule, 10))
@@ -6390,8 +6708,8 @@ function MedicationSidebar({
                       const fav = isFavourite(favStore[item.id]);
                       const pos = getDosageFormPosition(item.dosageForm);
                       const titleName = pos === "before"
-                        ? [item.dosageForm, item.brandName, item.strength].filter(Boolean).join(" ")
-                        : [item.brandName, item.strength, item.dosageForm].filter(Boolean).join(" ");
+                        ? [item.dosageForm, item.brandName, normalizeMg(item.strength)].filter(Boolean).join(" ")
+                        : [item.brandName, normalizeMg(item.strength), item.dosageForm].filter(Boolean).join(" ");
                       return (
                         <div key={item.id} className="group relative">
                           <button
@@ -6503,12 +6821,15 @@ function MedicationSidebar({
                       onClick={() => toggleExpand(idx)}
                     >
                       <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition", isExpanded ? "" : "-rotate-90")} />
-                      <span className="truncate text-sm font-bold uppercase tracking-wide text-foreground">
+                      <span className="truncate text-sm font-bold tracking-wide text-foreground">
                         {(() => {
                           const pos = getDosageFormPosition(session.search.dosageForm);
+                          const brand = (session.search.brandName ?? "").toUpperCase();
+                          const strength = normalizeMg(session.search.strength);
+                          const dosageForm = (session.search.dosageForm ?? "").toUpperCase();
                           return pos === "before"
-                            ? [session.search.dosageForm, session.search.brandName, session.search.strength].filter(Boolean).join(" ")
-                            : [session.search.brandName, session.search.strength, session.search.dosageForm].filter(Boolean).join(" ");
+                            ? [dosageForm, brand, strength].filter(Boolean).join(" ")
+                            : [brand, strength, dosageForm].filter(Boolean).join(" ");
                         })()}
                       </span>
                       {!isExpanded && (doseLabel || form.remarksTags.length > 0 || form.remarks.trim()) && (
@@ -6528,57 +6849,33 @@ function MedicationSidebar({
                     {isExpanded && (
                       <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1">
                         <button
-                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-2.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                          className="h-6 whitespace-nowrap rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); updateCustomMedicine({ customText: "Interval dose" }); }}
+                          onClick={(e) => { e.stopPropagation(); addIntervalDose(); }}
                         >
                           Interval Dose
                         </button>
                         <button
-                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-2.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                          className="h-6 whitespace-nowrap rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); onQueryChange(session.search.genericName || ""); }}
+                          onClick={(e) => { e.stopPropagation(); setAltBrandsIdx(idx); setAltBrandsSearch(""); }}
                         >
                           Alt. Brands
                         </button>
                         <button
-                          className="h-6 whitespace-nowrap rounded bg-primary/10 px-2.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                          className="h-6 whitespace-nowrap rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
                           type="button"
                           onClick={(e) => { e.stopPropagation(); saveDose(); }}
                         >
                           Save Dose
                         </button>
-                        <div className="relative">
-                          <button
-                            className="h-6 whitespace-nowrap rounded bg-primary/10 px-2.5 text-[10px] font-medium text-primary hover:bg-primary/20"
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setShowDoses((v) => !v); }}
-                          >
-                            Doses
-                          </button>
-                          {showDoses && (() => {
-                            const saved = loadSavedDoses();
-                            return (
-                              <div className="absolute right-0 top-8 z-40 w-56 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
-                                {saved.length === 0 ? (
-                                  <div className="px-3 py-2 text-xs text-muted-foreground">No saved doses yet</div>
-                                ) : (
-                                  saved.map((d, i) => (
-                                    <button
-                                      key={i}
-                                      className="flex w-full flex-col border-b border-border px-3 py-2 text-left text-xs last:border-0 hover:bg-muted"
-                                      type="button"
-                                      onClick={() => applyDose(d)}
-                                    >
-                                      <span className="font-medium">{d.schedule}×/day · {d.durationValue} {d.durationUnit}</span>
-                                      <span className="text-muted-foreground">{d.scheduleDoses.join("+")} {d.unit}</span>
-                                    </button>
-                                  ))
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
+                        <button
+                          className="h-6 whitespace-nowrap rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openSavedDoses(); }}
+                        >
+                          Doses
+                        </button>
                       </div>
                     )}
                     <button
@@ -6607,6 +6904,21 @@ function MedicationSidebar({
                       schedCount={sessSchedCount}
                     />
                   )}
+                  {/* Interval dose rows */}
+                  {(session.intervalDoses ?? []).map((intDose, di) => (
+                    <IntervalDoseRow
+                      key={di}
+                      form={intDose}
+                      onUpdate={(patch) => updateIntervalDose(idx, di, patch)}
+                      onScheduleChange={(v) => updateIntervalDoseSchedule(idx, di, v)}
+                      onScheduleDose={(doseIdx, v) => {
+                        const doses = [...intDose.scheduleDoses];
+                        doses[doseIdx] = v.replace(/[^\d.]/g, "");
+                        updateIntervalDose(idx, di, { scheduleDoses: doses });
+                      }}
+                      onRemove={() => removeIntervalDose(idx, di)}
+                    />
+                  ))}
                 </div>
               );
             })}
@@ -6619,8 +6931,317 @@ function MedicationSidebar({
           onClearAll={onClear}
         />
       </div>
+
+      {/* Saved Doses dialog */}
+      {savedDosesOpen && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) { setSavedDosesOpen(false); setSavedDosesEditIdx(null); setSavedDosesEditDraft(null); setSavedDosesDeleteIdx(null); } }}
+        >
+          <div className="flex h-auto max-h-[72vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-card shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Saved Doses</h2>
+                {expandedIdx !== null && sessions[expandedIdx]?.search.genericName && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Generic: <span className="font-medium text-foreground">{sessions[expandedIdx]?.search.genericName}</span>
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1 hover:bg-muted"
+                onClick={() => { setSavedDosesOpen(false); setSavedDosesEditIdx(null); setSavedDosesEditDraft(null); setSavedDosesDeleteIdx(null); }}
+              >
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {savedDosesList.length === 0 ? (
+                <p className="px-2 py-6 text-center text-sm text-muted-foreground">No saved doses yet. Use &quot;Save Dose&quot; to save the current schedule.</p>
+              ) : (
+                savedDosesList.map((entry, idx) => (
+                  <div key={entry.id} className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                    {savedDosesEditIdx === idx ? (
+                      /* Inline edit form */
+                      <div className="space-y-2.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground">Schedule</span>
+                            <select
+                              className="h-7 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+                              value={savedDosesEditDraft!.schedule}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                const n = Number.parseInt(v, 10);
+                                const doses = Number.isNaN(n)
+                                  ? []
+                                  : Array.from({ length: n }, (_, i) => savedDosesEditDraft!.scheduleDoses[i] ?? "0");
+                                setSavedDosesEditDraft((prev) => ({ ...prev!, schedule: v, scheduleDoses: doses }));
+                              }}
+                            >
+                              <option value="None">None</option>
+                              {["1", "2", "3", "4", "5", "6"].map((n) => (
+                                <option key={n} value={n}>{n}</option>
+                              ))}
+                            </select>
+                          </div>
+                          {(() => {
+                            const n = Number.parseInt(savedDosesEditDraft!.schedule, 10);
+                            if (Number.isNaN(n)) return null;
+                            return (
+                              <div className="flex items-center gap-1">
+                                {Array.from({ length: n }, (_, i) => (
+                                  <input
+                                    key={i}
+                                    type="text"
+                                    className="h-7 w-12 rounded border bg-background px-2 text-center text-sm font-semibold outline-none focus:ring-1 focus:ring-primary"
+                                    value={savedDosesEditDraft!.scheduleDoses[i] ?? ""}
+                                    onChange={(e) => {
+                                      const doses = [...savedDosesEditDraft!.scheduleDoses];
+                                      doses[i] = e.target.value;
+                                      setSavedDosesEditDraft((prev) => ({ ...prev!, scheduleDoses: doses }));
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Duration</span>
+                          <input
+                            type="text"
+                            className="h-7 w-16 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+                            value={savedDosesEditDraft!.durationValue}
+                            onChange={(e) => setSavedDosesEditDraft((prev) => ({ ...prev!, durationValue: e.target.value }))}
+                          />
+                          <select
+                            className="h-7 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+                            value={savedDosesEditDraft!.durationUnit}
+                            onChange={(e) => setSavedDosesEditDraft((prev) => ({ ...prev!, durationUnit: e.target.value }))}
+                          >
+                            {customMedicineDurationUnitOptions.map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2 pt-0.5">
+                          <button
+                            type="button"
+                            className="h-7 rounded bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                            onClick={confirmEditDose}
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            className="h-7 rounded border border-border px-3 text-xs hover:bg-muted"
+                            onClick={() => { setSavedDosesEditIdx(null); setSavedDosesEditDraft(null); }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : savedDosesDeleteIdx === idx ? (
+                      /* Delete confirmation row */
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm text-foreground">Delete this saved dose?</p>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="h-7 rounded bg-red-500 px-3 text-xs font-semibold text-white hover:bg-red-600"
+                            onClick={() => { deleteSavedDose(entry.id); setSavedDosesDeleteIdx(null); }}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            className="h-7 rounded border border-border px-3 text-xs hover:bg-muted"
+                            onClick={() => setSavedDosesDeleteIdx(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Display row */
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{formatDoseEntry(entry)}</p>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="h-7 rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                            onClick={() => applyDose(entry)}
+                          >
+                            Apply
+                          </button>
+                          <button
+                            type="button"
+                            title="Edit"
+                            className="h-7 w-7 inline-flex items-center justify-center rounded border border-border hover:bg-muted"
+                            onClick={() => { setSavedDosesDeleteIdx(null); startEditDose(idx); }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Delete"
+                            className="h-7 w-7 inline-flex items-center justify-center rounded border border-border text-red-500 hover:bg-red-50 hover:border-red-200"
+                            onClick={() => { setSavedDosesEditIdx(null); setSavedDosesEditDraft(null); setSavedDosesDeleteIdx(idx); }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end border-t border-border px-5 py-3">
+              <button
+                type="button"
+                className="h-9 rounded-lg border border-border px-5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                onClick={() => { setSavedDosesOpen(false); setSavedDosesEditIdx(null); setSavedDosesEditDraft(null); setSavedDosesDeleteIdx(null); }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Alt. Brands dialog */}
+      {altBrandsIdx !== null && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) { setAltBrandsIdx(null); setAltBrandsSearch(""); } }}
+        >
+          <div className="flex h-[78vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Alternative Brands</h2>
+                {altBrandsGeneric && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Generic: <span className="font-medium text-foreground">{altBrandsGeneric}</span>
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => { setAltBrandsIdx(null); setAltBrandsSearch(""); }}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Search bar */}
+            <div className="border-b border-border px-4 py-3">
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <input
+                  autoFocus
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  placeholder={altBrandsGeneric ? `Showing brands for "${altBrandsGeneric}" — type to search all` : "Search medicines…"}
+                  value={altBrandsSearch}
+                  onChange={(e) => setAltBrandsSearch(e.target.value)}
+                />
+                {altBrandsSearch && (
+                  <button type="button" onClick={() => setAltBrandsSearch("")}>
+                    <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto">
+              {altBrandsFetching ? (
+                <div className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Searching medicines…
+                </div>
+              ) : altBrandsIsError ? (
+                <div className="px-4 py-4 text-sm text-destructive">Failed to load alternatives. Please try again.</div>
+              ) : (altBrandsData?.data ?? []).length === 0 ? (
+                <div className="px-4 py-4 text-sm text-muted-foreground">
+                  {altBrandsQ ? `No alternatives found for "${altBrandsQ}"` : "No alternatives found"}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-1 p-1.5">
+                  {(altBrandsData?.data ?? []).map((item) => {
+                    const isCurrent = item.id === altBrandsSession?.search.id;
+                    return (
+                      <div key={item.id} className="relative">
+                        <button
+                          type="button"
+                          disabled={isCurrent}
+                          className={cn(
+                            "w-full rounded-md px-2.5 py-2 text-left transition-colors",
+                            isCurrent
+                              ? "cursor-default bg-primary/10 ring-1 ring-inset ring-primary/30"
+                              : "bg-muted hover:bg-muted/70"
+                          )}
+                          onClick={() => pickAltBrand(item)}
+                        >
+                          <span className="block truncate text-[11px] font-bold leading-snug text-foreground">
+                            {item.brandName}
+                            {item.strength && (
+                              <span className="ml-1 font-normal text-muted-foreground">{normalizeMg(item.strength)}</span>
+                            )}
+                          </span>
+                          <div className="mt-0.5 flex items-center justify-between gap-1">
+                            <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
+                              {item.genericName}{item.dosageForm ? ` · ${item.dosageForm}` : ""}
+                            </span>
+                            {item.companyName && (
+                              <span className="shrink-0 text-[10px] text-muted-foreground">
+                                {item.companyName}
+                              </span>
+                            )}
+                          </div>
+                          {isCurrent && (
+                            <div className="mt-0.5 text-[10px] font-semibold text-primary">✓ Current</div>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end border-t border-border px-5 py-3">
+              <button
+                type="button"
+                className="h-9 rounded-lg border border-border px-5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                onClick={() => { setAltBrandsIdx(null); setAltBrandsSearch(""); }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </RightDrawer>
   );
+}
+
+function loadSavedDosesByGeneric(genericName: string): SavedDoseEntry[] {
+  if (typeof window === "undefined" || !genericName) return [];
+  const key = `rx-saved-doses:g:${genericName.toLowerCase()}`;
+  try { return JSON.parse(localStorage.getItem(key) ?? "[]"); } catch { return []; }
 }
 
 const REMARKS_LIBRARY_KEY = "rx-remarks-library";
@@ -6650,6 +7271,7 @@ function ExpandedMedicineForm({
   const [remarksInput, setRemarksInput] = useState("");
   const [showRemarkDialog, setShowRemarkDialog] = useState(false);
   const [remarksLibrary, setRemarksLibrary] = useState<string[]>(() => loadRemarksLibrary());
+  const [pickerOpenIdx, setPickerOpenIdx] = useState<number | null>(null);
 
   function addRemark() {
     const tag = remarksInput.trim();
@@ -6778,7 +7400,7 @@ function ExpandedMedicineForm({
                 /* Standard numeric dose inputs */
                 <div className="flex flex-wrap items-center gap-1">
                   {Array.from({ length: schedCount }, (_, i) => (
-                    <div key={i} className="flex items-center gap-0.5">
+                    <div key={i} className="relative flex items-center gap-0.5">
                       <Input
                         className="h-8 w-14 rounded-sm bg-background px-2 text-center font-semibold text-red-600"
                         inputMode="decimal"
@@ -6786,7 +7408,27 @@ function ExpandedMedicineForm({
                         type="number"
                         value={form.scheduleDoses[i] ?? ""}
                         onChange={(event) => onScheduleDose(i, event.target.value)}
+                        onFocus={() => setPickerOpenIdx(i)}
+                        onBlur={() => setTimeout(() => setPickerOpenIdx(null), 150)}
                       />
+                      {pickerOpenIdx === i && (
+                        <div className="absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 flex gap-1.5 rounded-xl border border-border bg-card px-3 py-2 shadow-lg">
+                          {["1", "1.5", "2", "2.5", "3", "4", "5"].map((v) => (
+                            <button
+                              key={v}
+                              type="button"
+                              className="h-8 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                onScheduleDose(i, v);
+                                setPickerOpenIdx(null);
+                              }}
+                            >
+                              {v}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {i < schedCount - 1 && (
                         <span className="select-none text-xs text-muted-foreground">+</span>
                       )}
@@ -6896,6 +7538,164 @@ function ExpandedMedicineForm({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function IntervalDoseRow({
+  form,
+  onUpdate,
+  onScheduleChange,
+  onScheduleDose,
+  onRemove,
+}: {
+  form: CustomMedicineFormState;
+  onUpdate: (patch: Partial<CustomMedicineFormState>) => void;
+  onScheduleChange: (v: string) => void;
+  onScheduleDose: (i: number, v: string) => void;
+  onRemove: () => void;
+}) {
+  const [remarksLibrary] = useState<string[]>(() => loadRemarksLibrary());
+  const [pickerOpenIdx, setPickerOpenIdx] = useState<number | null>(null);
+  const schedCount = Number.isNaN(Number.parseInt(form.schedule, 10)) ? 0 : Number.parseInt(form.schedule, 10);
+  const isNone = form.schedule === "None";
+
+  function toggleRemark(tag: string) {
+    const next = form.remarksTags.includes(tag)
+      ? form.remarksTags.filter((t) => t !== tag)
+      : [...form.remarksTags, tag];
+    onUpdate({ remarksTags: next });
+  }
+
+  return (
+    <div className="border-t border-dashed border-primary/30 bg-primary/5">
+      {/* Schedule row */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-l-2 border-primary/50 px-3 py-2">
+        <span className="text-xs font-semibold text-primary">↳ Interval</span>
+
+        <select
+          className="h-7 rounded-sm border bg-background px-1.5 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+          value={form.schedule}
+          onChange={(e) => onScheduleChange(e.target.value)}
+        >
+          <option value="None">None</option>
+          {["1", "2", "3", "4", "5", "6"].map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+
+        {isNone ? (
+          <textarea
+            rows={1}
+            className="w-48 resize-none overflow-hidden rounded-md border border-input bg-background px-2 py-1 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-primary"
+            placeholder="Custom schedule..."
+            value={form.customText}
+            onChange={(e) => {
+              onUpdate({ customText: e.target.value });
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+          />
+        ) : (
+          <div className="flex items-center gap-0.5">
+            {Array.from({ length: schedCount }, (_, i) => (
+              <div key={i} className="relative flex items-center gap-0.5">
+                <Input
+                  className="h-7 w-12 rounded-sm bg-background px-1.5 text-center text-xs font-semibold text-red-600"
+                  inputMode="decimal"
+                  min="0"
+                  type="number"
+                  value={form.scheduleDoses[i] ?? ""}
+                  onChange={(e) => onScheduleDose(i, e.target.value)}
+                  onFocus={() => setPickerOpenIdx(i)}
+                  onBlur={() => setTimeout(() => setPickerOpenIdx(null), 150)}
+                />
+                {pickerOpenIdx === i && (
+                  <div className="absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 flex gap-1 rounded-xl border border-border bg-card px-2.5 py-1.5 shadow-lg">
+                    {["1", "1.5", "2", "2.5", "3", "4", "5"].map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        className="h-7 rounded-full bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          onScheduleDose(i, v);
+                          setPickerOpenIdx(null);
+                        }}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {i < schedCount - 1 && <span className="text-xs text-muted-foreground">+</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!form.continueMedicine && (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">for</span>
+            <Input
+              className="h-7 w-12 rounded-sm bg-background px-1.5 text-center text-xs font-semibold text-red-600"
+              min="0"
+              type="number"
+              value={form.durationValue}
+              onChange={(e) => onUpdate({ durationValue: e.target.value })}
+            />
+            <select
+              className="h-7 rounded-sm border bg-background px-1.5 text-xs outline-none"
+              value={form.durationUnit}
+              onChange={(e) => onUpdate({ durationUnit: e.target.value })}
+            >
+              {customMedicineDurationUnitOptions.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <label className="flex cursor-pointer select-none items-center gap-1">
+          <span className="text-xs">Continue</span>
+          <input
+            className="h-4 w-4 cursor-pointer accent-primary"
+            type="checkbox"
+            checked={form.continueMedicine}
+            onChange={(e) => onUpdate({ continueMedicine: e.target.checked })}
+          />
+        </label>
+
+        <button
+          type="button"
+          className="ml-auto flex items-center gap-0.5 rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-500 hover:bg-red-500/20"
+          onClick={onRemove}
+        >
+          <X className="h-3 w-3" />
+          Remove
+        </button>
+      </div>
+
+      {/* Remarks row */}
+      {remarksLibrary.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 border-l-2 border-primary/50 px-3 pb-2">
+          {remarksLibrary.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[10px] font-medium transition",
+                form.remarksTags.includes(tag)
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
+              )}
+              onClick={() => toggleRemark(tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -9112,16 +9912,15 @@ function splitTextLines(value: string) {
 }
 
 function formatCustomMedicineDuration(medicine: CustomMedicineFormState) {
+  if (medicine.continueMedicine) return "Continue";
   const value = medicine.durationValue.trim();
-  const duration = value
+  return value && value !== "0"
     ? `${value} ${Number(value) === 1 ? medicine.durationUnit : `${medicine.durationUnit}s`}`
     : "";
-
-  return [duration, medicine.continueMedicine ? "Continue" : ""].filter(Boolean).join("\n");
 }
 
 function formatMedicineTitle(item: RxMedicine) {
-  return [item.dosageForm, item.brandName, item.strength]
+  return [item.dosageForm, item.brandName, normalizeMg(item.strength)]
     .filter(Boolean)
     .join(" ")
     .replace(/\s+/g, " ")
