@@ -7246,6 +7246,7 @@ function AdviceSidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editText, setEditText] = useState("");
+  const [confirmDeleteAdvice, setConfirmDeleteAdvice] = useState<SavedAdvice | null>(null);
   const valueTextareaRef = useRef<HTMLTextAreaElement>(null);
   const insertedTextRef = useRef(value);
 
@@ -7342,10 +7343,23 @@ function AdviceSidebar({
                   {filtered.map((item) => (
                     <div
                       key={item.id}
-                      className="cursor-pointer rounded-full border border-border bg-muted px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                      className="group flex items-center gap-0.5 cursor-pointer rounded-full border border-border bg-muted px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-primary/10"
                       onMouseDown={(e) => { e.preventDefault(); insertAdvice(item.text); setSelectedId(item.id); setLocalText(item.text); insertedTextRef.current = item.text; setQuery(""); setDropdownOpen(false); }}
                     >
-                      {item.name}
+                      <span className="group-hover:text-primary">{item.name}</span>
+                      <button
+                        type="button"
+                        className="ml-0.5 shrink-0 rounded-full text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                        title="Delete this advice"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDropdownOpen(false);
+                          setConfirmDeleteAdvice(item);
+                        }}
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -7437,6 +7451,32 @@ function AdviceSidebar({
           )}
 
         </div>
+
+      {confirmDeleteAdvice !== null && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setConfirmDeleteAdvice(null)}
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="text-base font-semibold text-foreground">Delete Advice</h2>
+              <button type="button" onClick={() => setConfirmDeleteAdvice(null)} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <p className="text-sm text-muted-foreground">
+                Delete saved advice <span className="font-semibold text-foreground">"{confirmDeleteAdvice.name}"</span>? This cannot be undone.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button type="button" onClick={() => setConfirmDeleteAdvice(null)} className="h-9 rounded-lg border border-border px-5 text-sm font-medium text-foreground hover:bg-muted transition-colors">No</button>
+                <button type="button" onClick={() => { deleteItem(confirmDeleteAdvice.id); setConfirmDeleteAdvice(null); }} className="h-9 rounded-lg bg-destructive px-5 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 transition-colors">Yes, Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       </aside>
     </div>
   );
@@ -7857,6 +7897,7 @@ function ReferralSidebar({
   const [formChamberAddress, setFormChamberAddress] = useState("");
   const [formContact, setFormContact] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [confirmDeleteDoctor, setConfirmDeleteDoctor] = useState<SavedReferralDoctor | null>(null);
 
   function openAddDialog() {
     setEditingDoctor(null);
@@ -7962,7 +8003,7 @@ function ReferralSidebar({
                     <span
                       role="button"
                       className="flex h-6 w-6 items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
-                      onClick={(e) => { e.stopPropagation(); onDeleteDoctor(doc.id); }}
+                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteDoctor(doc); }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </span>
@@ -8037,6 +8078,33 @@ function ReferralSidebar({
                 <Button type="button" className="flex-1" disabled={!formName.trim()} onClick={handleSubmit}>
                   {editingDoctor ? "Save Changes" : "Add Doctor"}
                 </Button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {confirmDeleteDoctor !== null && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setConfirmDeleteDoctor(null)}
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="text-base font-semibold text-foreground">Remove Doctor</h2>
+              <button type="button" onClick={() => setConfirmDeleteDoctor(null)} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <p className="text-sm text-muted-foreground">
+                Remove <span className="font-semibold text-foreground">{confirmDeleteDoctor.name}</span>
+                {confirmDeleteDoctor.specialty ? <> ({confirmDeleteDoctor.specialty})</> : null} from referral doctors?
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button type="button" onClick={() => setConfirmDeleteDoctor(null)} className="h-9 rounded-lg border border-border px-5 text-sm font-medium text-foreground hover:bg-muted transition-colors">No</button>
+                <button type="button" onClick={() => { onDeleteDoctor(confirmDeleteDoctor.id); setConfirmDeleteDoctor(null); }} className="h-9 rounded-lg bg-destructive px-5 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 transition-colors">Yes, Remove</button>
               </div>
             </div>
           </div>
