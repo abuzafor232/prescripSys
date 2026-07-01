@@ -6942,6 +6942,7 @@ function SuggestionInput({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // Only show matches when the user has typed something
   const filtered = query.trim().length > 0
@@ -6995,8 +6996,8 @@ function SuggestionInput({
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    deleteSuggestion(suggKey, s);
-                    setSuggestions((prev) => prev.filter((x) => x !== s));
+                    setOpen(false);
+                    setConfirmDelete(s);
                   }}
                 >
                   <X className="h-2.5 w-2.5" />
@@ -7005,6 +7006,54 @@ function SuggestionInput({
             ))}
           </div>
         </div>
+      )}
+
+      {confirmDelete !== null && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmDelete(null); }}
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="text-base font-semibold text-foreground">Remove Suggestion</h2>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <p className="text-sm text-muted-foreground">
+                Remove{" "}
+                <span className="font-semibold text-foreground">"{confirmDelete}"</span>
+                {" "}from saved suggestions?
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(null)}
+                  className="h-9 rounded-lg border border-border px-5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteSuggestion(suggKey, confirmDelete);
+                    setSuggestions((prev) => prev.filter((x) => x !== confirmDelete));
+                    setConfirmDelete(null);
+                  }}
+                  className="h-9 rounded-lg bg-destructive px-5 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 transition-colors"
+                >
+                  Yes, Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
