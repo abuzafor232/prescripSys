@@ -347,6 +347,9 @@ export function fetchPrescriptions(
     drug?: string;
     diagnosis?: string;
     complaint?: string;
+    investigation?: string;
+    advice?: string;
+    referral?: string;
     dateFrom?: string;
     dateTo?: string;
     chamberId?: string;
@@ -356,17 +359,20 @@ export function fetchPrescriptions(
   token: string
 ) {
   const qs = new URLSearchParams();
-  if (params.q)           qs.set("q",          params.q);
-  if (params.patientName) qs.set("patientName", params.patientName);
-  if (params.phone)       qs.set("phone",       params.phone);
-  if (params.drug)        qs.set("drug",        params.drug);
-  if (params.diagnosis)   qs.set("diagnosis",   params.diagnosis);
-  if (params.complaint)   qs.set("complaint",   params.complaint);
-  if (params.dateFrom)    qs.set("dateFrom",    params.dateFrom);
-  if (params.dateTo)      qs.set("dateTo",      params.dateTo);
-  if (params.chamberId)   qs.set("chamberId",   params.chamberId);
-  if (params.page)        qs.set("page",        String(params.page));
-  if (params.limit)       qs.set("limit",       String(params.limit));
+  if (params.q)             qs.set("q",             params.q);
+  if (params.patientName)   qs.set("patientName",   params.patientName);
+  if (params.phone)         qs.set("phone",         params.phone);
+  if (params.drug)          qs.set("drug",          params.drug);
+  if (params.diagnosis)     qs.set("diagnosis",     params.diagnosis);
+  if (params.complaint)     qs.set("complaint",     params.complaint);
+  if (params.investigation) qs.set("investigation", params.investigation);
+  if (params.advice)        qs.set("advice",        params.advice);
+  if (params.referral)      qs.set("referral",      params.referral);
+  if (params.dateFrom)      qs.set("dateFrom",      params.dateFrom);
+  if (params.dateTo)        qs.set("dateTo",        params.dateTo);
+  if (params.chamberId)     qs.set("chamberId",     params.chamberId);
+  if (params.page)          qs.set("page",          String(params.page));
+  if (params.limit)         qs.set("limit",         String(params.limit));
   return apiFetch<PrescriptionListResponse>(`/prescriptions?${qs.toString()}`, { token });
 }
 

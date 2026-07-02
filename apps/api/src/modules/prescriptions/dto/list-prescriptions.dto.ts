@@ -21,4 +21,16 @@ export class ListPrescriptionsDto extends PaginationDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  investigation?: string;
+
+  @IsOptional()
+  @IsString()
+  advice?: string;
+
+  @IsOptional()
+  @IsString()
+  referral?: string;
 }

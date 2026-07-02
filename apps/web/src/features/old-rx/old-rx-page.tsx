@@ -81,12 +81,16 @@ type AdvancedFilters = {
   drug: string;
   diagnosis: string;
   complaint: string;
+  investigation: string;
+  advice: string;
+  referral: string;
   dateFrom: string;
   dateTo: string;
 };
 
 const EMPTY_ADV: AdvancedFilters = {
   patientName: "", phone: "", drug: "", diagnosis: "", complaint: "",
+  investigation: "", advice: "", referral: "",
   dateFrom: "", dateTo: "",
 };
 
@@ -102,11 +106,14 @@ function AdvancedSearch({
       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Advanced Filters</p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {([
-          ["patientName", "Patient Name"],
-          ["phone",       "Phone Number"],
-          ["drug",        "Drug / Medicine"],
-          ["diagnosis",   "Diagnosis"],
-          ["complaint",   "Chief Complaint"],
+          ["patientName",   "Patient Name"],
+          ["phone",         "Phone Number"],
+          ["drug",          "Drug / Medicine"],
+          ["diagnosis",     "Diagnosis"],
+          ["complaint",     "Chief Complaint"],
+          ["investigation", "Investigation"],
+          ["advice",        "Advice"],
+          ["referral",      "Referral"],
         ] as [keyof AdvancedFilters, string][]).map(([key, label]) => (
           <div key={key} className="space-y-1">
             <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</label>
@@ -321,14 +328,17 @@ export function OldRxPage() {
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["old-rx", debouncedQ, debouncedAdv, page],
     queryFn: () => fetchPrescriptions({
-      q:           debouncedQ || undefined,
-      patientName: debouncedAdv.patientName  || undefined,
-      phone:       debouncedAdv.phone        || undefined,
-      drug:        debouncedAdv.drug         || undefined,
-      diagnosis:   debouncedAdv.diagnosis    || undefined,
-      complaint:   debouncedAdv.complaint    || undefined,
-      dateFrom:    debouncedAdv.dateFrom     || undefined,
-      dateTo:      debouncedAdv.dateTo       || undefined,
+      q:             debouncedQ || undefined,
+      patientName:   debouncedAdv.patientName   || undefined,
+      phone:         debouncedAdv.phone         || undefined,
+      drug:          debouncedAdv.drug          || undefined,
+      diagnosis:     debouncedAdv.diagnosis     || undefined,
+      complaint:     debouncedAdv.complaint     || undefined,
+      investigation: debouncedAdv.investigation || undefined,
+      advice:        debouncedAdv.advice        || undefined,
+      referral:      debouncedAdv.referral      || undefined,
+      dateFrom:      debouncedAdv.dateFrom      || undefined,
+      dateTo:        debouncedAdv.dateTo        || undefined,
       page,
       limit: 20,
     }, token),

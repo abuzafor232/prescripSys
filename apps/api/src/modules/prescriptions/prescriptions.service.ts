@@ -63,6 +63,16 @@ export class PrescriptionsService {
         ]
       });
     }
+    if (dto.investigation) and.push({ investigations: { some: { name: { contains: dto.investigation, mode: "insensitive" } } } });
+    if (dto.advice) and.push({ advice: { contains: dto.advice, mode: "insensitive" } });
+    if (dto.referral) {
+      and.push({
+        OR: [
+          { metadata: { path: ["rawSections", "referral"], string_contains: dto.referral } },
+          { metadata: { path: ["referrals"], array_contains: [{ specialty: dto.referral }] } }
+        ]
+      } as Prisma.PrescriptionWhereInput);
+    }
 
     const where: Prisma.PrescriptionWhereInput = { AND: and };
 
