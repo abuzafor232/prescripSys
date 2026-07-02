@@ -386,7 +386,7 @@ function FreeformEditor({
       {/* ── Toolbar (hidden when noToolbar) ── */}
       {!noToolbar && <>
 
-      {/* ── Row 1: Font family · Size · A↑ A↓ | B I U ── */}
+      {/* ── Row 1: Font family · Size · A↑ A↓ ── */}
       <div className="flex items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#ebebeb" }}>
         <select
           className="h-6 rounded border border-gray-300 bg-white px-0.5 text-[10px] text-gray-800"
@@ -426,14 +426,16 @@ function FreeformEditor({
           <span className="font-bold leading-none" style={{ fontSize: 9 }}>A</span>
           <span className="leading-none" style={{ fontSize: 7 }}>↓</span>
         </button>
+      </div>
 
-        <Sep />
+      {/* ── Row 2: B I U ── */}
+      <div className="flex items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#ebebeb" }}>
         <button {...tbBtn(fmt.bold,      "Bold (Ctrl+B)")}      onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}>      <Bold      className="h-3 w-3" /></button>
         <button {...tbBtn(fmt.italic,    "Italic (Ctrl+I)")}    onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}>    <Italic    className="h-3 w-3" /></button>
         <button {...tbBtn(fmt.underline, "Underline (Ctrl+U)")} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
       </div>
 
-      {/* ── Row 2: Highlight · Text color | Alignment · Line spacing ── */}
+      {/* ── Row 3: Highlight · Text color ── */}
       <div className="flex items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#ebebeb" }}>
         <button ref={bgBtnRef} type="button" title="Highlight color"
           className="flex h-6 w-6 items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100"
@@ -448,8 +450,10 @@ function FreeformEditor({
           <span className="select-none text-[11px] font-bold leading-none"
             style={{ textDecoration: "underline", textDecorationColor: "#e53e3e" }}>A</span>
         </button>
+      </div>
 
-        <Sep />
+      {/* ── Row 4: Alignment · Line spacing ── */}
+      <div className="flex items-center gap-0.5 border-b px-1.5 py-1" style={{ background: "#ebebeb" }}>
         <button {...tbBtn(fmt.align === "left",    "Align left")}    onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}>   <AlignLeft    className="h-3 w-3" /></button>
         <button {...tbBtn(fmt.align === "center",  "Align center")}  onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}> <AlignCenter  className="h-3 w-3" /></button>
         <button {...tbBtn(fmt.align === "right",   "Align right")}   onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}>  <AlignRight   className="h-3 w-3" /></button>
