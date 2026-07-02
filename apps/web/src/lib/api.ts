@@ -344,6 +344,7 @@ export function fetchPrescriptions(
     q?: string;
     patientName?: string;
     phone?: string;
+    registrationNo?: string;
     drug?: string;
     diagnosis?: string;
     complaint?: string;
@@ -362,6 +363,7 @@ export function fetchPrescriptions(
   if (params.q)             qs.set("q",             params.q);
   if (params.patientName)   qs.set("patientName",   params.patientName);
   if (params.phone)         qs.set("phone",         params.phone);
+  if (params.registrationNo) qs.set("registrationNo", params.registrationNo);
   if (params.drug)          qs.set("drug",          params.drug);
   if (params.diagnosis)     qs.set("diagnosis",     params.diagnosis);
   if (params.complaint)     qs.set("complaint",     params.complaint);

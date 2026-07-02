@@ -78,6 +78,7 @@ function DateInput({
 type AdvancedFilters = {
   patientName: string;
   phone: string;
+  registrationNo: string;
   drug: string;
   diagnosis: string;
   complaint: string;
@@ -89,7 +90,7 @@ type AdvancedFilters = {
 };
 
 const EMPTY_ADV: AdvancedFilters = {
-  patientName: "", phone: "", drug: "", diagnosis: "", complaint: "",
+  patientName: "", phone: "", registrationNo: "", drug: "", diagnosis: "", complaint: "",
   investigation: "", advice: "", referral: "",
   dateFrom: "", dateTo: "",
 };
@@ -108,6 +109,7 @@ function AdvancedSearch({
         {([
           ["patientName",   "Patient Name"],
           ["phone",         "Phone Number"],
+          ["registrationNo","Patient No."],
           ["drug",          "Drug / Medicine"],
           ["diagnosis",     "Diagnosis"],
           ["complaint",     "Chief Complaint"],
@@ -329,9 +331,10 @@ export function OldRxPage() {
     queryKey: ["old-rx", debouncedQ, debouncedAdv, page],
     queryFn: () => fetchPrescriptions({
       q:             debouncedQ || undefined,
-      patientName:   debouncedAdv.patientName   || undefined,
-      phone:         debouncedAdv.phone         || undefined,
-      drug:          debouncedAdv.drug          || undefined,
+      patientName:    debouncedAdv.patientName    || undefined,
+      phone:          debouncedAdv.phone          || undefined,
+      registrationNo: debouncedAdv.registrationNo || undefined,
+      drug:           debouncedAdv.drug           || undefined,
       diagnosis:     debouncedAdv.diagnosis     || undefined,
       complaint:     debouncedAdv.complaint     || undefined,
       investigation: debouncedAdv.investigation || undefined,

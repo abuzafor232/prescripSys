@@ -51,8 +51,9 @@ export class PrescriptionsService {
     }
 
     // Individual field filters
-    if (dto.patientName) and.push({ patient: { name: { contains: dto.patientName, mode: "insensitive" } } });
-    if (dto.phone)       and.push({ patient: { phone: { contains: dto.phone, mode: "insensitive" } } });
+    if (dto.patientName)    and.push({ patient: { name:           { contains: dto.patientName,    mode: "insensitive" } } });
+    if (dto.phone)          and.push({ patient: { phone:          { contains: dto.phone,          mode: "insensitive" } } });
+    if (dto.registrationNo) and.push({ patient: { registrationNo: { contains: dto.registrationNo, mode: "insensitive" } } });
     if (dto.complaint)   and.push({ chiefComplaints: { contains: dto.complaint, mode: "insensitive" } });
     if (dto.diagnosis)   and.push({ diagnoses: { some: { name: { contains: dto.diagnosis, mode: "insensitive" } } } });
     if (dto.drug) {
