@@ -79,6 +79,8 @@ type RxMedicine = {
   duration: string;
   instruction: string;
   note?: string;
+  isBold?: boolean;
+  isRed?: boolean;
 };
 
 type PatientFormState = {
@@ -277,6 +279,8 @@ type ComplaintEntry = {
   forUnit: "Day" | "Month" | "Week" | "Year" | "Hour";
   forDate: string;
   note: string;
+  isBold?: boolean;
+  isRed?: boolean;
 };
 
 type HistoryDuration = {
@@ -294,10 +298,12 @@ type HistoryEntry = {
   value: string;
   duration?: HistoryDuration;
   note: string;
+  isBold?: boolean;
+  isRed?: boolean;
 };
 
-type InvestigationEntry = { id: string; name: string; value: string; };
-type DiagnosisEntry = { id: string; name: string; value: string; };
+type InvestigationEntry = { id: string; name: string; value: string; isBold?: boolean; isRed?: boolean; };
+type DiagnosisEntry = { id: string; name: string; value: string; isBold?: boolean; isRed?: boolean; };
 
 type RxDraft = {
   id: string;
@@ -813,6 +819,7 @@ type SavedDoseEntry = {
   durationUnit: string;
   continueMedicine: boolean;
   intervalDoses?: CustomMedicineFormState[];
+  remarksTags?: string[];
   isDefault?: boolean;
   savedAt: string;
 };
@@ -940,6 +947,8 @@ export function PrescriptionBuilder() {
   const [medicationExpandedIdx, setMedicationExpandedIdx] = useState<number | null>(null);
   const [medicationCustomForm, setMedicationCustomForm]   = useState<CustomMedicineFormState>(initialCustomMedicineForm);
   const [medicines, setMedicines] = useState<RxMedicine[]>([]);
+  const [editingNoteIdx, setEditingNoteIdx] = useState<number | null>(null);
+  const [hoveredNoteIdx, setHoveredNoteIdx] = useState<number | null>(null);
   const [complaints, setComplaints] = useState<ComplaintEntry[]>([]);
   const [histories, setHistories] = useState<HistoryEntry[]>([]);
   const [rxInvestigations, setRxInvestigations] = useState<InvestigationEntry[]>([]);
@@ -1244,6 +1253,72 @@ export function PrescriptionBuilder() {
         itemIndex === index ? { ...item, ...patch } : item
       )
     );
+  }
+
+  function moveMedicine(index: number, direction: -1 | 1) {
+    setMedicines((current) => {
+      const next = [...current];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function updateComplaint(id: string, patch: Partial<ComplaintEntry>) {
+    setComplaints((c) => c.map((x) => x.id === id ? { ...x, ...patch } : x));
+  }
+
+  function updateHistory(id: string, patch: Partial<HistoryEntry>) {
+    setHistories((h) => h.map((x) => x.id === id ? { ...x, ...patch } : x));
+  }
+
+  function updateInvestigation(id: string, patch: Partial<InvestigationEntry>) {
+    setRxInvestigations((inv) => inv.map((x) => x.id === id ? { ...x, ...patch } : x));
+  }
+
+  function updateDiagnosis(id: string, patch: Partial<DiagnosisEntry>) {
+    setRxDiagnoses((d) => d.map((x) => x.id === id ? { ...x, ...patch } : x));
+  }
+
+  function moveComplaint(index: number, direction: -1 | 1) {
+    setComplaints((current) => {
+      const next = [...current];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function moveHistory(index: number, direction: -1 | 1) {
+    setHistories((current) => {
+      const next = [...current];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function moveInvestigation(index: number, direction: -1 | 1) {
+    setRxInvestigations((current) => {
+      const next = [...current];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function moveDiagnosis(index: number, direction: -1 | 1) {
+    setRxDiagnoses((current) => {
+      const next = [...current];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
   }
 
   function addCustomMedicine(medicine: RxMedicine) {
@@ -2096,11 +2171,105 @@ export function PrescriptionBuilder() {
 
   function renderPanelPreview(panel: PanelKey) {
     if (panel === "medication") {
-      return medicines.length ? (
-        <div className="mt-0.5 max-h-12 overflow-hidden text-xs text-foreground">
-          {medicines.map((item) => item.brandName).join(", ")}
+      if (!medicines.length) return null;
+      return (
+        <div className="mt-1 space-y-1">
+          {medicines.map((item, index) => {
+            const translatedDose = translateRxDose(item);
+            const durationPart = translateDuration(item.duration);
+            const detailLine = (translatedDose || durationPart)
+              ? [translatedDose, durationPart].filter(Boolean).join(" - ")
+              : "";
+            return (
+              <div
+                key={`${item.brandName}-${index}`}
+                className="group rounded-md border border-transparent bg-background/70 px-2 py-1.5 hover:border-border hover:bg-background"
+              >
+                {/* Name row: [index. Name] [B R ↑ ↓] [×] */}
+                <div className="flex items-center gap-1.5">
+                  {/* Medicine name */}
+                  <div className="flex-1 min-w-0 text-xs">
+                    <span className="mr-0.5 font-semibold text-muted-foreground">{index + 1}.</span>
+                    <span className={cn("font-medium", item.isBold && "font-bold", item.isRed && "text-red-600")}>
+                      {formatMedicineTitle(item)}
+                    </span>
+                  </div>
+                  {/* B R ↑ ↓ — right of name */}
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      type="button" title="Bold"
+                      onClick={(e) => { e.stopPropagation(); updateMedicine(index, { isBold: !item.isBold }); }}
+                      className={cn("h-6 w-6 rounded border text-xs font-bold", item.isBold ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted")}
+                    >B</button>
+                    <button
+                      type="button" title="Red"
+                      onClick={(e) => { e.stopPropagation(); updateMedicine(index, { isRed: !item.isRed }); }}
+                      className={cn("h-6 w-6 rounded border text-xs font-bold", item.isRed ? "border-red-500 bg-red-500 text-white" : "border-border text-red-500 hover:bg-red-50")}
+                    >R</button>
+                    <button
+                      type="button" title="Move up" disabled={index === 0}
+                      onClick={(e) => { e.stopPropagation(); moveMedicine(index, -1); }}
+                      className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30"
+                    >↑</button>
+                    <button
+                      type="button" title="Move down" disabled={index === medicines.length - 1}
+                      onClick={(e) => { e.stopPropagation(); moveMedicine(index, 1); }}
+                      className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30"
+                    >↓</button>
+                  </div>
+                  {/* × far right */}
+                  <button
+                    type="button" title="Remove"
+                    onClick={(e) => { e.stopPropagation(); setMedicines((c) => c.filter((_, i) => i !== index)); }}
+                    className="h-6 w-6 shrink-0 rounded border border-border text-xs text-red-500 opacity-0 transition-opacity group-hover:opacity-100 hover:border-red-200 hover:bg-red-50"
+                  >×</button>
+                </div>
+                {/* Dose – Instruction – Duration */}
+                {detailLine ? (
+                  <div className="ml-5 text-xs text-foreground">{detailLine}</div>
+                ) : null}
+                {/* Remarks / note */}
+                {item.note ? (
+                  <div
+                    className="ml-5 flex items-center gap-1"
+                    onMouseEnter={() => setHoveredNoteIdx(index)}
+                    onMouseLeave={() => setHoveredNoteIdx(null)}
+                  >
+                    {editingNoteIdx === index ? (
+                      <input
+                        autoFocus
+                        className="flex-1 rounded border bg-background px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-primary"
+                        defaultValue={item.note}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={(e) => {
+                          updateMedicine(index, { note: e.target.value.trim() || undefined });
+                          setEditingNoteIdx(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            updateMedicine(index, { note: e.currentTarget.value.trim() || undefined });
+                            setEditingNoteIdx(null);
+                          }
+                          if (e.key === "Escape") setEditingNoteIdx(null);
+                          e.stopPropagation();
+                        }}
+                      />
+                    ) : (
+                      <>
+                        <span className="flex-1 text-xs text-muted-foreground">{item.note}</span>
+                        <button type="button" title="Edit remark"
+                          onClick={(e) => { e.stopPropagation(); setEditingNoteIdx(index); }}
+                          className={cn("shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-opacity hover:bg-muted", hoveredNoteIdx === index ? "opacity-100" : "opacity-0")}
+                        >Edit</button>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
-      ) : null;
+      );
     }
 
     if (panel === "vision") {
@@ -2221,24 +2390,37 @@ export function PrescriptionBuilder() {
 
     if (panel === "complaint" && complaints.length > 0) {
       return (
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {complaints.map((c) => {
+        <div className="mt-1 space-y-0.5">
+          {complaints.map((c, index) => {
             const dur = c.forType === "For" && c.forAmount
               ? `for ${c.forAmount} ${c.forUnit}${Number(c.forAmount) !== 1 ? "s" : ""}`
               : c.forType === "Since" && c.forAmount
               ? `since ${c.forAmount} ${c.forUnit}${Number(c.forAmount) !== 1 ? "s" : ""}`
               : c.forType === "On" && c.forDate ? `on ${c.forDate}` : "";
             return (
-              <span key={c.id} className="group inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/8 px-2 py-0.5 text-xs font-semibold text-primary">
-                {c.name}
-                {dur && <span className="font-normal text-muted-foreground">· {dur}</span>}
-                {c.value && <span className="font-normal text-muted-foreground">· {c.value}</span>}
-                <button className="no-print ml-0.5 rounded text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100 transition-opacity"
-                  type="button" title="Delete"
-                  onClick={(e) => { e.stopPropagation(); setComplaints((prev) => prev.filter((x) => x.id !== c.id)); }}>
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
+              <div key={c.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0.5 hover:border-border hover:bg-background">
+                <span className="mr-0.5 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
+                <span className={cn("flex-1 min-w-0 text-xs font-semibold text-primary", c.isBold && "font-bold", c.isRed && "text-red-600")}>
+                  {c.name}
+                  {dur && <span className={cn("font-normal", c.isRed ? "text-red-500" : "text-muted-foreground")}> · {dur}</span>}
+                  {c.value && <span className={cn("font-normal", c.isRed ? "text-red-500" : "text-muted-foreground")}> · {c.value}</span>}
+                </span>
+                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button type="button" title="Bold" onClick={(e) => { e.stopPropagation(); updateComplaint(c.id, { isBold: !c.isBold }); }}
+                    className={cn("h-6 w-6 rounded border text-xs font-bold", c.isBold ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted")}>B</button>
+                  <button type="button" title="Red" onClick={(e) => { e.stopPropagation(); updateComplaint(c.id, { isRed: !c.isRed }); }}
+                    className={cn("h-6 w-6 rounded border text-xs font-bold", c.isRed ? "border-red-500 bg-red-500 text-white" : "border-border text-red-500 hover:bg-red-50")}>R</button>
+                  <button type="button" title="Move up" disabled={index === 0}
+                    onClick={(e) => { e.stopPropagation(); moveComplaint(index, -1); }}
+                    className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30">↑</button>
+                  <button type="button" title="Move down" disabled={index === complaints.length - 1}
+                    onClick={(e) => { e.stopPropagation(); moveComplaint(index, 1); }}
+                    className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30">↓</button>
+                </div>
+                <button type="button" title="Delete"
+                  onClick={(e) => { e.stopPropagation(); setComplaints((prev) => prev.filter((x) => x.id !== c.id)); }}
+                  className="no-print h-6 w-6 shrink-0 rounded border border-border text-xs text-red-500 opacity-0 transition-opacity group-hover:opacity-100 hover:border-red-200 hover:bg-red-50">×</button>
+              </div>
             );
           })}
         </div>
@@ -2247,27 +2429,40 @@ export function PrescriptionBuilder() {
 
     if (panel === "history" && histories.length > 0) {
       const groups = historyTabs
-        .map((t) => ({ tab: t, entries: histories.filter((h) => h.tab === t) }))
+        .map((t) => ({ tab: t, entries: histories.map((h, i) => ({ ...h, globalIdx: i })).filter((h) => h.tab === t) }))
         .filter((g) => g.entries.length > 0);
       return (
         <div className="mt-1 space-y-1.5 text-foreground">
           {groups.map((group) => (
             <div key={group.tab}>
               <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{group.tab}</div>
-              <div className="flex flex-wrap gap-1">
-                {group.entries.map((h) => {
+              <div className="space-y-0.5">
+                {group.entries.map((h, localIdx) => {
                   const dur = h.duration ? formatHistoryDuration(h.duration) : "";
                   return (
-                    <span key={h.id} className="group inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/8 px-2 py-0.5 text-xs font-semibold text-primary">
-                      {h.name}
-                      {h.value && <span className="font-normal text-muted-foreground">: {h.value}</span>}
-                      {dur && <span className="font-normal text-muted-foreground">· {dur}</span>}
-                      <button className="no-print ml-0.5 rounded opacity-0 hover:text-destructive group-hover:opacity-100 transition-opacity"
-                        type="button" title="Delete"
-                        onClick={(e) => { e.stopPropagation(); setHistories((prev) => prev.filter((x) => x.id !== h.id)); }}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
+                    <div key={h.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0.5 hover:border-border hover:bg-background">
+                      <span className="mr-0.5 text-xs font-semibold text-muted-foreground">{localIdx + 1}.</span>
+                      <span className={cn("flex-1 min-w-0 text-xs font-semibold text-primary", h.isBold && "font-bold", h.isRed && "text-red-600")}>
+                        {h.name}
+                        {h.value && <span className={cn("font-normal", h.isRed ? "text-red-500" : "text-muted-foreground")}>: {h.value}</span>}
+                        {dur && <span className={cn("font-normal", h.isRed ? "text-red-500" : "text-muted-foreground")}> · {dur}</span>}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button type="button" title="Bold" onClick={(e) => { e.stopPropagation(); updateHistory(h.id, { isBold: !h.isBold }); }}
+                          className={cn("h-6 w-6 rounded border text-xs font-bold", h.isBold ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted")}>B</button>
+                        <button type="button" title="Red" onClick={(e) => { e.stopPropagation(); updateHistory(h.id, { isRed: !h.isRed }); }}
+                          className={cn("h-6 w-6 rounded border text-xs font-bold", h.isRed ? "border-red-500 bg-red-500 text-white" : "border-border text-red-500 hover:bg-red-50")}>R</button>
+                        <button type="button" title="Move up" disabled={h.globalIdx === 0}
+                          onClick={(e) => { e.stopPropagation(); moveHistory(h.globalIdx, -1); }}
+                          className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30">↑</button>
+                        <button type="button" title="Move down" disabled={h.globalIdx === histories.length - 1}
+                          onClick={(e) => { e.stopPropagation(); moveHistory(h.globalIdx, 1); }}
+                          className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30">↓</button>
+                      </div>
+                      <button type="button" title="Delete"
+                        onClick={(e) => { e.stopPropagation(); setHistories((prev) => prev.filter((x) => x.id !== h.id)); }}
+                        className="no-print h-6 w-6 shrink-0 rounded border border-border text-xs text-red-500 opacity-0 transition-opacity group-hover:opacity-100 hover:border-red-200 hover:bg-red-50">×</button>
+                    </div>
                   );
                 })}
               </div>
@@ -2366,39 +2561,63 @@ export function PrescriptionBuilder() {
 
     if (panel === "investigation" && rxInvestigations.length > 0) {
       return (
-        <ol className="mt-1 space-y-0.5 pl-0">
-          {rxInvestigations.map((inv, idx) => (
-            <li key={inv.id} className="group flex items-center gap-1 text-xs text-foreground">
-              <span className="shrink-0 font-semibold text-primary">{idx + 1}.</span>
-              <span className="font-medium">{inv.name}</span>
-              {inv.value && <span className="text-muted-foreground">: {inv.value}</span>}
-              <button className="no-print ml-auto rounded opacity-0 hover:text-destructive group-hover:opacity-100 transition-opacity"
-                type="button" title="Delete"
-                onClick={(e) => { e.stopPropagation(); setRxInvestigations((prev) => prev.filter((x) => x.id !== inv.id)); }}>
-                <X className="h-3 w-3" />
-              </button>
-            </li>
+        <div className="mt-1 space-y-0.5">
+          {rxInvestigations.map((inv, index) => (
+            <div key={inv.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0.5 hover:border-border hover:bg-background">
+              <span className="shrink-0 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
+              <span className={cn("flex-1 min-w-0 text-xs font-medium", inv.isBold && "font-bold", inv.isRed ? "text-red-600" : "text-foreground")}>
+                {inv.name}
+                {inv.value && <span className={inv.isRed ? "text-red-500" : "text-muted-foreground"}>: {inv.value}</span>}
+              </span>
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <button type="button" title="Bold" onClick={(e) => { e.stopPropagation(); updateInvestigation(inv.id, { isBold: !inv.isBold }); }}
+                  className={cn("h-6 w-6 rounded border text-xs font-bold", inv.isBold ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted")}>B</button>
+                <button type="button" title="Red" onClick={(e) => { e.stopPropagation(); updateInvestigation(inv.id, { isRed: !inv.isRed }); }}
+                  className={cn("h-6 w-6 rounded border text-xs font-bold", inv.isRed ? "border-red-500 bg-red-500 text-white" : "border-border text-red-500 hover:bg-red-50")}>R</button>
+                <button type="button" title="Move up" disabled={index === 0}
+                  onClick={(e) => { e.stopPropagation(); moveInvestigation(index, -1); }}
+                  className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30">↑</button>
+                <button type="button" title="Move down" disabled={index === rxInvestigations.length - 1}
+                  onClick={(e) => { e.stopPropagation(); moveInvestigation(index, 1); }}
+                  className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30">↓</button>
+              </div>
+              <button type="button" title="Delete"
+                onClick={(e) => { e.stopPropagation(); setRxInvestigations((prev) => prev.filter((x) => x.id !== inv.id)); }}
+                className="no-print h-6 w-6 shrink-0 rounded border border-border text-xs text-red-500 opacity-0 transition-opacity group-hover:opacity-100 hover:border-red-200 hover:bg-red-50">×</button>
+            </div>
           ))}
-        </ol>
+        </div>
       );
     }
 
     if (panel === "diagnosis" && rxDiagnoses.length > 0) {
       return (
-        <ol className="mt-1 space-y-0.5 pl-0">
-          {rxDiagnoses.map((d, idx) => (
-            <li key={d.id} className="group flex items-center gap-1 text-xs text-foreground">
-              <span className="shrink-0 font-semibold text-primary">{idx + 1}.</span>
-              <span className="font-medium">{d.name}</span>
-              {d.value && <span className="text-muted-foreground">: {d.value}</span>}
-              <button className="no-print ml-auto rounded opacity-0 hover:text-destructive group-hover:opacity-100 transition-opacity"
-                type="button" title="Delete"
-                onClick={(e) => { e.stopPropagation(); setRxDiagnoses((prev) => prev.filter((x) => x.id !== d.id)); }}>
-                <X className="h-3 w-3" />
-              </button>
-            </li>
+        <div className="mt-1 space-y-0.5">
+          {rxDiagnoses.map((d, index) => (
+            <div key={d.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0.5 hover:border-border hover:bg-background">
+              <span className="shrink-0 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
+              <span className={cn("flex-1 min-w-0 text-xs font-medium", d.isBold && "font-bold", d.isRed ? "text-red-600" : "text-foreground")}>
+                {d.name}
+                {d.value && <span className={d.isRed ? "text-red-500" : "text-muted-foreground"}>: {d.value}</span>}
+              </span>
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <button type="button" title="Bold" onClick={(e) => { e.stopPropagation(); updateDiagnosis(d.id, { isBold: !d.isBold }); }}
+                  className={cn("h-6 w-6 rounded border text-xs font-bold", d.isBold ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted")}>B</button>
+                <button type="button" title="Red" onClick={(e) => { e.stopPropagation(); updateDiagnosis(d.id, { isRed: !d.isRed }); }}
+                  className={cn("h-6 w-6 rounded border text-xs font-bold", d.isRed ? "border-red-500 bg-red-500 text-white" : "border-border text-red-500 hover:bg-red-50")}>R</button>
+                <button type="button" title="Move up" disabled={index === 0}
+                  onClick={(e) => { e.stopPropagation(); moveDiagnosis(index, -1); }}
+                  className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30">↑</button>
+                <button type="button" title="Move down" disabled={index === rxDiagnoses.length - 1}
+                  onClick={(e) => { e.stopPropagation(); moveDiagnosis(index, 1); }}
+                  className="h-6 w-6 rounded border border-border text-xs hover:bg-muted disabled:opacity-30">↓</button>
+              </div>
+              <button type="button" title="Delete"
+                onClick={(e) => { e.stopPropagation(); setRxDiagnoses((prev) => prev.filter((x) => x.id !== d.id)); }}
+                className="no-print h-6 w-6 shrink-0 rounded border border-border text-xs text-red-500 opacity-0 transition-opacity group-hover:opacity-100 hover:border-red-200 hover:bg-red-50">×</button>
+            </div>
           ))}
-        </ol>
+        </div>
       );
     }
 
@@ -6194,9 +6413,20 @@ function MedicationSidebar({
 
   // ── Build RxMedicine from form state ────────────────────────────────────
   function buildRxMedicine(form: CustomMedicineFormState, intervalDoses?: CustomMedicineFormState[]): RxMedicine {
-    const dose = form.scheduleDoses.map((d) => d.trim() || "0").join("+");
     const unit = form.unit === "n/a" ? "" : form.unit;
-    const instruction = unit;
+    let dose: string;
+    let instruction: string;
+    if (form.schedule === "Eye Drop") {
+      const [amt, count, freq, side] = form.noneFields;
+      dose = [[amt, count, freq].filter(Boolean).join(" "), side].filter(Boolean).join(" - ");
+      instruction = "";
+    } else if (form.schedule === "None") {
+      dose = form.customText.trim();
+      instruction = unit;
+    } else {
+      dose = form.scheduleDoses.map((d) => d.trim() || "0").join("+");
+      instruction = unit;
+    }
     const noteparts = [
       ...form.remarksTags,
       form.remarks.trim()
@@ -6344,6 +6574,7 @@ function MedicationSidebar({
           durationValue: latest.durationValue || form.durationValue,
           durationUnit: latest.durationUnit || form.durationUnit,
           continueMedicine: latest.continueMedicine ?? false,
+          remarksTags: latest.remarksTags ?? [],
         };
       } else if (latest.schedule === "Eye Drop") {
         form = {
@@ -6353,6 +6584,7 @@ function MedicationSidebar({
           durationValue: latest.durationValue || form.durationValue,
           durationUnit: latest.durationUnit || form.durationUnit,
           continueMedicine: latest.continueMedicine ?? false,
+          remarksTags: latest.remarksTags ?? [],
         };
       } else if (latest.schedule === "None") {
         form = {
@@ -6362,6 +6594,7 @@ function MedicationSidebar({
           durationValue: latest.durationValue || form.durationValue,
           durationUnit: latest.durationUnit || form.durationUnit,
           continueMedicine: latest.continueMedicine ?? false,
+          remarksTags: latest.remarksTags ?? [],
         };
       }
     }
@@ -6370,8 +6603,13 @@ function MedicationSidebar({
     recordUsage(item.id);
     setFavStore(loadFavStore());
 
-    // Auto-add to prescription immediately
-    onAddCustomMedicine(buildRxMedicine(form, autoIntervalDoses));
+    // Auto-add to prescription immediately (include search metadata so strength shows in title)
+    onAddCustomMedicine({
+      ...buildRxMedicine(form, autoIntervalDoses),
+      medicineId: item.id.startsWith("demo-") ? undefined : item.id,
+      genericName: item.genericName,
+      strength: item.strength,
+    });
 
     const newIdx = sessions.length;
     setSessions([...sessions, { search: item, form, prescIdx: medicines.length, intervalDoses: autoIntervalDoses }]);
@@ -6531,6 +6769,9 @@ function MedicationSidebar({
       if (e.durationValue !== customMedicine.durationValue) return false;
       if (e.durationUnit !== customMedicine.durationUnit) return false;
       if ((e.continueMedicine ?? false) !== customMedicine.continueMedicine) return false;
+      const eTags = (e.remarksTags ?? []).slice().sort().join(",");
+      const cTags = [...customMedicine.remarksTags].sort().join(",");
+      if (eTags !== cTags) return false;
       if (e.schedule === "None") return (e.customText ?? "") === (customMedicine.customText ?? "");
       if (e.schedule === "Eye Drop") return JSON.stringify(e.noneFields ?? []) === JSON.stringify(customMedicine.noneFields ?? []);
       return e.scheduleDoses.join("+") === customMedicine.scheduleDoses.join("+");
@@ -6559,6 +6800,7 @@ function MedicationSidebar({
       durationUnit: customMedicine.durationUnit,
       continueMedicine: customMedicine.continueMedicine,
       intervalDoses: currentIntervalDoses.length > 0 ? [...currentIntervalDoses] : undefined,
+      remarksTags: customMedicine.remarksTags.length > 0 ? [...customMedicine.remarksTags] : undefined,
       isDefault: makeDefault,
       savedAt: new Date().toISOString()
     };
@@ -6586,7 +6828,8 @@ function MedicationSidebar({
       customText: dose.customText ?? "",
       durationValue: dose.durationValue,
       durationUnit: dose.durationUnit,
-      continueMedicine: dose.continueMedicine ?? false
+      continueMedicine: dose.continueMedicine ?? false,
+      remarksTags: dose.remarksTags ?? []
     };
     const merged = { ...customMedicine, ...patch };
     const newIntervalDoses = dose.intervalDoses ?? [];
@@ -6661,7 +6904,8 @@ function MedicationSidebar({
       }
     }
 
-    const main = [...schedParts, durStr].filter(Boolean).join(" - ");
+    const tagStr = (e.remarksTags ?? []).filter(Boolean).join(", ");
+    const main = [...schedParts, durStr, tagStr].filter(Boolean).join(" - ");
     if (!e.intervalDoses?.length) return main;
     const intParts = e.intervalDoses.map((id) => {
       const n2 = Number.parseInt(id.schedule, 10);
@@ -7331,6 +7575,7 @@ function ExpandedMedicineForm({
   const [showRemarkDialog, setShowRemarkDialog] = useState(false);
   const [remarksLibrary, setRemarksLibrary] = useState<string[]>(() => loadRemarksLibrary());
   const [pickerOpenIdx, setPickerOpenIdx] = useState<number | null>(null);
+  const [editingTag, setEditingTag] = useState<string | null>(null);
 
   function addRemark() {
     const tag = remarksInput.trim();
@@ -7535,31 +7780,74 @@ function ExpandedMedicineForm({
       </div>
 
       {/* Remarks chips + inline Add button */}
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="flex flex-wrap items-center" style={{ gap: "3px" }}>
         {remarksLibrary.map((tag) => {
           const selected = form.remarksTags.includes(tag);
           return (
             <div key={tag} className="group flex items-center gap-0">
-              <button
-                type="button"
-                className={cn(
-                  "rounded-l-full border px-2.5 py-0.5 text-xs font-medium transition",
-                  selected
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
-                )}
-                onClick={() => toggleRemark(tag)}
-              >
-                {tag}
-              </button>
-              <button
-                type="button"
-                aria-label={`Remove "${tag}"`}
-                className="rounded-r-full border border-l-0 border-border bg-muted px-1 py-0.5 text-[10px] text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                onClick={() => removeFromLibrary(tag)}
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
+              {selected && editingTag === tag ? (
+                <input
+                  autoFocus
+                  className="rounded-full border border-primary bg-primary/10 px-2.5 py-0.5 text-xs font-medium outline-none focus:ring-1 focus:ring-primary"
+                  defaultValue={tag}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim();
+                    if (val && val !== tag) {
+                      const newLib = remarksLibrary.map((t) => t === tag ? val : t);
+                      setRemarksLibrary(newLib);
+                      saveRemarksLibrary(newLib);
+                      onUpdate({ remarksTags: form.remarksTags.map((t) => t === tag ? val : t) });
+                    }
+                    setEditingTag(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.currentTarget.blur(); }
+                    if (e.key === "Escape") setEditingTag(null);
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-l-full border px-2.5 py-0.5 text-xs font-medium transition",
+                    selected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
+                  )}
+                  onClick={() => toggleRemark(tag)}
+                >
+                  {tag}
+                </button>
+              )}
+              {selected && editingTag !== tag ? (
+                <>
+                  <button
+                    type="button"
+                    title="Edit"
+                    className="border border-l-0 border-primary bg-primary/90 px-1.5 py-0.5 text-[10px] text-primary-foreground transition hover:bg-primary/70"
+                    onClick={() => setEditingTag(tag)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Deselect "${tag}"`}
+                    className="rounded-r-full border border-l-0 border-primary bg-primary/90 px-1 py-0.5 text-primary-foreground transition hover:bg-red-500 hover:border-red-500"
+                    onClick={() => toggleRemark(tag)}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </>
+              ) : !selected ? (
+                <button
+                  type="button"
+                  aria-label={`Remove "${tag}"`}
+                  className="rounded-r-full border border-l-0 border-border bg-muted px-1 py-0.5 text-[10px] text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                  onClick={() => removeFromLibrary(tag)}
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              ) : null}
             </div>
           );
         })}
@@ -9978,40 +10266,92 @@ function formatCustomMedicineDuration(medicine: CustomMedicineFormState) {
     : "";
 }
 
+function toBn(s: string | number) {
+  return String(s).replace(/\d/g, (d) => "০১২৩৪৫৬৭৮৯"[+d]);
+}
+
+function translateDuration(duration: string): string {
+  if (!duration) return "";
+  if (duration === "Continue") return "Continue";
+  const m = duration.match(/^(\d+)\s+(Days?|Months?|Years?|Weeks?)$/i);
+  if (m) {
+    const num = toBn(m[1]);
+    const u = m[2].toLowerCase();
+    const unit = u.startsWith("day") ? "দিন"
+      : u.startsWith("month") ? "মাস"
+      : u.startsWith("year") ? "বছর"
+      : u.startsWith("week") ? "সপ্তাহ"
+      : m[2];
+    return `${num} ${unit}`;
+  }
+  return toBn(duration);
+}
+
+function translateEyeDropDose(dose: string): string {
+  const dashIdx = dose.indexOf(" - ");
+  const dosePart = dashIdx >= 0 ? dose.slice(0, dashIdx) : dose;
+  const side = dashIdx >= 0 ? dose.slice(dashIdx + 3) : "";
+
+  let translated = dosePart;
+  // "N Drop" → "N ফোঁটা করে"
+  translated = translated.replace(/(\d+)\s+Drop/i, (_, n) => `${toBn(n)} ফোঁটা করে`);
+  // "N Times Daily" → "দিনে N বার"
+  translated = translated.replace(/(\d+)\s+Times Daily/i, (_, n) => `দিনে ${toBn(n)} বার`);
+  // "Times Daily" without count
+  translated = translated.replace(/Times Daily/i, "প্রতিদিন");
+  // remaining digits
+  translated = toBn(translated);
+
+  const s = side.toLowerCase().trim();
+  const translatedSide = s.includes("both") ? "উভয় চোখে"
+    : s.includes("right") ? "ডান চোখে"
+    : s.includes("left") ? "বাম চোখে"
+    : side;
+
+  return [translated.trim(), translatedSide].filter(Boolean).join(" ");
+}
+
+function translateRxDose(item: RxMedicine): string {
+  const dose = item.dose.trim();
+  const form = (item.dosageForm ?? "").toLowerCase();
+  if (form.includes("eye drop") || form.includes("eye gel")) {
+    return translateEyeDropDose(dose);
+  }
+  return toBn(dose);
+}
+
 function formatMedicineTitle(item: RxMedicine) {
-  return [item.dosageForm, item.brandName, normalizeMg(item.strength)]
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const pos = getDosageFormPosition(item.dosageForm);
+  const parts = pos === "before"
+    ? [item.dosageForm, item.brandName, normalizeMg(item.strength)]
+    : [item.brandName, normalizeMg(item.strength), item.dosageForm];
+  return parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 }
 
 function getMedicineDetailLines(item: RxMedicine) {
-  const dose = item.dose.trim();
-  const instruction = item.instruction.trim();
-  const duration = item.duration.trim();
+  const dose = translateRxDose(item);
+  const duration = translateDuration(item.duration.trim());
   const note = item.note?.trim();
 
   if (item.dosageForm === "Eye Drop") {
-    const doseLine = [dose, instruction, duration].filter(Boolean).join(" x ");
+    const doseLine = [dose, duration].filter(Boolean).join(" - ");
     return [doseLine, note ? `Remarks: ${note}` : ""].filter(Boolean);
   }
 
   if (item.dosageForm === "Eye Gel") {
-    const durationText = duration ? `for ${duration}` : "";
-    const doseLine = [dose, instruction, durationText].filter(Boolean).join(" ");
+    const doseLine = [dose, duration].filter(Boolean).join(" ");
     return [doseLine, note ? `Remarks: ${note}` : ""].filter(Boolean);
   }
 
   if (item.dosageForm === "Inj.") {
+    const instruction = item.instruction.trim();
     const doseLine = [dose, instruction, duration].filter(Boolean).join(" ");
     return [doseLine, note ? `Remarks: ${note}` : ""].filter(Boolean);
   }
 
   return [
     dose,
-    ...instruction.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
-    ...duration.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    duration,
     note ? `Remarks: ${note}` : ""
   ].filter(Boolean);
 }
