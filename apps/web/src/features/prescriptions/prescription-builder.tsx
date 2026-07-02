@@ -813,6 +813,7 @@ type SavedDoseEntry = {
   durationUnit: string;
   continueMedicine: boolean;
   intervalDoses?: CustomMedicineFormState[];
+  isDefault?: boolean;
   savedAt: string;
 };
 
@@ -6137,6 +6138,7 @@ function MedicationSidebar({
   const [savedDosesEditIdx, setSavedDosesEditIdx] = useState<number | null>(null);
   const [savedDosesEditDraft, setSavedDosesEditDraft] = useState<SavedDoseEntry | null>(null);
   const [savedDosesDeleteIdx, setSavedDosesDeleteIdx] = useState<number | null>(null);
+  const [saveDosePending, setSaveDosePending] = useState(false);
   const [favStore, setFavStore]         = useState<FavStore>(() => loadFavStore());
   const [dosageFilter, setDosageFilter] = useState<string | null>(null);
   const [altBrandsIdx, setAltBrandsIdx] = useState<number | null>(null);
@@ -6328,8 +6330,9 @@ function MedicationSidebar({
     // Auto-apply latest saved dose for this generic name (overrides Drug Formation Order defaults)
     const genericSaved = loadSavedDosesByGeneric(item.genericName);
     let autoIntervalDoses: CustomMedicineFormState[] | undefined;
-    if (genericSaved.length > 0) {
-      const latest = genericSaved[0];
+    const defaultDose = genericSaved.find((e) => e.isDefault === true) ?? null;
+    if (defaultDose) {
+      const latest = defaultDose;
       autoIntervalDoses = latest.intervalDoses?.length ? latest.intervalDoses : undefined;
       const n = Number.parseInt(latest.schedule, 10);
       if (!Number.isNaN(n)) {
@@ -6382,6 +6385,7 @@ function MedicationSidebar({
 
   // ── Toggle expand / collapse a session ──────────────────────────────────
   function toggleExpand(idx: number) {
+    setSaveDosePending(false);
     if (expandedIdx === idx) {
       saveExpanded(idx);
       setExpandedIdx(null);
@@ -6520,8 +6524,6 @@ function MedicationSidebar({
   function saveDose() {
     const key = savedDosesKey();
     if (!key) return;
-    const currentSession = expandedIdx !== null ? sessions[expandedIdx] : null;
-    const currentIntervalDoses = currentSession?.intervalDoses ?? [];
     const prev = loadSavedDoses();
     const isDuplicate = prev.some((e) => {
       if (e.schedule !== customMedicine.schedule) return false;
@@ -6537,6 +6539,15 @@ function MedicationSidebar({
       onStatus("warning", "This dose is already saved.");
       return;
     }
+    setSaveDosePending(true);
+  }
+
+  function commitSaveDose(makeDefault: boolean) {
+    const key = savedDosesKey();
+    if (!key) { setSaveDosePending(false); return; }
+    const currentSession = expandedIdx !== null ? sessions[expandedIdx] : null;
+    const currentIntervalDoses = currentSession?.intervalDoses ?? [];
+    const prev = loadSavedDoses();
     const entry: SavedDoseEntry = {
       id: Date.now().toString(),
       schedule: customMedicine.schedule,
@@ -6548,10 +6559,15 @@ function MedicationSidebar({
       durationUnit: customMedicine.durationUnit,
       continueMedicine: customMedicine.continueMedicine,
       intervalDoses: currentIntervalDoses.length > 0 ? [...currentIntervalDoses] : undefined,
+      isDefault: makeDefault,
       savedAt: new Date().toISOString()
     };
-    localStorage.setItem(key, JSON.stringify([entry, ...prev].slice(0, 10)));
-    onStatus("success", "Dose saved.");
+    const updated = makeDefault
+      ? [entry, ...prev.map((e) => ({ ...e, isDefault: false }))]
+      : [entry, ...prev];
+    localStorage.setItem(key, JSON.stringify(updated.slice(0, 10)));
+    setSaveDosePending(false);
+    onStatus("success", makeDefault ? "Saved as default dose." : "Dose saved.");
   }
 
   function openSavedDoses() {
@@ -6590,6 +6606,14 @@ function MedicationSidebar({
     const key = savedDosesKey();
     if (!key) return;
     const updated = savedDosesList.filter((e) => e.id !== id);
+    setSavedDosesList(updated);
+    localStorage.setItem(key, JSON.stringify(updated));
+  }
+
+  function setDoseAsDefault(id: string) {
+    const key = savedDosesKey();
+    if (!key) return;
+    const updated = savedDosesList.map((e) => ({ ...e, isDefault: e.id === id }));
     setSavedDosesList(updated);
     localStorage.setItem(key, JSON.stringify(updated));
   }
@@ -6862,13 +6886,33 @@ function MedicationSidebar({
                         >
                           Alt. Brands
                         </button>
-                        <button
-                          className="h-6 whitespace-nowrap rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); saveDose(); }}
-                        >
-                          Save Dose
-                        </button>
+                        {saveDosePending ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-medium text-foreground">Make Default?</span>
+                            <button
+                              className="h-6 rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); commitSaveDose(true); }}
+                            >
+                              Yes
+                            </button>
+                            <button
+                              className="h-6 rounded border border-border bg-background px-2.5 text-xs font-semibold hover:bg-muted"
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); commitSaveDose(false); }}
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            className="h-6 whitespace-nowrap rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); saveDose(); }}
+                          >
+                            Save Dose
+                          </button>
+                        )}
                         <button
                           className="h-6 whitespace-nowrap rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
                           type="button"
@@ -7070,8 +7114,23 @@ function MedicationSidebar({
                     ) : (
                       /* Display row */
                       <div className="flex items-center justify-between gap-2">
-                        <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{formatDoseEntry(entry)}</p>
+                        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                          {entry.isDefault && (
+                            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">★ Default</span>
+                          )}
+                          <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{formatDoseEntry(entry)}</p>
+                        </div>
                         <div className="flex shrink-0 items-center gap-1.5">
+                          {!entry.isDefault && (
+                            <button
+                              type="button"
+                              title="Set as default"
+                              className="h-7 w-7 inline-flex items-center justify-center rounded border border-border text-muted-foreground hover:bg-amber-50 hover:border-amber-300 hover:text-amber-600"
+                              onClick={() => setDoseAsDefault(entry.id)}
+                            >
+                              <Star className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="h-7 rounded bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
@@ -7413,7 +7472,7 @@ function ExpandedMedicineForm({
                       />
                       {pickerOpenIdx === i && (
                         <div className="absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 flex gap-1.5 rounded-xl border border-border bg-card px-3 py-2 shadow-lg">
-                          {["1", "1.5", "2", "2.5", "3", "4", "5"].map((v) => (
+                          {["0", "1", "1.5", "2", "2.5", "3", "4", "5"].map((v) => (
                             <button
                               key={v}
                               type="button"
@@ -7612,7 +7671,7 @@ function IntervalDoseRow({
                 />
                 {pickerOpenIdx === i && (
                   <div className="absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 flex gap-1 rounded-xl border border-border bg-card px-2.5 py-1.5 shadow-lg">
-                    {["1", "1.5", "2", "2.5", "3", "4", "5"].map((v) => (
+                    {["0", "1", "1.5", "2", "2.5", "3", "4", "5"].map((v) => (
                       <button
                         key={v}
                         type="button"
