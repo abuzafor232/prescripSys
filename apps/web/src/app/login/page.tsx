@@ -23,12 +23,12 @@ export default function LoginPage() {
     mutationFn: () => loginWithPassword(email, password),
     onSuccess: (session) => {
       setSession(session);
-      router.replace("/");
+      router.replace("/select-chamber");
     }
   });
 
   useEffect(() => {
-    if (hydrated && accessToken) router.replace("/");
+    if (hydrated && accessToken) router.replace("/select-chamber");
   }, [accessToken, hydrated, router]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
