@@ -967,13 +967,53 @@ const PAGE_IN: Record<string, { w: number; h: number }> = {
 
 type CanvasSection = "bn" | "mid" | "en" | "footer";
 
+// Crop transparent edges from a PNG data URL using canvas pixel inspection.
+function trimTransparentPng(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext("2d");
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.drawImage(img, 0, 0);
+      const { data, width, height } = ctx.getImageData(0, 0, c.width, c.height);
+      let minX = width, minY = height, maxX = 0, maxY = 0;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          if (data[(y * width + x) * 4 + 3] > 8) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX < minX || maxY < minY) { resolve(dataUrl); return; }
+      const cw = maxX - minX + 1, ch = maxY - minY + 1;
+      const out = document.createElement("canvas");
+      out.width = cw; out.height = ch;
+      const octx = out.getContext("2d")!;
+      octx.drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
+      resolve(out.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 function LogoUploadCanvas({ onChange }: { onChange: (v: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
-    reader.onload = () => onChange(reader.result as string);
+    reader.onload = async () => {
+      const raw = reader.result as string;
+      const trimmed = await trimTransparentPng(raw);
+      onChange(trimmed);
+    };
     reader.readAsDataURL(file);
     e.target.value = "";
   }
@@ -1225,110 +1265,125 @@ function WysiwygCanvas({
   return (
     <div ref={containerRef} className="flex min-w-0 flex-col">
 
-      {/* ── Compact 2-row toolbar ── */}
-      <div style={{ background: "#efefef", color: "#111" }} className="rounded-t-xl border border-b-0">
-        {/* Label row */}
-        <div className="flex items-center gap-2 border-b border-gray-200 px-2 py-0.5">
-          <span className="text-[9px] font-semibold leading-none text-gray-500">
-            {activeSection === "bn"     ? "← Bengali (Left)"
-           : activeSection === "en"     ? "English (Right) →"
-           : activeSection === "mid"    ? "Center Text"
-           : activeSection === "footer" ? "Footer"
-           : "Click a section on the page to start editing"}
-          </span>
-          {activeSection === "footer" && (
-            <label className="ml-auto flex cursor-pointer items-center gap-1 text-[9px] text-gray-500">
+      {/* ── Single-row toolbar (32px tall) ── */}
+      <div style={{ background: "#e8e8e8", color: "#111", height: 32 }}
+        className="flex items-center gap-0 rounded-t-xl border border-b-0 px-1.5">
+
+        {/* Section badge */}
+        <span style={{ fontSize: 9, fontWeight: 700, color: "#888", whiteSpace: "nowrap", marginRight: 4, minWidth: 52 }}>
+          {activeSection === "bn" ? "← BN" : activeSection === "en" ? "EN →" : activeSection === "mid" ? "CTR" : activeSection === "footer" ? "FTR" : "—"}
+        </span>
+        <Sp />
+
+        {/* Font family */}
+        <select
+          className="rounded border border-gray-300 bg-white px-0.5 text-[10px] text-gray-800 disabled:opacity-30"
+          style={{ height: 26, minWidth: 90, maxWidth: 90 }} value={fontFamily} disabled={!canEdit}
+          onMouseDown={() => saveRange()}
+          onChange={(e) => { setFontFamily(e.target.value); exec("fontName", e.target.value); }}>
+          {EDITOR_FONTS.map(f => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
+        </select>
+
+        {/* Size */}
+        <input type="number" min="1" max="200" step="1" value={fontSize} disabled={!canEdit}
+          className="mx-1 rounded border border-gray-300 bg-white px-0.5 text-center text-[10px] text-gray-800 outline-none disabled:opacity-30 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          style={{ height: 26, width: 38 }}
+          onChange={(e) => setFontSize(e.target.value)}
+          onFocus={() => { sizeInputActive.current = true; }}
+          onBlur={(e) => { sizeInputActive.current = false; applyFontSz(parseInt(e.target.value)); }}
+          onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); applyFontSz(parseInt(fontSize)); } }} />
+
+        {/* A↑ A↓ */}
+        <button type="button" title="Increase font size" disabled={!canEdit}
+          className="flex items-center justify-center rounded text-gray-600 hover:bg-gray-300 disabled:opacity-30"
+          style={{ height: 26, width: 22 }}
+          onMouseDown={(e) => { e.preventDefault(); applyFontSz(Math.min(200, parseInt(fontSize || "13") + 2)); }}>
+          <span className="font-bold leading-none" style={{ fontSize: 10 }}>A</span><span className="leading-none" style={{ fontSize: 6 }}>↑</span>
+        </button>
+        <button type="button" title="Decrease font size" disabled={!canEdit}
+          className="flex items-center justify-center rounded text-gray-600 hover:bg-gray-300 disabled:opacity-30"
+          style={{ height: 26, width: 22 }}
+          onMouseDown={(e) => { e.preventDefault(); applyFontSz(Math.max(1, parseInt(fontSize || "13") - 2)); }}>
+          <span className="font-bold leading-none" style={{ fontSize: 8 }}>A</span><span className="leading-none" style={{ fontSize: 6 }}>↓</span>
+        </button>
+
+        <Sp />
+
+        {/* B I U */}
+        <button {...TB(fmt.bold,      "Bold")}      disabled={!canEdit} style={{ height: 26, width: 26, borderRadius: 4 }} onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}>      <Bold      className="h-3 w-3" /></button>
+        <button {...TB(fmt.italic,    "Italic")}    disabled={!canEdit} style={{ height: 26, width: 26, borderRadius: 4 }} onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}>    <Italic    className="h-3 w-3" /></button>
+        <button {...TB(fmt.underline, "Underline")} disabled={!canEdit} style={{ height: 26, width: 26, borderRadius: 4 }} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
+
+        <Sp />
+
+        {/* Highlight · Text color */}
+        <button ref={bgColorBtnRef} type="button" title="Highlight color" disabled={!canEdit}
+          className="flex items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-30"
+          style={{ height: 26, width: 26, borderRadius: 4 }}
+          onMouseDown={(e) => { e.preventDefault(); saveRange(); }}
+          onClick={() => openColorPicker("bg", "#ffff00")}>
+          <span className="select-none leading-none" style={{ fontSize: 12 }}>🖊</span>
+        </button>
+        <button ref={textColorBtnRef} type="button" title="Text color" disabled={!canEdit}
+          className="flex items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-30"
+          style={{ height: 26, width: 26, borderRadius: 4, marginLeft: 2 }}
+          onMouseDown={(e) => { e.preventDefault(); saveRange(); }}
+          onClick={() => openColorPicker("text", "#000000")}>
+          <span className="select-none font-bold leading-none" style={{ fontSize: 10, textDecoration: "underline", textDecorationColor: "#e53e3e" }}>A</span>
+        </button>
+
+        <Sp />
+
+        {/* Alignment */}
+        <button {...TB(fmt.align === "left",    "Align left")}    disabled={!canEdit} style={{ height: 26, width: 26, borderRadius: 4 }} onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}>   <AlignLeft    className="h-3 w-3" /></button>
+        <button {...TB(fmt.align === "center",  "Align center")}  disabled={!canEdit} style={{ height: 26, width: 26, borderRadius: 4 }} onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}> <AlignCenter  className="h-3 w-3" /></button>
+        <button {...TB(fmt.align === "right",   "Align right")}   disabled={!canEdit} style={{ height: 26, width: 26, borderRadius: 4 }} onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}>  <AlignRight   className="h-3 w-3" /></button>
+        <button {...TB(fmt.align === "justify", "Justify")}       disabled={!canEdit} style={{ height: 26, width: 26, borderRadius: 4 }} onMouseDown={(e) => { e.preventDefault(); exec("justifyFull"); }}>   <AlignJustify className="h-3 w-3" /></button>
+
+        <Sp />
+
+        {/* Line spacing */}
+        <select title="Line spacing" disabled={!canEdit}
+          className="rounded border border-gray-300 bg-white px-0.5 text-[10px] text-gray-800 disabled:opacity-30"
+          style={{ height: 26, width: 58 }}
+          defaultValue="1.2"
+          onMouseDown={() => saveRange()}
+          onChange={(e) => {
+            restoreRange();
+            const val = e.target.value;
+            const r = getRef();
+            if (!r?.current) return;
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return;
+            const range = sel.getRangeAt(0);
+            const walker = document.createTreeWalker(r.current, NodeFilter.SHOW_ELEMENT);
+            let node: Node | null = walker.currentNode;
+            while (node) {
+              if (node instanceof HTMLElement && range.intersectsNode(node)) {
+                const d = getComputedStyle(node).display;
+                if (d === "block" || d === "list-item") node.style.lineHeight = val;
+              }
+              node = walker.nextNode();
+            }
+            persistSection(activeSectionRef.current);
+          }}>
+          <option value="1">1.0×</option>
+          <option value="1.2">1.2×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2.0×</option>
+        </select>
+
+        {/* Footer divider checkbox — only shown when footer is active */}
+        {activeSection === "footer" && (
+          <>
+            <Sp />
+            <label className="flex cursor-pointer items-center gap-1 text-[9px] text-gray-600" style={{ whiteSpace: "nowrap" }}>
               <input type="checkbox" className="h-3 w-3" checked={pad.footerShowDivider}
                 onChange={(e) => updatePad({ footerShowDivider: e.target.checked })} />
-              Divider line
+              Divider
             </label>
-          )}
-        </div>
-
-        {/* Row 1: Font · Size · A↑A↓ | B I U | colors */}
-        <div className="flex items-center gap-0.5 border-b border-gray-200 px-1.5 py-0.5">
-          <select
-            className="h-5 rounded border border-gray-300 bg-white px-0.5 text-[9px] text-gray-800 disabled:opacity-30"
-            style={{ minWidth: 78 }} value={fontFamily} disabled={!canEdit}
-            onMouseDown={() => saveRange()}
-            onChange={(e) => { setFontFamily(e.target.value); exec("fontName", e.target.value); }}>
-            {EDITOR_FONTS.map(f => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
-          </select>
-
-          <input type="number" min="1" max="200" step="1" value={fontSize} disabled={!canEdit}
-            className="mx-0.5 h-5 w-9 rounded border border-gray-300 bg-white px-0.5 text-center text-[9px] text-gray-800 outline-none disabled:opacity-30 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            onChange={(e) => setFontSize(e.target.value)}
-            onFocus={() => { sizeInputActive.current = true; }}
-            onBlur={(e) => { sizeInputActive.current = false; applyFontSz(parseInt(e.target.value)); }}
-            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); applyFontSz(parseInt(fontSize)); } }} />
-
-          <button type="button" title="Increase font size" disabled={!canEdit}
-            className="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-gray-200 disabled:opacity-30"
-            onMouseDown={(e) => { e.preventDefault(); applyFontSz(Math.min(200, parseInt(fontSize || "13") + 2)); }}>
-            <span className="font-bold leading-none" style={{ fontSize: 10 }}>A</span><span className="leading-none" style={{ fontSize: 6 }}>↑</span>
-          </button>
-          <button type="button" title="Decrease font size" disabled={!canEdit}
-            className="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-gray-200 disabled:opacity-30"
-            onMouseDown={(e) => { e.preventDefault(); applyFontSz(Math.max(1, parseInt(fontSize || "13") - 2)); }}>
-            <span className="font-bold leading-none" style={{ fontSize: 8 }}>A</span><span className="leading-none" style={{ fontSize: 6 }}>↓</span>
-          </button>
-
-          <Sp />
-          <button {...TB(fmt.bold,      "Bold")}      disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}>      <Bold      className="h-3 w-3" /></button>
-          <button {...TB(fmt.italic,    "Italic")}    disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}>    <Italic    className="h-3 w-3" /></button>
-          <button {...TB(fmt.underline, "Underline")} disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
-          <Sp />
-
-          <button ref={bgColorBtnRef} type="button" title="Highlight" disabled={!canEdit}
-            className="flex h-5 w-5 items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-30"
-            onMouseDown={(e) => { e.preventDefault(); saveRange(); }}
-            onClick={() => openColorPicker("bg", "#ffff00")}>
-            <span className="select-none leading-none" style={{ fontSize: 11 }}>🖊</span>
-          </button>
-          <button ref={textColorBtnRef} type="button" title="Text color" disabled={!canEdit}
-            className="flex h-5 w-5 items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-30"
-            onMouseDown={(e) => { e.preventDefault(); saveRange(); }}
-            onClick={() => openColorPicker("text", "#000000")}>
-            <span className="select-none font-bold leading-none" style={{ fontSize: 10, textDecoration: "underline", textDecorationColor: "#e53e3e" }}>A</span>
-          </button>
-        </div>
-
-        {/* Row 2: Alignment · Line spacing */}
-        <div className="flex items-center gap-0.5 px-1.5 py-0.5">
-          <button {...TB(fmt.align === "left",    "Align left")}    disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}>   <AlignLeft    className="h-3 w-3" /></button>
-          <button {...TB(fmt.align === "center",  "Align center")}  disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}> <AlignCenter  className="h-3 w-3" /></button>
-          <button {...TB(fmt.align === "right",   "Align right")}   disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}>  <AlignRight   className="h-3 w-3" /></button>
-          <button {...TB(fmt.align === "justify", "Justify")}       disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("justifyFull"); }}>   <AlignJustify className="h-3 w-3" /></button>
-          <Sp />
-          <select title="Line spacing" disabled={!canEdit}
-            className="h-5 rounded border border-gray-300 bg-white px-0.5 text-[9px] text-gray-800 disabled:opacity-30"
-            defaultValue="1.2"
-            onMouseDown={() => saveRange()}
-            onChange={(e) => {
-              restoreRange();
-              const val = e.target.value;
-              const r = getRef();
-              if (!r?.current) return;
-              const sel = window.getSelection();
-              if (!sel || sel.rangeCount === 0) return;
-              const range = sel.getRangeAt(0);
-              const walker = document.createTreeWalker(r.current, NodeFilter.SHOW_ELEMENT);
-              let node: Node | null = walker.currentNode;
-              while (node) {
-                if (node instanceof HTMLElement && range.intersectsNode(node)) {
-                  const d = getComputedStyle(node).display;
-                  if (d === "block" || d === "list-item") node.style.lineHeight = val;
-                }
-                node = walker.nextNode();
-              }
-              persistSection(activeSectionRef.current);
-            }}>
-            <option value="1">1.0</option>
-            <option value="1.2">1.2</option>
-            <option value="1.5">1.5</option>
-            <option value="2">2.0</option>
-          </select>
-        </div>
+          </>
+        )}
       </div>
 
       {/* ── Scrollable page canvas ── */}
