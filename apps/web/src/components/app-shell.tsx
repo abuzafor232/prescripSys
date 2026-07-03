@@ -957,6 +957,547 @@ function PadLivePreview({ pad, className }: { pad: PadSettings; className?: stri
   );
 }
 
+// ─── WYSIWYG Page Canvas ─────────────────────────────────────────────────────
+
+const PAGE_IN: Record<string, { w: number; h: number }> = {
+  A4:     { w: 8.27,  h: 11.69 },
+  A5:     { w: 5.83,  h: 8.27  },
+  Letter: { w: 8.5,   h: 11.0  },
+};
+
+type CanvasSection = "bn" | "mid" | "en" | "footer";
+
+function LogoUploadCanvas({ onChange }: { onChange: (v: string) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(reader.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+  return (
+    <div
+      className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-0.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+      onClick={() => inputRef.current?.click()}
+    >
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <span style={{ fontSize: 20, color: "#ccc", lineHeight: 1 }}>+</span>
+      <span style={{ fontSize: 8, color: "#bbb", fontWeight: 600 }}>Upload Logo</span>
+    </div>
+  );
+}
+
+function WysiwygCanvas({
+  pad,
+  updatePad,
+}: {
+  pad: PadSettings;
+  updatePad: (p: Partial<PadSettings>) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [colWidth, setColWidth] = useState(700);
+  const activeSectionRef = useRef<CanvasSection | null>(null);
+  const [activeSection, setActiveSectionState] = useState<CanvasSection | null>(null);
+  const [midMode, setMidMode] = useState<"logo" | "text">(() => pad.headerLogo ? "logo" : "text");
+
+  const bnRef    = useRef<HTMLDivElement>(null);
+  const midRef   = useRef<HTMLDivElement>(null);
+  const enRef    = useRef<HTMLDivElement>(null);
+  const ftrRef   = useRef<HTMLDivElement>(null);
+  const savedRange = useRef<Range | null>(null);
+  const blurTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sizeInputActive = useRef(false);
+
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, align: "left" as "left"|"center"|"right"|"justify" });
+  const [fontFamily, setFontFamily] = useState("Arial");
+  const [fontSize, setFontSize] = useState("13");
+  const [focused, setFocused] = useState(false);
+
+  const [cpMode, setCpMode]     = useState<"text"|"bg"|null>(null);
+  const [cpHex, setCpHex]       = useState("#000000");
+  const [cpAnchor, setCpAnchor] = useState({ top: 0, left: 0 });
+  const textColorBtnRef = useRef<HTMLButtonElement>(null);
+  const bgColorBtnRef   = useRef<HTMLButtonElement>(null);
+  const pickerPopupRef  = useRef<HTMLDivElement>(null);
+
+  function setActiveSection(s: CanvasSection | null) {
+    activeSectionRef.current = s;
+    setActiveSectionState(s);
+  }
+
+  function getRef(): React.RefObject<HTMLDivElement | null> | null {
+    switch (activeSectionRef.current) {
+      case "bn":     return bnRef;
+      case "mid":    return midRef;
+      case "en":     return enRef;
+      case "footer": return ftrRef;
+      default:       return null;
+    }
+  }
+
+  // Measure container width for WYSIWYG scale
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => setColWidth(el.clientWidth));
+    obs.observe(el);
+    setColWidth(el.clientWidth);
+    return () => obs.disconnect();
+  }, []);
+
+  // Seed editable content once on mount
+  useEffect(() => {
+    if (bnRef.current)  bnRef.current.innerHTML  = sanitizeHtmlColors(pad.headerBnLines  || "");
+    if (midRef.current) midRef.current.innerHTML = sanitizeHtmlColors(pad.headerMidLines || "");
+    if (enRef.current)  enRef.current.innerHTML  = sanitizeHtmlColors(pad.headerEnLines  || "");
+    if (ftrRef.current) ftrRef.current.innerHTML = sanitizeHtmlColors(pad.footerText     || "");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Close color picker on outside click
+  useEffect(() => {
+    if (!cpMode) return;
+    function onDown(e: MouseEvent) {
+      if (textColorBtnRef.current?.contains(e.target as Node)) return;
+      if (bgColorBtnRef.current?.contains(e.target as Node)) return;
+      if (pickerPopupRef.current?.contains(e.target as Node)) return;
+      setCpMode(null);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [cpMode]);
+
+  // ── Page geometry (1 in = colWidth / pageWidthInches screen pixels) ──
+  const sizeIn = pad.pageSize === "Custom"
+    ? { w: parseFloat(pad.customWidth) || 8.5, h: parseFloat(pad.customHeight) || 11 }
+    : PAGE_IN[pad.pageSize] ?? PAGE_IN.A4;
+  const pxPerIn = colWidth / sizeIn.w;
+  const pageH   = Math.round(sizeIn.h * pxPerIn);
+  const mT = (parseFloat(pad.marginTop)    || 0.6) * pxPerIn;
+  const mB = (parseFloat(pad.marginBottom) || 0.6) * pxPerIn;
+  const mL = (parseFloat(pad.marginLeft)   || 0.6) * pxPerIn;
+  const mR = (parseFloat(pad.marginRight)  || 0.6) * pxPerIn;
+  const hH = (parseFloat(pad.headerHeight) || 1.7) * pxPerIn;
+  const fH = (parseFloat(pad.footerHeight) || 0.8) * pxPerIn;
+  const bodyLeft = parseInt(pad.bodyLeftPct) || 35;
+  const centerW  = Math.max(Math.round(hH * 1.5), 80);
+
+  // ── Helpers ──
+  function syncFmt() {
+    try {
+      setFmt({
+        bold:      document.queryCommandState("bold"),
+        italic:    document.queryCommandState("italic"),
+        underline: document.queryCommandState("underline"),
+        align:     document.queryCommandState("justifyFull")   ? "justify"
+                 : document.queryCommandState("justifyCenter") ? "center"
+                 : document.queryCommandState("justifyRight")  ? "right" : "left",
+      });
+    } catch {}
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const node = sel.getRangeAt(0).startContainer;
+      const el = (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) as HTMLElement | null;
+      if (el) {
+        const cs = window.getComputedStyle(el);
+        const sz = parseFloat(cs.fontSize);
+        if (!isNaN(sz)) setFontSize(String(Math.round(sz)));
+        const fm = cs.fontFamily.split(",")[0].trim().replace(/['"]/g, "");
+        const matched = EDITOR_FONTS.find(f => f.toLowerCase() === fm.toLowerCase());
+        if (matched) setFontFamily(matched);
+      }
+    }
+  }
+
+  function saveRange() {
+    const r = getRef();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && r?.current?.contains(sel.anchorNode ?? null)) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+    syncFmt();
+  }
+
+  function restoreRange() {
+    if (!savedRange.current) return;
+    getRef()?.current?.focus();
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(savedRange.current);
+  }
+
+  function persistSection(section: CanvasSection | null) {
+    const r: React.RefObject<HTMLDivElement | null> | null = section === "bn" ? bnRef : section === "mid" ? midRef : section === "en" ? enRef : section === "footer" ? ftrRef : null;
+    if (!r?.current) return;
+    const html = sanitizeHtmlColors(r.current.innerHTML);
+    switch (section) {
+      case "bn":     updatePad({ headerBnLines:  html }); break;
+      case "mid":    updatePad({ headerMidLines: html }); break;
+      case "en":     updatePad({ headerEnLines:  html }); break;
+      case "footer": updatePad({ footerText:     html }); break;
+    }
+  }
+
+  function exec(cmd: string, val?: string) {
+    restoreRange();
+    document.execCommand(cmd, false, val ?? undefined);
+    persistSection(activeSectionRef.current);
+    syncFmt();
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+  }
+
+  function applyFontSz(px: number) {
+    if (isNaN(px) || px < 1) return;
+    restoreRange();
+    document.execCommand("fontSize", false, "7");
+    const r = getRef();
+    r?.current?.querySelectorAll('font[size="7"]').forEach((el) => {
+      const span = document.createElement("span");
+      span.style.fontSize = `${px}px`;
+      span.innerHTML = el.innerHTML;
+      span.querySelectorAll<HTMLElement>("[style]").forEach((c) => c.style.removeProperty("font-size"));
+      el.replaceWith(span);
+    });
+    persistSection(activeSectionRef.current);
+    setFontSize(String(px));
+  }
+
+  function openColorPicker(mode: "text"|"bg", defaultHex: string) {
+    const btn = mode === "text" ? textColorBtnRef.current : bgColorBtnRef.current;
+    if (btn) {
+      const rect = btn.getBoundingClientRect();
+      setCpAnchor({ top: rect.bottom + 4, left: rect.left });
+    }
+    if (cpMode === mode) { setCpMode(null); return; }
+    setCpHex(defaultHex);
+    setCpMode(mode);
+  }
+
+  // ── Toolbar button helper ──
+  const TB = (active: boolean, title?: string) => ({
+    type: "button" as const,
+    title,
+    className: cn(
+      "flex h-5 w-5 items-center justify-center rounded transition",
+      "hover:bg-[#d0d4d8] hover:text-[#111]",
+      active ? "bg-[#1a1a1a] text-white hover:bg-[#333]" : "text-[#555]",
+      !focused && "opacity-40",
+    ),
+  });
+  const Sp = () => <div className="mx-0.5 h-3.5 w-px bg-[#ccc]" />;
+  const canEdit = !!activeSection;
+
+  // ── Section event props ──
+  function sectionEvents(section: CanvasSection, ref: React.RefObject<HTMLDivElement | null>) {
+    return {
+      ref,
+      contentEditable: true as const,
+      suppressContentEditableWarning: true,
+      onFocus: () => {
+        if (blurTimer.current) clearTimeout(blurTimer.current);
+        setActiveSection(section);
+        setFocused(true);
+        syncFmt();
+      },
+      onBlur: () => {
+        blurTimer.current = setTimeout(() => setFocused(false), 200);
+      },
+      onInput: () => persistSection(section),
+      onKeyUp: () => { saveRange(); syncFmt(); },
+      onClick: (e: React.MouseEvent) => { e.stopPropagation(); saveRange(); syncFmt(); },
+      onSelect: () => { saveRange(); syncFmt(); },
+    };
+  }
+
+  const ceBase: React.CSSProperties = {
+    outline: "none", cursor: "text",
+    wordBreak: "break-word", overflowWrap: "break-word",
+    color: "#111", userSelect: "text",
+    fontFamily: "Arial, sans-serif", fontSize: Math.round(pxPerIn * 0.135),
+    width: "100%", height: "100%", boxSizing: "border-box",
+  };
+
+  const sectionRing = (s: CanvasSection) =>
+    activeSection === s ? "2px solid rgba(96,165,250,0.6)" : "2px solid transparent";
+
+  return (
+    <div ref={containerRef} className="flex min-w-0 flex-col">
+
+      {/* ── Compact 2-row toolbar ── */}
+      <div style={{ background: "#efefef", color: "#111" }} className="rounded-t-xl border border-b-0">
+        {/* Label row */}
+        <div className="flex items-center gap-2 border-b border-gray-200 px-2 py-0.5">
+          <span className="text-[9px] font-semibold leading-none text-gray-500">
+            {activeSection === "bn"     ? "← Bengali (Left)"
+           : activeSection === "en"     ? "English (Right) →"
+           : activeSection === "mid"    ? "Center Text"
+           : activeSection === "footer" ? "Footer"
+           : "Click a section on the page to start editing"}
+          </span>
+          {activeSection === "footer" && (
+            <label className="ml-auto flex cursor-pointer items-center gap-1 text-[9px] text-gray-500">
+              <input type="checkbox" className="h-3 w-3" checked={pad.footerShowDivider}
+                onChange={(e) => updatePad({ footerShowDivider: e.target.checked })} />
+              Divider line
+            </label>
+          )}
+        </div>
+
+        {/* Row 1: Font · Size · A↑A↓ | B I U | colors */}
+        <div className="flex items-center gap-0.5 border-b border-gray-200 px-1.5 py-0.5">
+          <select
+            className="h-5 rounded border border-gray-300 bg-white px-0.5 text-[9px] text-gray-800 disabled:opacity-30"
+            style={{ minWidth: 78 }} value={fontFamily} disabled={!canEdit}
+            onMouseDown={() => saveRange()}
+            onChange={(e) => { setFontFamily(e.target.value); exec("fontName", e.target.value); }}>
+            {EDITOR_FONTS.map(f => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
+          </select>
+
+          <input type="number" min="1" max="200" step="1" value={fontSize} disabled={!canEdit}
+            className="mx-0.5 h-5 w-9 rounded border border-gray-300 bg-white px-0.5 text-center text-[9px] text-gray-800 outline-none disabled:opacity-30 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            onChange={(e) => setFontSize(e.target.value)}
+            onFocus={() => { sizeInputActive.current = true; }}
+            onBlur={(e) => { sizeInputActive.current = false; applyFontSz(parseInt(e.target.value)); }}
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); applyFontSz(parseInt(fontSize)); } }} />
+
+          <button type="button" title="Increase font size" disabled={!canEdit}
+            className="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-gray-200 disabled:opacity-30"
+            onMouseDown={(e) => { e.preventDefault(); applyFontSz(Math.min(200, parseInt(fontSize || "13") + 2)); }}>
+            <span className="font-bold leading-none" style={{ fontSize: 10 }}>A</span><span className="leading-none" style={{ fontSize: 6 }}>↑</span>
+          </button>
+          <button type="button" title="Decrease font size" disabled={!canEdit}
+            className="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-gray-200 disabled:opacity-30"
+            onMouseDown={(e) => { e.preventDefault(); applyFontSz(Math.max(1, parseInt(fontSize || "13") - 2)); }}>
+            <span className="font-bold leading-none" style={{ fontSize: 8 }}>A</span><span className="leading-none" style={{ fontSize: 6 }}>↓</span>
+          </button>
+
+          <Sp />
+          <button {...TB(fmt.bold,      "Bold")}      disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}>      <Bold      className="h-3 w-3" /></button>
+          <button {...TB(fmt.italic,    "Italic")}    disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}>    <Italic    className="h-3 w-3" /></button>
+          <button {...TB(fmt.underline, "Underline")} disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}><Underline className="h-3 w-3" /></button>
+          <Sp />
+
+          <button ref={bgColorBtnRef} type="button" title="Highlight" disabled={!canEdit}
+            className="flex h-5 w-5 items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-30"
+            onMouseDown={(e) => { e.preventDefault(); saveRange(); }}
+            onClick={() => openColorPicker("bg", "#ffff00")}>
+            <span className="select-none leading-none" style={{ fontSize: 11 }}>🖊</span>
+          </button>
+          <button ref={textColorBtnRef} type="button" title="Text color" disabled={!canEdit}
+            className="flex h-5 w-5 items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-30"
+            onMouseDown={(e) => { e.preventDefault(); saveRange(); }}
+            onClick={() => openColorPicker("text", "#000000")}>
+            <span className="select-none font-bold leading-none" style={{ fontSize: 10, textDecoration: "underline", textDecorationColor: "#e53e3e" }}>A</span>
+          </button>
+        </div>
+
+        {/* Row 2: Alignment · Line spacing */}
+        <div className="flex items-center gap-0.5 px-1.5 py-0.5">
+          <button {...TB(fmt.align === "left",    "Align left")}    disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("justifyLeft"); }}>   <AlignLeft    className="h-3 w-3" /></button>
+          <button {...TB(fmt.align === "center",  "Align center")}  disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("justifyCenter"); }}> <AlignCenter  className="h-3 w-3" /></button>
+          <button {...TB(fmt.align === "right",   "Align right")}   disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("justifyRight"); }}>  <AlignRight   className="h-3 w-3" /></button>
+          <button {...TB(fmt.align === "justify", "Justify")}       disabled={!canEdit} onMouseDown={(e) => { e.preventDefault(); exec("justifyFull"); }}>   <AlignJustify className="h-3 w-3" /></button>
+          <Sp />
+          <select title="Line spacing" disabled={!canEdit}
+            className="h-5 rounded border border-gray-300 bg-white px-0.5 text-[9px] text-gray-800 disabled:opacity-30"
+            defaultValue="1.2"
+            onMouseDown={() => saveRange()}
+            onChange={(e) => {
+              restoreRange();
+              const val = e.target.value;
+              const r = getRef();
+              if (!r?.current) return;
+              const sel = window.getSelection();
+              if (!sel || sel.rangeCount === 0) return;
+              const range = sel.getRangeAt(0);
+              const walker = document.createTreeWalker(r.current, NodeFilter.SHOW_ELEMENT);
+              let node: Node | null = walker.currentNode;
+              while (node) {
+                if (node instanceof HTMLElement && range.intersectsNode(node)) {
+                  const d = getComputedStyle(node).display;
+                  if (d === "block" || d === "list-item") node.style.lineHeight = val;
+                }
+                node = walker.nextNode();
+              }
+              persistSection(activeSectionRef.current);
+            }}>
+            <option value="1">1.0</option>
+            <option value="1.2">1.2</option>
+            <option value="1.5">1.5</option>
+            <option value="2">2.0</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ── Scrollable page canvas ── */}
+      <div className="overflow-y-auto rounded-b-xl border border-t-0 bg-neutral-200"
+        style={{ maxHeight: "calc(100vh - 230px)" }}>
+        <div className="px-6 py-5">
+
+          {/* White page — proportional to selected paper size */}
+          <div style={{
+            width: "100%", minHeight: pageH,
+            background: "white", color: "#111",
+            boxShadow: "0 2px 24px rgba(0,0,0,0.18)",
+            position: "relative",
+            fontFamily: "Arial, sans-serif",
+          }}>
+            <style>{`
+              .rxce p,.rxce h1,.rxce h2,.rxce h3{margin:0;padding:0}
+              .rxce ul,.rxce ol{margin:0;padding-left:1.2em}
+              .rxce li{margin:0;padding:0}
+              .rxce *{box-sizing:border-box}
+              .rxce:empty:before{pointer-events:none;color:#bbb;content:attr(data-placeholder)}
+            `}</style>
+
+            {/* Content inside margins */}
+            <div style={{ position: "absolute", top: mT, bottom: mB, left: mL, right: mR, display: "flex", flexDirection: "column" }}>
+
+              {/* ── HEADER ── */}
+              <div style={{
+                height: hH, flexShrink: 0,
+                display: "flex", alignItems: "stretch",
+                borderBottom: "2px solid #222", overflow: "hidden",
+              }}>
+
+                {/* Bengali */}
+                <div {...sectionEvents("bn", bnRef)} className="rxce"
+                  data-placeholder="ডাঃ নাম… (click to edit)"
+                  style={{ ...ceBase, flex: 1, minWidth: 0, padding: `${Math.round(pxPerIn * 0.06)}px ${Math.round(pxPerIn * 0.1)}px`,
+                    borderRight: "1px solid #ddd", outline: sectionRing("bn"), outlineOffset: "-2px" }} />
+
+                {/* Center: Logo / Special Text */}
+                <div style={{ flexShrink: 0, width: centerW, display: "flex", flexDirection: "column",
+                  alignItems: "center", overflow: "hidden", borderRight: "1px solid #ddd" }}>
+                  {/* Toggle */}
+                  <div style={{ display: "flex", width: "100%", flexShrink: 0 }}>
+                    {(["logo", "text"] as const).map((m) => (
+                      <button key={m} type="button"
+                        style={{
+                          flex: 1, padding: "1px 0", fontSize: 8, fontWeight: 700, lineHeight: 1.6,
+                          color: midMode === m ? "#333" : "#aaa",
+                          background: midMode === m ? "#eee" : "transparent",
+                          borderBottom: "1px solid #e0e0e0",
+                          borderLeft: m === "text" ? "1px solid #e0e0e0" : "none",
+                          cursor: "pointer", transition: "all 0.1s",
+                          textTransform: "uppercase" as const,
+                        }}
+                        onMouseDown={(e) => { e.preventDefault(); setMidMode(m); }}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  {midMode === "logo" ? (
+                    <div style={{ flex: 1, width: "100%", position: "relative", overflow: "hidden" }}>
+                      {pad.headerLogo ? (
+                        <>
+                          <img src={pad.headerLogo} alt="Logo" style={{
+                            display: "block", width: "100%", height: "100%",
+                            objectFit: "contain", padding: 0, margin: 0,
+                          }} />
+                          <button type="button"
+                            className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white shadow"
+                            style={{ fontSize: 11 }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => updatePad({ headerLogo: "" })}>×</button>
+                        </>
+                      ) : (
+                        <LogoUploadCanvas onChange={(v) => updatePad({ headerLogo: v })} />
+                      )}
+                    </div>
+                  ) : (
+                    <div {...sectionEvents("mid", midRef)} className="rxce"
+                      data-placeholder="Clinic name…"
+                      style={{ ...ceBase, flex: 1, padding: `${Math.round(pxPerIn * 0.04)}px ${Math.round(pxPerIn * 0.05)}px`, textAlign: "center",
+                        outline: sectionRing("mid"), outlineOffset: "-2px" }} />
+                  )}
+                </div>
+
+                {/* English */}
+                <div {...sectionEvents("en", enRef)} className="rxce"
+                  data-placeholder="Dr. Name, MBBS… (click to edit)"
+                  style={{ ...ceBase, flex: 1, minWidth: 0, padding: `${Math.round(pxPerIn * 0.06)}px ${Math.round(pxPerIn * 0.1)}px`,
+                    outline: sectionRing("en"), outlineOffset: "-2px" }} />
+              </div>
+
+              {/* Patient info row (non-editable skeleton) */}
+              <div style={{
+                flexShrink: 0, padding: `${Math.round(pxPerIn * 0.05)}px ${Math.round(pxPerIn * 0.06)}px`,
+                borderBottom: "1px solid #aaa",
+                fontSize: Math.max(8, Math.round(pxPerIn * 0.115)), color: "#999", fontStyle: "italic",
+              }}>
+                Patient Name __________________ No. ______ Age ________ Date __________
+              </div>
+
+              {/* Body skeleton (non-editable) */}
+              <div style={{ flex: 1, display: "flex", background: "#f9f9f9", minHeight: Math.round(pxPerIn * 1.2) }}>
+                <div style={{ width: `${bodyLeft}%`, borderRight: "1px solid #ccc", padding: `${Math.round(pxPerIn * 0.08)}px ${Math.round(pxPerIn * 0.06)}px` }}>
+                  {["Complaint", "History", "Investigation", "Diagnosis"].map(l => (
+                    <div key={l} style={{ marginBottom: Math.round(pxPerIn * 0.12) }}>
+                      <div style={{ fontSize: Math.max(7, Math.round(pxPerIn * 0.09)), fontWeight: 700, color: "#ccc", textTransform: "uppercase", letterSpacing: "0.04em" }}>{l}</div>
+                      <div style={{ borderBottom: "1px solid #e8e8e8", paddingBottom: Math.round(pxPerIn * 0.07), marginTop: 2 }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ flex: 1, padding: `${Math.round(pxPerIn * 0.08)}px ${Math.round(pxPerIn * 0.1)}px` }}>
+                  {["Medication", "Advice", "Follow-Up", "Referral"].map(l => (
+                    <div key={l} style={{ marginBottom: Math.round(pxPerIn * 0.12) }}>
+                      <div style={{ fontSize: Math.max(7, Math.round(pxPerIn * 0.09)), fontWeight: 700, color: "#ccc", textTransform: "uppercase", letterSpacing: "0.04em" }}>{l}</div>
+                      <div style={{ borderBottom: "1px solid #e8e8e8", paddingBottom: Math.round(pxPerIn * 0.07), marginTop: 2 }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── FOOTER ── */}
+              <div style={{ height: fH, flexShrink: 0, borderTop: "2px solid #222", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                {pad.footerShowDivider && <div style={{ borderTop: "1px solid #666", margin: "2px 0" }} />}
+                <div {...sectionEvents("footer", ftrRef)} className="rxce"
+                  data-placeholder="Visiting hours · Address · Phone · Website…"
+                  style={{ ...ceBase, flex: 1, padding: `${Math.round(pxPerIn * 0.04)}px ${Math.round(pxPerIn * 0.1)}px`,
+                    outline: sectionRing("footer"), outlineOffset: "-2px" }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Color picker popup ── */}
+      {cpMode && (
+        <div ref={pickerPopupRef}
+          className="fixed z-[500] w-[148px] rounded-lg border border-gray-200 bg-white p-2 shadow-xl"
+          style={{ top: cpAnchor.top, left: cpAnchor.left }}>
+          <div className="mb-1.5 grid grid-cols-6 gap-1">
+            {PRESET_COLORS.map((c) => (
+              <button key={c} type="button"
+                className="h-[18px] w-[18px] rounded-sm transition-transform hover:scale-110"
+                style={{ background: c, border: "1px solid rgba(0,0,0,0.22)" }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { restoreRange(); exec(cpMode === "text" ? "foreColor" : "backColor", c); setCpMode(null); }} />
+            ))}
+          </div>
+          <div className="flex items-center gap-1 border-t border-gray-200 pt-1.5">
+            <div className="h-4 w-4 shrink-0 rounded"
+              style={{ background: /^#[0-9a-fA-F]{6}$/i.test(cpHex) ? cpHex : "#000", border: "1px solid #ccc" }} />
+            <input type="text" value={cpHex} placeholder="#000000"
+              className="h-5 w-full rounded border border-gray-300 px-1 text-[9px] outline-none"
+              onChange={(e) => setCpHex(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter" && /^#[0-9a-fA-F]{6}$/i.test(cpHex)) {
+                  restoreRange(); exec(cpMode === "text" ? "foreColor" : "backColor", cpHex); setCpMode(null);
+                }
+                if (e.key === "Escape") setCpMode(null);
+              }} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Pad Settings Panel ───────────────────────────────────────────────────────
 
 function PadSettingsPanel({
@@ -972,20 +1513,8 @@ function PadSettingsPanel({
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const hdrPx = Math.round((parseFloat(pad.headerHeight) || 1.7) * _PX_IN);
-
   const settingLabel = "text-[10px] font-bold uppercase tracking-wide text-primary mb-0.5";
   const inp = "h-6 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary";
-
-  // Light-theme CSS vars for editor cards
-  const lightTheme: React.CSSProperties = {
-    "--background": "0 0% 100%", "--foreground": "0 0% 0%",
-    "--card": "0 0% 100%", "--card-foreground": "0 0% 0%",
-    "--muted": "0 0% 94%", "--muted-foreground": "0 0% 12%",
-    "--border": "0 0% 86%", "--primary": "0 0% 10%",
-    "--primary-foreground": "0 0% 100%",
-    colorScheme: "light",
-  } as React.CSSProperties;
 
   return (
     <div className="space-y-4">
@@ -995,8 +1524,8 @@ function PadSettingsPanel({
         onChange={onChamberChange} onAdd={onChamberAdd} onRemove={onChamberRemove}
       />
 
-      {/* ── 3-column main grid ── */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[168px_1fr_1fr] xl:items-stretch">
+      {/* ── 2-column: settings | WYSIWYG canvas ── */}
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[180px_1fr] xl:items-start">
 
         {/* ── LEFT: Settings ── */}
         <div className="space-y-1.5">
@@ -1041,7 +1570,7 @@ function PadSettingsPanel({
 
           {/* Section Heights */}
           <div className="rounded-xl border bg-card p-2.5 shadow-soft space-y-1.5">
-            <p className={settingLabel}>Header Height (in)</p>
+            <p className={settingLabel}>Heights (in)</p>
             {([["Header", "headerHeight"], ["Footer", "footerHeight"]] as [string, keyof PadSettings][]).map(([label, key]) => (
               <div key={key} className="flex items-center gap-1">
                 <span className="w-12 shrink-0 text-[10px] text-muted-foreground">{label}</span>
@@ -1091,90 +1620,8 @@ function PadSettingsPanel({
           </div>
         </div>
 
-        {/* ── MIDDLE: Header + Footer editors ── */}
-        <div key={selectedChamberId} className="space-y-4" style={lightTheme}>
-
-          {/* ── Header section ── */}
-          <div className="overflow-hidden rounded-xl border bg-white shadow-soft" style={{ color: "black" }}>
-            <div className="flex items-center gap-2 border-b bg-gray-50 px-4 py-2.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Header</span>
-              <span className="ml-auto text-[10px] text-gray-400">{pad.headerHeight || "1.7"} in tall</span>
-            </div>
-
-            {/* 3-column editors: Bengali | Logo+Centre | English */}
-            <div className="flex divide-x">
-
-              {/* Bengali — fills all remaining left space */}
-              <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
-                <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                  বাংলা — বাম
-                </p>
-                <FreeformEditor
-                  initialValue={pad.headerBnLines}
-                  onChange={(v) => updatePad({ headerBnLines: v })}
-                  placeholder="ডাঃ নাম, এমবিবিএস…"
-                  editorHeight={hdrPx}
-                />
-              </div>
-
-              {/* Logo + centre text — auto-sized to content */}
-              <div className="flex shrink-0 flex-col items-center gap-1 p-2"
-                style={{ minWidth: 100, maxWidth: 160 }}>
-                <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                  Logo / Centre
-                </p>
-                <LogoUpload value={pad.headerLogo} onChange={(v) => updatePad({ headerLogo: v })} />
-                <FreeformEditor
-                  initialValue={pad.headerMidLines}
-                  onChange={(v) => updatePad({ headerMidLines: v })}
-                  placeholder="Clinic name…"
-                  editorHeight={Math.max(hdrPx - 48, 36)}
-                  noToolbar
-                />
-              </div>
-
-              {/* English — fills all remaining right space */}
-              <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
-                <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                  English — ডান
-                </p>
-                <FreeformEditor
-                  initialValue={pad.headerEnLines}
-                  onChange={(v) => updatePad({ headerEnLines: v })}
-                  placeholder="Dr. Name, MBBS…"
-                  editorHeight={hdrPx}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* ── Footer section ── */}
-          <div className="overflow-hidden rounded-xl border bg-white shadow-soft" style={{ color: "black" }}>
-            <div className="flex items-center gap-3 border-b bg-gray-50 px-4 py-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Footer</span>
-              <label className="ml-2 flex cursor-pointer items-center gap-1.5 text-xs text-gray-500">
-                <input type="checkbox" className="h-3.5 w-3.5 rounded"
-                  checked={pad.footerShowDivider}
-                  onChange={(e) => updatePad({ footerShowDivider: e.target.checked })} />
-                Divider line
-              </label>
-              <span className="ml-auto text-[10px] text-gray-400">{pad.footerHeight || "0.8"} in</span>
-            </div>
-            <div className="p-3">
-              <FreeformEditor
-                initialValue={pad.footerText}
-                onChange={(v) => updatePad({ footerText: v })}
-                placeholder="Visiting hours · Address · Phone · Website…"
-                editorHeight={Math.round((parseFloat(pad.footerHeight) || 0.8) * _PX_IN)}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── RIGHT: Live preview (sticky) ── */}
-        <div className="h-full flex flex-col">
-          <PadLivePreview pad={pad} className="flex-1 min-h-0" />
-        </div>
+        {/* ── RIGHT: WYSIWYG page canvas ── */}
+        <WysiwygCanvas key={selectedChamberId} pad={pad} updatePad={updatePad} />
       </div>
 
       {/* ── Action bar ── */}
