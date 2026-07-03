@@ -1263,7 +1263,7 @@ function WysiwygCanvas({
     activeSection === s ? "2px solid rgba(96,165,250,0.6)" : "2px solid transparent";
 
   return (
-    <div ref={containerRef} className="flex min-w-0 flex-col">
+    <div ref={containerRef} className="flex min-w-0 flex-col" style={{ height: "calc(100vh - 76px)" }}>
 
       {/* ── Single-row toolbar (32px tall) ── */}
       <div style={{ background: "#e8e8e8", color: "#111", height: 32 }}
@@ -1387,8 +1387,7 @@ function WysiwygCanvas({
       </div>
 
       {/* ── Scrollable page canvas ── */}
-      <div className="overflow-y-auto rounded-b-xl border border-t-0 bg-neutral-200"
-        style={{ maxHeight: "calc(100vh - 230px)" }}>
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-b-xl border border-t-0 bg-neutral-200">
         <div className="px-6 py-5">
 
           {/* White page — proportional to selected paper size */}
