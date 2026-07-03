@@ -1572,18 +1572,19 @@ function PadSettingsPanel({
   const inp = "h-6 rounded border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary";
 
   return (
-    <div className="space-y-4">
-      {/* ── Chamber selector ── */}
-      <ChamberDropdown
-        chambers={chambers} selectedId={selectedChamberId}
-        onChange={onChamberChange} onAdd={onChamberAdd} onRemove={onChamberRemove}
-      />
-
+    <div>
       {/* ── 2-column: settings | WYSIWYG canvas ── */}
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[180px_1fr] xl:items-start">
 
         {/* ── LEFT: Settings ── */}
         <div className="space-y-1.5">
+
+          {/* Chamber selector — constrained to left column width */}
+          <ChamberDropdown
+            chambers={chambers} selectedId={selectedChamberId}
+            onChange={onChamberChange} onAdd={onChamberAdd} onRemove={onChamberRemove}
+            fullWidth
+          />
 
           {/* Consultation Fees */}
           <div className="rounded-xl border bg-card p-2.5 shadow-soft space-y-1.5">
@@ -1673,24 +1674,24 @@ function PadSettingsPanel({
               <span>Patient info</span><span>Rx</span>
             </div>
           </div>
+
+          {/* ── Save / Cancel — inside left column ── */}
+          <div className="flex flex-col gap-1.5 pt-1">
+            <button type="button"
+              className="w-full rounded-lg bg-primary py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+              onClick={onSave}>
+              Save Changes
+            </button>
+            <button type="button"
+              className="w-full rounded-lg border py-1.5 text-xs font-semibold transition hover:bg-muted"
+              onClick={onCancel}>
+              Cancel
+            </button>
+          </div>
         </div>
 
         {/* ── RIGHT: WYSIWYG page canvas ── */}
         <WysiwygCanvas key={selectedChamberId} pad={pad} updatePad={updatePad} />
-      </div>
-
-      {/* ── Action bar ── */}
-      <div className="flex flex-wrap items-center justify-end gap-2 rounded-xl border bg-card px-5 py-3 shadow-soft">
-        <button type="button"
-          className="rounded-lg border px-4 py-1.5 text-xs font-semibold transition hover:bg-muted"
-          onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="button"
-          className="rounded-lg bg-primary px-5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
-          onClick={onSave}>
-          Save Changes
-        </button>
       </div>
     </div>
   );
@@ -1699,13 +1700,14 @@ function PadSettingsPanel({
 // ─── Chamber Dropdown (with inline add/remove) ───────────────────────────────
 
 function ChamberDropdown({
-  chambers, selectedId, onChange, onAdd, onRemove,
+  chambers, selectedId, onChange, onAdd, onRemove, fullWidth = false,
 }: {
   chambers: Chamber[];
   selectedId: string;
   onChange: (id: string) => void;
   onAdd: (name: string) => void;
   onRemove: (id: string) => void;
+  fullWidth?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -1737,13 +1739,13 @@ function ChamberDropdown({
   }
 
   return (
-    <div ref={ref} className="relative inline-flex">
+    <div ref={ref} className={cn("relative", fullWidth ? "w-full" : "inline-flex")}>
       <button
         type="button"
-        className="flex items-center gap-2 rounded-full border bg-background px-4 py-1.5 text-sm font-semibold shadow-sm transition hover:bg-muted"
+        className={cn("flex items-center gap-2 rounded-xl border bg-card px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:bg-muted", fullWidth ? "w-full" : "rounded-full px-4 text-sm")}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="max-w-[220px] truncate">{selected?.name ?? "Select Chamber"}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{selected?.name ?? "Select Chamber"}</span>
         <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 opacity-60 transition-transform", open && "rotate-180")} />
       </button>
 
