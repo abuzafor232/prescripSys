@@ -67,6 +67,13 @@ import {
   deletePrescriptionGroup,
   type PrescriptionGroup,
   type PrescriptionGroupSectionType,
+  fetchPrescriptionTemplates,
+  createPrescriptionTemplate,
+  updatePrescriptionTemplate,
+  deletePrescriptionTemplate,
+  recordPrescriptionTemplateUse,
+  type PrescriptionTemplate,
+  type PrescriptionTemplateData,
 } from "@/lib/api";
 import { DOSE_PATTERNS, MEAL_INSTRUCTIONS } from "@/lib/prescription-constants";
 import { getDosageFormPosition } from "@/lib/dosage-form-position";
@@ -333,19 +340,9 @@ type RxDraft = {
   rxDiagnoses: DiagnosisEntry[];
 };
 
-type RxTemplate = {
-  id: string;
-  name: string;
-  savedAt: string;
-  notes: Record<NoteKey, string>;
-  medicines: RxMedicine[];
-  medicationNote: string;
-  rxInvestigations: InvestigationEntry[];
-  rxDiagnoses: DiagnosisEntry[];
-};
+type RxTemplate = PrescriptionTemplate;
 
 const DRAFTS_STORAGE_KEY = "rx-drafts";
-const TEMPLATES_STORAGE_KEY = "rx-templates";
 const APPOINTMENTS_STORAGE_KEY = "rx-appointments";
 const PATIENT_NOTES_STORAGE_KEY = "rx-patient-notes";
 const REFERRAL_DOCTORS_STORAGE_KEY = "rx-referral-doctors";
@@ -911,6 +908,7 @@ export function PrescriptionBuilder() {
   const searchParams = useSearchParams();
   const token = useSessionStore((state) => state.accessToken);
   const sessionUser = useSessionStore((state) => state.user);
+  const qc = useQueryClient();
   const attendAptIdRef = useRef<string | null>(null);
   const queueSerialRef = useRef<number | null>(null);
   const pendingLoadRef = useRef<{ type: "draft"; item: RxDraft } | { type: "template"; item: RxTemplate } | null>(null);
@@ -950,8 +948,12 @@ export function PrescriptionBuilder() {
   const [tagAddingOpen, setTagAddingOpen] = useState(false);
   const [tagAddValue, setTagAddValue] = useState("");
   const tagDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [templateNamePopupOpen, setTemplateNamePopupOpen] = useState(false);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateNameInput, setTemplateNameInput] = useState("");
+  const [templateDescInput, setTemplateDescInput] = useState("");
+  const [templateTags, setTemplateTags] = useState<string[]>([]);
+  const [templateTagInput, setTemplateTagInput] = useState("");
+  const [templateSaving, setTemplateSaving] = useState(false);
   const [loadConflict, setLoadConflict] = useState<{ type: "draft"; item: RxDraft } | { type: "template"; item: RxTemplate } | null>(null);
   const [prevRxSecsLeft, setPrevRxSecsLeft] = useState(0);
   const [loadPrevRxBusy, setLoadPrevRxBusy] = useState(false);
@@ -992,7 +994,30 @@ export function PrescriptionBuilder() {
   const [draftDialogOpen, setDraftDialogOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [drafts, setDrafts] = useState<RxDraft[]>(() => loadFromStorage<RxDraft>(DRAFTS_STORAGE_KEY));
-  const [templates, setTemplates] = useState<RxTemplate[]>(() => loadFromStorage<RxTemplate>(TEMPLATES_STORAGE_KEY));
+  const { data: templates = [], isLoading: templatesLoading } = useQuery({
+    queryKey: ["prescription-templates"],
+    enabled: !!token,
+    queryFn: () => fetchPrescriptionTemplates(token!),
+    staleTime: 30_000,
+  });
+  const createTemplateMut = useMutation({
+    mutationFn: (body: Parameters<typeof createPrescriptionTemplate>[0]) =>
+      createPrescriptionTemplate(body, token!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prescription-templates"] }),
+  });
+  const updateTemplateMut = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Parameters<typeof updatePrescriptionTemplate>[1] }) =>
+      updatePrescriptionTemplate(id, body, token!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prescription-templates"] }),
+  });
+  const deleteTemplateMut = useMutation({
+    mutationFn: (id: string) => deletePrescriptionTemplate(id, token!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prescription-templates"] }),
+  });
+  const useTemplateMut = useMutation({
+    mutationFn: (id: string) => recordPrescriptionTemplateUse(id, token!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prescription-templates"] }),
+  });
   const [queueAppointments, setQueueAppointments] = useState<QueueAppointment[]>(() => {
     try {
       const raw = typeof window !== "undefined" ? localStorage.getItem(APPOINTMENTS_STORAGE_KEY) : null;
@@ -1740,21 +1765,33 @@ export function PrescriptionBuilder() {
     saveToStorage(DRAFTS_STORAGE_KEY, updated);
   }
 
-  function saveTemplate(name: string) {
-    const template: RxTemplate = {
-      id: crypto.randomUUID(),
-      name: name.trim() || `Template ${new Date().toLocaleString()}`,
-      savedAt: new Date().toISOString(),
+  async function saveTemplate(name: string, description: string, tags: string[]) {
+    const data: PrescriptionTemplateData = {
       notes,
-      medicines,
+      medicines: medicines as unknown[],
       medicationNote,
-      rxInvestigations,
-      rxDiagnoses
+      complaints: complaints as unknown[],
+      histories: histories as unknown[],
+      rxInvestigations: rxInvestigations as unknown[],
+      rxDiagnoses: rxDiagnoses as unknown[],
     };
-    const updated = [template, ...templates];
-    setTemplates(updated);
-    saveToStorage(TEMPLATES_STORAGE_KEY, updated);
-    showStatus("success", `Template "${template.name}" saved`);
+    try {
+      await createTemplateMut.mutateAsync({ name: name.trim() || `Template ${new Date().toLocaleString()}`, description: description.trim() || undefined, tags, data });
+      showStatus("success", `Template "${name}" saved`);
+    } catch {
+      showStatus("warning", "Failed to save template");
+    }
+  }
+
+  function applyTemplateData(template: RxTemplate) {
+    const d = template.data;
+    setNotes((prev) => ({ ...prev, ...(d.notes as Record<NoteKey, string>) }));
+    setMedicines((d.medicines ?? []) as RxMedicine[]);
+    setMedicationNote(d.medicationNote ?? "");
+    setComplaints((d.complaints ?? []) as ComplaintEntry[]);
+    setHistories((d.histories ?? []) as HistoryEntry[]);
+    setRxInvestigations((d.rxInvestigations ?? []) as InvestigationEntry[]);
+    setRxDiagnoses(((d.rxDiagnoses ?? []) as DiagnosisEntry[]).map((x) => ({ ...x, value: x.value ?? "" })));
   }
 
   function loadTemplate(template: RxTemplate) {
@@ -1763,11 +1800,8 @@ export function PrescriptionBuilder() {
       setTemplateDialogOpen(false);
       return;
     }
-    setNotes((prev) => ({ ...prev, ...template.notes }));
-    setMedicines(template.medicines);
-    setMedicationNote(template.medicationNote);
-    setRxInvestigations(template.rxInvestigations ?? []);
-    setRxDiagnoses((template.rxDiagnoses ?? []).map((d) => ({ ...d, value: d.value ?? "" })));
+    applyTemplateData(template);
+    useTemplateMut.mutate(template.id);
     setTemplateDialogOpen(false);
     showStatus("success", `Template "${template.name}" loaded`);
   }
@@ -1853,44 +1887,50 @@ export function PrescriptionBuilder() {
   }
 
   function deleteTemplate(id: string) {
-    const updated = templates.filter((t) => t.id !== id);
-    setTemplates(updated);
-    saveToStorage(TEMPLATES_STORAGE_KEY, updated);
+    deleteTemplateMut.mutate(id);
   }
 
-  function updateTemplate(id: string, name: string) {
-    const updated = templates.map((t) => (t.id === id ? { ...t, name: name.trim() || t.name } : t));
-    setTemplates(updated);
-    saveToStorage(TEMPLATES_STORAGE_KEY, updated);
+  function updateTemplate(id: string, body: { name?: string; description?: string; tags?: string[] }) {
+    updateTemplateMut.mutate({ id, body });
   }
 
   function mergeTemplate(template: RxTemplate) {
+    const d = template.data;
+    const tNotes = (d.notes ?? {}) as Record<NoteKey, string>;
     setNotes((prev) => {
       const merged = { ...prev };
-      for (const key of Object.keys(template.notes) as (keyof typeof template.notes)[]) {
-        if (template.notes[key]) {
-          merged[key] = prev[key] ? `${prev[key]}\n${template.notes[key]}` : template.notes[key];
-        }
+      for (const key of Object.keys(tNotes) as NoteKey[]) {
+        if (tNotes[key]) merged[key] = prev[key] ? `${prev[key]}\n${tNotes[key]}` : tNotes[key];
       }
       return merged;
     });
+    const tMeds = (d.medicines ?? []) as RxMedicine[];
     setMedicines((prev) => {
       const existing = new Set(prev.map((m) => m.brandName.toLowerCase()));
-      const newMeds = template.medicines.filter((m) => !existing.has(m.brandName.toLowerCase()));
-      return [...prev, ...newMeds];
+      return [...prev, ...tMeds.filter((m) => !existing.has(m.brandName.toLowerCase()))];
     });
-    if (template.rxInvestigations?.length) {
+    const tComplaints = (d.complaints ?? []) as ComplaintEntry[];
+    if (tComplaints.length) {
+      setComplaints((prev) => {
+        const existing = new Set(prev.map((c) => c.name.toLowerCase()));
+        return [...prev, ...tComplaints.filter((c) => !existing.has(c.name.toLowerCase()))];
+      });
+    }
+    const tInvs = (d.rxInvestigations ?? []) as InvestigationEntry[];
+    if (tInvs.length) {
       setRxInvestigations((prev) => {
         const existing = new Set(prev.map((i) => i.name.toLowerCase()));
-        return [...prev, ...template.rxInvestigations.filter((i) => !existing.has(i.name.toLowerCase()))];
+        return [...prev, ...tInvs.filter((i) => !existing.has(i.name.toLowerCase()))];
       });
     }
-    if (template.rxDiagnoses?.length) {
+    const tDiag = (d.rxDiagnoses ?? []) as DiagnosisEntry[];
+    if (tDiag.length) {
       setRxDiagnoses((prev) => {
-        const existing = new Set(prev.map((d) => d.name.toLowerCase()));
-        return [...prev, ...template.rxDiagnoses.filter((d) => !existing.has(d.name.toLowerCase())).map((d) => ({ ...d, value: d.value ?? "" }))];
+        const existing = new Set(prev.map((x) => x.name.toLowerCase()));
+        return [...prev, ...tDiag.filter((x) => !existing.has(x.name.toLowerCase())).map((x) => ({ ...x, value: x.value ?? "" }))];
       });
     }
+    useTemplateMut.mutate(template.id);
     setTemplateDialogOpen(false);
     showStatus("success", `Template "${template.name}" merged`);
   }
@@ -3366,7 +3406,7 @@ export function PrescriptionBuilder() {
               </Button>
             </RxTooltip>
             <RxTooltip text="Make Template">
-              <Button variant="outline" onClick={() => { setTemplateNameInput(""); setTemplateNamePopupOpen(true); }}>
+              <Button variant="outline" onClick={() => { setTemplateNameInput(""); setTemplateDescInput(""); setTemplateTags([]); setTemplateTagInput(""); setTemplateModalOpen(true); }}>
                 <LayoutGrid className="h-4 w-4" />
                 Make Template
               </Button>
@@ -3561,6 +3601,7 @@ export function PrescriptionBuilder() {
       {templateDialogOpen ? (
         <TemplateSidebar
           templates={templates}
+          isLoading={templatesLoading}
           onClose={() => setTemplateDialogOpen(false)}
           onDelete={deleteTemplate}
           onLoad={loadTemplate}
@@ -3886,36 +3927,31 @@ export function PrescriptionBuilder() {
         </div>
       )}
 
-      {templateNamePopupOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm overflow-hidden rounded-xl border bg-card shadow-xl">
-            <div className="flex items-center justify-between border-b px-5 py-3">
-              <h2 className="text-base font-semibold">Save as Template</h2>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                onClick={() => setTemplateNamePopupOpen(false)}>
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-5 py-4">
-              <label className="text-sm font-medium">Template Name</label>
-              <Input
-                autoFocus
-                className="mt-1.5"
-                placeholder="e.g. Cataract Post-op, Glaucoma…"
-                value={templateNameInput}
-                onChange={(e) => setTemplateNameInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { saveTemplate(templateNameInput); setTemplateNamePopupOpen(false); } }}
-              />
-            </div>
-            <div className="flex justify-end gap-2 border-t px-5 py-3">
-              <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => setTemplateNamePopupOpen(false)}>Cancel</button>
-              <Button type="button" onClick={() => { saveTemplate(templateNameInput); setTemplateNamePopupOpen(false); }}>
-                <LayoutGrid className="h-4 w-4" />
-                Save Template
-              </Button>
-            </div>
-          </div>
-        </div>
+      {templateModalOpen && (
+        <MakeTemplateModal
+          name={templateNameInput}
+          description={templateDescInput}
+          tags={templateTags}
+          tagInput={templateTagInput}
+          saving={templateSaving}
+          complaints={complaints}
+          medicines={medicines}
+          notes={notes}
+          rxInvestigations={rxInvestigations}
+          rxDiagnoses={rxDiagnoses}
+          onNameChange={setTemplateNameInput}
+          onDescChange={setTemplateDescInput}
+          onTagsChange={setTemplateTags}
+          onTagInputChange={setTemplateTagInput}
+          onClose={() => setTemplateModalOpen(false)}
+          onSave={async () => {
+            if (templateNameInput.trim().length < 2) return;
+            setTemplateSaving(true);
+            await saveTemplate(templateNameInput, templateDescInput, templateTags);
+            setTemplateSaving(false);
+            setTemplateModalOpen(false);
+          }}
+        />
       )}
 
       {patientEditOpen ? (
@@ -11970,53 +12006,260 @@ function DraftSidebar({
   );
 }
 
+function MakeTemplateModal({
+  name, description, tags, tagInput, saving,
+  complaints, medicines, notes, rxInvestigations, rxDiagnoses,
+  onNameChange, onDescChange, onTagsChange, onTagInputChange,
+  onClose, onSave,
+}: {
+  name: string;
+  description: string;
+  tags: string[];
+  tagInput: string;
+  saving: boolean;
+  complaints: ComplaintEntry[];
+  medicines: RxMedicine[];
+  notes: Record<NoteKey, string>;
+  rxInvestigations: InvestigationEntry[];
+  rxDiagnoses: DiagnosisEntry[];
+  onNameChange: (v: string) => void;
+  onDescChange: (v: string) => void;
+  onTagsChange: (v: string[]) => void;
+  onTagInputChange: (v: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  function addTag() {
+    const t = tagInput.trim();
+    if (!t || tags.includes(t) || tags.length >= 5) return;
+    onTagsChange([...tags, t]);
+    onTagInputChange("");
+  }
+
+  const canSave = name.trim().length >= 2 && name.trim().length <= 60 && !saving;
+
+  const previewParts = [
+    { label: "Complaint", count: complaints.length },
+    { label: "Medication", count: medicines.length },
+    { label: "Investigation", count: rxInvestigations.length },
+    { label: "Diagnosis", count: rxDiagnoses.length },
+  ].filter((p) => p.count > 0);
+
+  const hasAdvice = !!notes.advice?.trim();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-xl border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <h2 className="text-base font-semibold">Make Template</h2>
+          <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-foreground">
+              Template Name <span className="text-destructive">*</span>
+            </label>
+            <input
+              autoFocus
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+              maxLength={60}
+              placeholder="e.g. Common Cold Protocol"
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && canSave) onSave(); }}
+            />
+            <p className="mt-1 text-right text-[10px] text-muted-foreground">{name.length}/60</p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-foreground">
+              Description <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <textarea
+              className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+              maxLength={200}
+              placeholder="Brief notes about this template…"
+              rows={2}
+              value={description}
+              onChange={(e) => onDescChange(e.target.value)}
+            />
+            <p className="mt-1 text-right text-[10px] text-muted-foreground">{description.length}/200</p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-foreground">Tags</label>
+            {tags.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <span key={tag} className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                    {tag}
+                    <button type="button" onClick={() => onTagsChange(tags.filter((x) => x !== tag))} className="ml-0.5 leading-none text-primary/60 hover:text-destructive">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                disabled={tags.length >= 5}
+                placeholder={tags.length >= 5 ? "Max 5 tags" : "Add a tag…"}
+                value={tagInput}
+                onChange={(e) => onTagInputChange(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
+              />
+              <button type="button" onClick={addTag} disabled={tags.length >= 5} className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50">
+                Add
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Prescription Preview</p>
+            {previewParts.length > 0 || hasAdvice ? (
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                {previewParts.map((p) => (
+                  <span key={p.label} className="text-xs text-foreground">
+                    <span className="font-medium">{p.label}</span>
+                    <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{p.count}</span>
+                  </span>
+                ))}
+                {hasAdvice && (
+                  <span className="text-xs text-foreground">
+                    <span className="font-medium">Advice</span>
+                    <span className="ml-1 text-muted-foreground">✓</span>
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No prescription data to save.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2 border-t px-5 py-3">
+          <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+          <Button type="button" className="flex-1" disabled={!canSave} onClick={onSave}>
+            {saving ? "Saving…" : "Save Template"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TemplateSidebar({
   templates,
+  isLoading,
   onClose,
   onDelete,
   onLoad,
   onMerge,
-  onUpdate
+  onUpdate,
 }: {
   templates: RxTemplate[];
+  isLoading: boolean;
   onClose: () => void;
   onDelete: (id: string) => void;
   onLoad: (template: RxTemplate) => void;
   onMerge: (template: RxTemplate) => void;
-  onUpdate: (id: string, name: string) => void;
+  onUpdate: (id: string, body: { name?: string; description?: string; tags?: string[] }) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [editTagInput, setEditTagInput] = useState("");
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function startDelete(id: string) {
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    setConfirmingId(null);
+    setDeletingId(id);
+    deleteTimerRef.current = setTimeout(() => setDeletingId(null), 3000);
+  }
+
+  function advanceDelete(id: string) {
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    setDeletingId(null);
+    setConfirmingId(id);
+    deleteTimerRef.current = setTimeout(() => setConfirmingId(null), 3000);
+  }
+
+  function finalDelete(id: string) {
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    setConfirmingId(null);
+    onDelete(id);
+  }
+
+  function cancelDelete() {
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    setDeletingId(null);
+    setConfirmingId(null);
+  }
+
+  function startEdit(t: RxTemplate) {
+    setEditingId(t.id);
+    setEditName(t.name);
+    setEditDesc(t.description ?? "");
+    setEditTags([...t.tags]);
+    setEditTagInput("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditTagInput("");
+  }
+
+  function commitEdit() {
+    if (!editingId || editName.trim().length < 2) return;
+    onUpdate(editingId, {
+      name: editName.trim(),
+      description: editDesc.trim() || undefined,
+      tags: editTags,
+    });
+    setEditingId(null);
+    setEditTagInput("");
+  }
+
+  function addEditTag() {
+    const t = editTagInput.trim();
+    if (!t || editTags.includes(t) || editTags.length >= 5) return;
+    setEditTags([...editTags, t]);
+    setEditTagInput("");
+  }
 
   const filtered = search.trim()
     ? templates.filter(
         (t) =>
           t.name.toLowerCase().includes(search.toLowerCase()) ||
-          t.medicines.some((m) => m.brandName.toLowerCase().includes(search.toLowerCase()))
+          t.tags.some((tag) => tag.toLowerCase().includes(search.toLowerCase()))
       )
     : templates;
 
-  function startEdit(template: RxTemplate) {
-    setEditingId(template.id);
-    setEditingName(template.name);
-  }
-
-  function commitEdit(id: string) {
-    if (editingName.trim()) onUpdate(id, editingName.trim());
-    setEditingId(null);
-    setEditingName("");
+  function sectionSummary(t: RxTemplate) {
+    const d = t.data as { complaints?: unknown[]; medicines?: unknown[]; rxInvestigations?: unknown[]; rxDiagnoses?: unknown[] };
+    const parts: string[] = [];
+    if (d.complaints?.length) parts.push(`Complaint (${d.complaints.length})`);
+    if (d.medicines?.length) parts.push(`Medication (${d.medicines.length})`);
+    if (d.rxInvestigations?.length) parts.push(`Investigation (${d.rxInvestigations.length})`);
+    if (d.rxDiagnoses?.length) parts.push(`Diagnosis (${d.rxDiagnoses.length})`);
+    return parts.join(" · ") || "Empty template";
   }
 
   return (
-    <RightDrawer title="All Templates" onClose={onClose} widthClass="md:w-[50%]">
-      {/* Search bar */}
+    <RightDrawer title="Templates" onClose={onClose} widthClass="md:w-[520px]">
       <div className="border-b px-4 py-3">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             className="w-full rounded-md border bg-background py-1.5 pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-            placeholder="Search by name or medicine…"
+            placeholder="Search by name or tag…"
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -12024,78 +12267,131 @@ function TemplateSidebar({
         </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-          {templates.length === 0 ? "No templates saved yet." : "No templates match your search."}
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b bg-muted text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <th className="border-r px-3 py-2 text-center w-10">#</th>
-                <th className="border-r px-3 py-2">Template Name</th>
-                <th className="border-r px-3 py-2">Medication</th>
-                <th className="px-3 py-2 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filtered.map((template, idx) => (
-                <tr key={template.id} className="hover:bg-muted/30">
-                  <td className="border-r px-3 py-2 text-center text-xs text-muted-foreground">{idx + 1}</td>
-                  <td className="border-r px-3 py-2 w-44">
-                    {editingId === template.id ? (
-                      <input
-                        autoFocus
-                        className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        onBlur={() => commitEdit(template.id)}
-                        onKeyDown={(e) => { if (e.key === "Enter") commitEdit(template.id); if (e.key === "Escape") setEditingId(null); }}
-                      />
-                    ) : (
-                      <>
-                        <p className="font-semibold text-xs leading-tight">{template.name}</p>
-                        {template.notes.diagnosis && (
-                          <p className="text-[10px] text-muted-foreground truncate max-w-[140px]">
-                            {template.notes.diagnosis.split("\n")[0]}
-                          </p>
+      <div className="flex-1 overflow-y-auto p-4">
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="h-28 animate-pulse rounded-xl border bg-muted/40" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+            {templates.length === 0 ? "No templates saved yet." : "No templates match your search."}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((t) => {
+              const isDeleting = deletingId === t.id;
+              const isConfirming = confirmingId === t.id;
+              const isEditing = editingId === t.id;
+              return (
+                <div
+                  key={t.id}
+                  className={cn(
+                    "rounded-xl border bg-card p-4 transition-colors",
+                    (isDeleting || isConfirming) && "border-destructive bg-destructive/5"
+                  )}
+                >
+                  {isEditing ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Template Name *</label>
+                        <input
+                          autoFocus
+                          className="w-full rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+                          maxLength={60}
+                          placeholder="Template name…"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") cancelEdit(); }}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
+                        <textarea
+                          className="w-full resize-none rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+                          maxLength={200}
+                          placeholder="Optional description…"
+                          rows={2}
+                          value={editDesc}
+                          onChange={(e) => setEditDesc(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Tags</label>
+                        {editTags.length > 0 && (
+                          <div className="mb-1.5 flex flex-wrap gap-1.5">
+                            {editTags.map((tag) => (
+                              <span key={tag} className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                                {tag}
+                                <button type="button" onClick={() => setEditTags(editTags.filter((x) => x !== tag))} className="ml-0.5 leading-none text-primary/60 hover:text-destructive">×</button>
+                              </span>
+                            ))}
+                          </div>
                         )}
-                      </>
-                    )}
-                  </td>
-                  <td className="border-r px-3 py-2 text-xs text-muted-foreground">
-                    {template.medicines.length > 0 ? (
-                      <>
-                        {template.medicines.slice(0, 2).map((m) => m.brandName).join(", ")}
-                        {template.medicines.length > 2 && (
-                          <span className="text-primary"> +{template.medicines.length - 2}</span>
-                        )}
-                      </>
-                    ) : "—"}
-                  </td>
-                  <td className="px-2 py-2">
-                    <div className="flex flex-wrap items-center justify-center gap-1">
-                      <Button size="sm" type="button" className="h-7 text-xs" title="Replace current prescription with this template" onClick={() => onLoad(template)}>
-                        Load to Rx
-                      </Button>
-                      <Button size="sm" type="button" variant="secondary" className="h-7 text-xs" title="Add medicines & notes to current prescription" onClick={() => onMerge(template)}>
-                        Merge
-                      </Button>
-                      <Button size="sm" type="button" variant="outline" className="h-7 text-xs" onClick={() => startEdit(template)}>
-                        Edit
-                      </Button>
-                      <Button size="sm" type="button" variant="outline" className="h-7 text-xs text-destructive hover:bg-destructive/10" onClick={() => onDelete(template.id)}>
-                        Delete
-                      </Button>
+                        <div className="flex gap-2">
+                          <input
+                            className="flex-1 rounded-md border bg-background px-3 py-1 text-xs outline-none focus:ring-2 focus:ring-primary"
+                            placeholder="Add tag…"
+                            value={editTagInput}
+                            onChange={(e) => setEditTagInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addEditTag(); } }}
+                          />
+                          <button type="button" onClick={addEditTag} className="rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted">Add</button>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <Button type="button" size="sm" onClick={commitEdit} disabled={editName.trim().length < 2} className="h-8 text-xs">Save Changes</Button>
+                        <Button type="button" size="sm" variant="outline" onClick={cancelEdit} className="h-8 text-xs">Cancel</Button>
+                      </div>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                  ) : (
+                    <>
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold leading-tight">{t.name}</p>
+                        <span className="shrink-0 text-xs text-muted-foreground">⚡ {t.usageCount}x</span>
+                      </div>
+                      {t.tags.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1">
+                          {t.tags.map((tag) => (
+                            <span key={tag} className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">{tag}</span>
+                          ))}
+                        </div>
+                      )}
+                      <p className="mb-1 text-xs text-muted-foreground">{sectionSummary(t)}</p>
+                      {t.description && (
+                        <p className="mb-2 truncate text-[11px] italic text-muted-foreground/70">{t.description}</p>
+                      )}
+                      {isConfirming ? (
+                        <div className="mt-3 space-y-1.5">
+                          <p className="text-xs font-semibold text-destructive">This cannot be undone. Permanently delete?</p>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => finalDelete(t.id)} className="flex-1 rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90">Yes, Delete</button>
+                            <button type="button" onClick={cancelDelete} className="rounded-md border px-3 py-1.5 text-xs font-semibold hover:bg-muted">Cancel</button>
+                          </div>
+                        </div>
+                      ) : isDeleting ? (
+                        <div className="mt-3 flex items-center gap-2">
+                          <span className="flex-1 text-xs font-medium text-destructive">Delete this template?</span>
+                          <button type="button" onClick={() => advanceDelete(t.id)} className="rounded-md bg-destructive/80 px-3 py-1 text-xs font-semibold text-destructive-foreground hover:bg-destructive">Confirm</button>
+                          <button type="button" onClick={cancelDelete} className="rounded-md border px-3 py-1 text-xs font-semibold hover:bg-muted">Cancel</button>
+                        </div>
+                      ) : (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          <Button type="button" size="sm" className="h-7 text-xs" onClick={() => onLoad(t)}>Load</Button>
+                          <Button type="button" size="sm" variant="secondary" className="h-7 text-xs" onClick={() => onMerge(t)}>Merge</Button>
+                          <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => startEdit(t)}>Edit</Button>
+                          <Button type="button" size="sm" variant="outline" className="h-7 text-xs text-destructive hover:bg-destructive/10" onClick={() => startDelete(t.id)}>Delete</Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </RightDrawer>
   );
 }

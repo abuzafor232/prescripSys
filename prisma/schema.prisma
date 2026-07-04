@@ -219,9 +219,10 @@ model Doctor {
   chambers      DoctorChamber[]
   prescriptions Prescription[]
   appointments  Appointment[]
-  favorites            DoctorFavoriteMedicine[]
-  templates            DosageTemplate[]
-  prescriptionGroups   PrescriptionGroup[]
+  favorites                DoctorFavoriteMedicine[]
+  templates                DosageTemplate[]
+  prescriptionGroups       PrescriptionGroup[]
+  prescriptionTemplates    PrescriptionTemplate[]
 
   @@unique([tenantId, bmdcNumber])
   @@index([tenantId, displayName])
@@ -695,4 +696,23 @@ model PrescriptionGroup {
   @@unique([tenantId, doctorId, sectionType, name])
   @@index([tenantId, doctorId, sectionType])
   @@map("prescription_groups")
+}
+
+model PrescriptionTemplate {
+  id          String   @id @default(cuid())
+  tenantId    String
+  doctorId    String
+  name        String
+  description String?
+  tags        String[]
+  data        Json
+  usageCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, doctorId])
+  @@index([tenantId])
+  @@map("prescription_templates")
 }

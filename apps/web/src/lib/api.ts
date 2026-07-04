@@ -539,3 +539,67 @@ export function deletePrescriptionGroup(id: string, token: string) {
     token,
   });
 }
+
+// ─── Prescription Templates ──────────────────────────────────────────────────
+
+export type PrescriptionTemplateData = {
+  notes: Record<string, string>;
+  medicines: unknown[];
+  medicationNote: string;
+  complaints: unknown[];
+  histories: unknown[];
+  rxInvestigations: unknown[];
+  rxDiagnoses: unknown[];
+};
+
+export type PrescriptionTemplate = {
+  id: string;
+  name: string;
+  description: string | null;
+  tags: string[];
+  data: PrescriptionTemplateData;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function fetchPrescriptionTemplates(token: string) {
+  return apiFetch<PrescriptionTemplate[]>("/prescription-templates", { token });
+}
+
+export function createPrescriptionTemplate(
+  body: { name: string; description?: string; tags?: string[]; data: PrescriptionTemplateData },
+  token: string
+) {
+  return apiFetch<PrescriptionTemplate>("/prescription-templates", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function updatePrescriptionTemplate(
+  id: string,
+  body: { name?: string; description?: string; tags?: string[] },
+  token: string
+) {
+  return apiFetch<PrescriptionTemplate>(`/prescription-templates/${id}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deletePrescriptionTemplate(id: string, token: string) {
+  return apiFetch<{ success: boolean }>(`/prescription-templates/${id}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export function recordPrescriptionTemplateUse(id: string, token: string) {
+  return apiFetch<PrescriptionTemplate>(`/prescription-templates/${id}/use`, {
+    method: "POST",
+    token,
+  });
+}
