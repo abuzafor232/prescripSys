@@ -3268,14 +3268,14 @@ export function PrescriptionBuilder() {
               backgroundSize: "22px 22px"
             }}
           >
-            <div className="no-print absolute right-6 top-6 hidden w-11 flex-col overflow-hidden rounded-md border bg-card shadow-soft md:flex">
-              <FloatingPadButton title="All Draft" onClick={() => setDraftDialogOpen(true)}>
+            <div className="no-print absolute right-6 top-6 hidden flex-col rounded-md border bg-card shadow-soft md:flex">
+              <FloatingPadButton roundedTop title="Drafts" onClick={() => setDraftDialogOpen(true)}>
                 <FileText className="h-4 w-4" />
               </FloatingPadButton>
-              <FloatingPadButton title="All Templates" onClick={() => setTemplateDialogOpen(true)}>
+              <FloatingPadButton title="Templates" onClick={() => setTemplateDialogOpen(true)}>
                 <LayoutGrid className="h-4 w-4" />
               </FloatingPadButton>
-              <FloatingPadButton title="Clear All" onClick={clearAll}>
+              <FloatingPadButton roundedBottom title="Clear Pad" onClick={clearAll}>
                 <Eraser className="h-4 w-4" />
               </FloatingPadButton>
             </div>
@@ -3353,40 +3353,49 @@ export function PrescriptionBuilder() {
         </div>{/* end inner row */}
         <nav className="no-print shrink-0 z-30 border-t bg-background/95 px-4 py-2 shadow-soft backdrop-blur">
           <div className="flex flex-wrap justify-end gap-2 md:flex-row md:items-center">
-            <Button variant="outline" onClick={() => showStatus("success", "Settings option selected.")}>
-              <Settings className="h-4 w-4" />
-              Settings
-            </Button>
-            <Button variant="outline" onClick={openDraftPopup}>
-              <FileText className="h-4 w-4" />
-              Add to Draft
-            </Button>
-            <Button variant="outline" onClick={() => { setTemplateNameInput(""); setTemplateNamePopupOpen(true); }}>
-              <LayoutGrid className="h-4 w-4" />
-              Make Template
-            </Button>
+            <RxTooltip text="Settings">
+              <Button variant="outline" onClick={() => showStatus("success", "Settings option selected.")}>
+                <Settings className="h-4 w-4" />
+                Settings
+              </Button>
+            </RxTooltip>
+            <RxTooltip text="Add to Draft">
+              <Button variant="outline" onClick={openDraftPopup}>
+                <FileText className="h-4 w-4" />
+                Add to Draft
+              </Button>
+            </RxTooltip>
+            <RxTooltip text="Make Template">
+              <Button variant="outline" onClick={() => { setTemplateNameInput(""); setTemplateNamePopupOpen(true); }}>
+                <LayoutGrid className="h-4 w-4" />
+                Make Template
+              </Button>
+            </RxTooltip>
             <div className="relative flex">
-              <Button
-                className="rounded-r-none"
-                disabled={isSavingPrescription}
-                onClick={() => saveAction("save-print")}
-              >
-                {isSavingPrescription ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Printer className="h-4 w-4" />
-                )}
-                Save & Print
-              </Button>
-              <Button
-                aria-label="Save print options"
-                title="Save print options"
-                className="rounded-l-none border-l border-primary-foreground/30 px-2"
-                disabled={isSavingPrescription}
-                onClick={() => setPaperMenuOpen((current) => !current)}
-              >
-                <ChevronDown className="h-4 w-4" />
-              </Button>
+              <RxTooltip text="Save & Print">
+                <Button
+                  className="rounded-r-none"
+                  disabled={isSavingPrescription}
+                  onClick={() => saveAction("save-print")}
+                >
+                  {isSavingPrescription ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Printer className="h-4 w-4" />
+                  )}
+                  Save & Print
+                </Button>
+              </RxTooltip>
+              <RxTooltip text="Save options">
+                <Button
+                  aria-label="Save print options"
+                  className="rounded-l-none border-l border-primary-foreground/30 px-2"
+                  disabled={isSavingPrescription}
+                  onClick={() => setPaperMenuOpen((current) => !current)}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </RxTooltip>
 
               {paperMenuOpen ? (
                 <div className="absolute bottom-full right-0 mb-2 w-56 rounded-md border bg-card p-2 shadow-soft">
@@ -10628,25 +10637,79 @@ function PanelIconButton({
 function FloatingPadButton({
   title,
   children,
-  onClick
+  onClick,
+  roundedTop,
+  roundedBottom,
 }: {
   title: string;
   children: ReactNode;
   onClick: () => void;
+  roundedTop?: boolean;
+  roundedBottom?: boolean;
 }) {
   return (
-    <button
-      aria-label={title}
-      className="group relative flex h-11 items-center justify-center border-b text-muted-foreground last:border-b-0 hover:bg-muted hover:text-primary"
-      title={title}
-      type="button"
-      onClick={onClick}
+    <RxTooltip
+      text={title}
+      side="left"
+      className={cn(roundedTop && "rounded-t-md", roundedBottom && "rounded-b-md")}
     >
+      <button
+        aria-label={title}
+        className={cn(
+          "flex h-11 w-11 items-center justify-center border-b text-muted-foreground hover:bg-muted hover:text-primary",
+          roundedBottom && "border-b-0",
+          roundedTop && "rounded-t-md",
+          roundedBottom && "rounded-b-md"
+        )}
+        type="button"
+        onClick={onClick}
+      >
+        {children}
+      </button>
+    </RxTooltip>
+  );
+}
+
+function RxTooltip({
+  text,
+  children,
+  side = "top",
+  className,
+}: {
+  text: string;
+  children: ReactNode;
+  side?: "top" | "left";
+  className?: string;
+}) {
+  return (
+    <div className={cn("group relative inline-flex", className)}>
       {children}
-      <span className="pointer-events-none absolute right-full mr-2 hidden whitespace-nowrap rounded-md border bg-card px-2 py-1 text-xs text-foreground shadow-soft group-hover:block">
-        {title}
-      </span>
-    </button>
+      {side === "top" ? (
+        <div
+          className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 translate-y-1 whitespace-nowrap opacity-0 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100"
+        >
+          <div
+            className="rounded-[6px] border border-[#334155] bg-[#1E293B] px-2.5 py-1 text-[11px] font-medium text-[#F1F5F9]"
+            style={{ boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }}
+          >
+            {text}
+          </div>
+          <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-[#1E293B]" />
+        </div>
+      ) : (
+        <div
+          className="pointer-events-none absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 translate-x-1 whitespace-nowrap opacity-0 transition-all duration-150 ease-out group-hover:translate-x-0 group-hover:opacity-100"
+        >
+          <div
+            className="rounded-[6px] border border-[#334155] bg-[#1E293B] px-2.5 py-1 text-[11px] font-medium text-[#F1F5F9]"
+            style={{ boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }}
+          >
+            {text}
+          </div>
+          <div className="absolute left-full top-1/2 -translate-y-1/2 border-4 border-transparent border-l-[#1E293B]" />
+        </div>
+      )}
+    </div>
   );
 }
 
