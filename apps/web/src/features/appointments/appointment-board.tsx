@@ -75,7 +75,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { fetchPrescriptionById, loginWithPassword, type Prescription } from "@/lib/api";
+import { fetchPrescriptionById, fetchDoctor, fetchChambers, loginWithPassword, type Prescription, type Doctor, type Chamber as FullChamber } from "@/lib/api";
 import { useSessionStore } from "@/stores/session-store";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -933,8 +933,8 @@ export function AppointmentBoard() {
         <AppointmentListModal
           date={selectedDate}
           appointments={appointments}
-          doctorName={user?.fullName ?? ""}
-          chamberName={selectedChamber?.name ?? "Dr. Abdullah Eye Care Center"}
+          chamberId={selectedChamber?.id ?? null}
+          chamberName={selectedChamber?.name ?? ""}
           onClose={() => setShowList(false)}
         />
       )}
@@ -1928,24 +1928,47 @@ function RegisterNewPatientDialog({
 
 // ── AppointmentListModal ───────────────────────────────────────────────────
 
+const ROWS_PER_PAGE = 40;
+
 function AppointmentListModal({
   date,
   appointments,
-  doctorName,
-  chamberName,
+  chamberId,
+  chamberName: chamberNameProp,
   onClose,
 }: {
   date: string;
   appointments: Appointment[];
-  doctorName: string;
+  chamberId: string | null;
   chamberName: string;
   onClose: () => void;
 }) {
-  const dateObj      = new Date(`${date}T00:00:00`);
-  const dayName      = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+  const token = useSessionStore((s) => s.accessToken) ?? "";
+  const sessionUser = useSessionStore((s) => s.user);
+  const doctorId = sessionUser?.doctorId ?? "";
+
+  const { data: doctor } = useQuery<Doctor>({
+    queryKey: ["doctor", doctorId],
+    queryFn: () => fetchDoctor(doctorId, token),
+    enabled: !!token && !!doctorId,
+    staleTime: 5 * 60_000,
+  });
+
+  const { data: chambers } = useQuery<FullChamber[]>({
+    queryKey: ["chambers-for-print"],
+    queryFn: () => fetchChambers(token),
+    enabled: !!token,
+    staleTime: 5 * 60_000,
+  });
+
+  const fullChamber = chambers?.find((c) => c.id === chamberId) ?? null;
+
+  const dateObj = new Date(`${date}T00:00:00`);
+  const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
   const formattedDate = dateObj.toLocaleDateString("en-GB", {
     day: "2-digit", month: "2-digit", year: "numeric",
   });
+
   const filteredAppointments = appointments.filter((a) => a.date === date);
 
   function formatAge(apt: Appointment): string {
@@ -1956,6 +1979,111 @@ function AppointmentListModal({
     return parts.length ? parts.join(" ") : "—";
   }
 
+  function buildHeaderHtml(doctorData: Doctor | undefined, chamberData: FullChamber | null): string {
+    const dName = doctorData?.displayName ?? sessionUser?.fullName ?? "Doctor";
+    const dQual = doctorData?.qualifications ?? "";
+    const dSpec = doctorData?.specialization ?? "";
+    const dBmdc = doctorData?.bmdcNumber ? `Reg: ${doctorData.bmdcNumber}` : "";
+    const cName = chamberData?.name ?? chamberNameProp;
+    const cAddr = chamberData?.address ?? "";
+    const cPhone = chamberData?.phone ?? "";
+
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:6px;border-bottom:1.5px solid #333;margin-bottom:6px;">
+        <div style="line-height:1.45;">
+          <div style="font-size:13px;font-weight:700;color:#111;">${dName}</div>
+          ${dQual ? `<div style="font-size:9.5px;color:#444;">${dQual}</div>` : ""}
+          ${dSpec ? `<div style="font-size:9.5px;color:#444;">${dSpec}</div>` : ""}
+          ${dBmdc ? `<div style="font-size:9px;color:#666;">${dBmdc}</div>` : ""}
+        </div>
+        <div style="text-align:right;line-height:1.45;">
+          ${cName ? `<div style="font-size:13px;font-weight:700;color:#111;">${cName}</div>` : ""}
+          ${cAddr ? `<div style="font-size:9px;color:#555;">${cAddr}</div>` : ""}
+          ${cPhone ? `<div style="font-size:9px;color:#555;">Phone: ${cPhone}</div>` : ""}
+          <div style="font-size:10px;font-weight:600;color:#333;margin-top:2px;">Appointment List</div>
+          <div style="font-size:9.5px;color:#555;">Date: ${formattedDate}</div>
+          <div style="font-size:9.5px;color:#555;">Day: ${dayName}</div>
+        </div>
+      </div>`;
+  }
+
+  function buildTableHtml(rows: Appointment[], startIdx: number): string {
+    const cols = [
+      { label: "#",            width: "5%" },
+      { label: "Patient Name", width: "25%" },
+      { label: "Age",          width: "8%" },
+      { label: "Gender",       width: "10%" },
+      { label: "Phone",        width: "15%" },
+      { label: "Type",         width: "10%" },
+      { label: "Time",         width: "12%" },
+      { label: "Status",       width: "15%" },
+    ];
+    const thStyle = `padding:3px 4px;font-size:8.5px;font-weight:700;text-align:left;background:#e9ecef;border-bottom:2px solid #adb5bd;border:0.5px solid #dee2e6;white-space:nowrap;`;
+    const tdBase  = `padding:0;height:6mm;font-size:9px;border:0.5px solid #dee2e6;vertical-align:middle;`;
+    const tdInner = `padding:0 4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;`;
+
+    const header = `<thead><tr>${cols.map((c) => `<th style="${thStyle}width:${c.width};">${c.label}</th>`).join("")}</tr></thead>`;
+    const body = rows.map((apt, i) => {
+      const bg = (startIdx + i) % 2 === 0 ? "#ffffff" : "#f8f9fa";
+      const age = formatAge(apt);
+      return `<tr style="background:${bg};">
+        <td style="${tdBase}width:5%;"><div style="${tdInner}">${startIdx + i + 1}</div></td>
+        <td style="${tdBase}width:25%;"><div style="${tdInner}font-weight:500;">${apt.patientName}</div></td>
+        <td style="${tdBase}width:8%;"><div style="${tdInner}">${age}</div></td>
+        <td style="${tdBase}width:10%;"><div style="${tdInner}">${apt.gender}</div></td>
+        <td style="${tdBase}width:15%;"><div style="${tdInner}">${apt.phone || "—"}</div></td>
+        <td style="${tdBase}width:10%;"><div style="${tdInner}">${apt.appointmentType}</div></td>
+        <td style="${tdBase}width:12%;"><div style="${tdInner}">${apt.time}</div></td>
+        <td style="${tdBase}width:15%;"><div style="${tdInner}">${apt.status}</div></td>
+      </tr>`;
+    }).join("");
+    return `<table style="width:100%;border-collapse:collapse;table-layout:fixed;">${header}<tbody>${body}</tbody></table>`;
+  }
+
+  function handlePrint() {
+    const total = filteredAppointments.length;
+    const pageCount = Math.max(1, Math.ceil(total / ROWS_PER_PAGE));
+    const headerHtml = buildHeaderHtml(doctor, fullChamber);
+
+    const pages = Array.from({ length: pageCount }, (_, pi) => {
+      const slice = filteredAppointments.slice(pi * ROWS_PER_PAGE, (pi + 1) * ROWS_PER_PAGE);
+      const isLast = pi === pageCount - 1;
+      const footer = isLast
+        ? `<div style="margin-top:6px;text-align:center;font-size:8.5px;color:#666;">
+             Page ${pi + 1} of ${pageCount} &nbsp;|&nbsp; Total: ${total} appointment${total !== 1 ? "s" : ""}
+           </div>`
+        : `<div style="margin-top:6px;text-align:center;font-size:8.5px;color:#666;">Page ${pi + 1} of ${pageCount}</div>`;
+      const pageBreak = pi < pageCount - 1 ? `<div class="page-break"></div>` : "";
+      return `<div class="page">${headerHtml}${buildTableHtml(slice, pi * ROWS_PER_PAGE)}${footer}${pageBreak}</div>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Appointment List</title>
+<style>
+  @page { size: A4 portrait; margin: 10mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 9px; margin: 0; padding: 0; }
+  .page { width: 100%; }
+  .page-break { page-break-after: always; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page-break { page-break-after: always; }
+  }
+</style></head><body>${pages}<script>window.onload = () => { window.print(); }</script></body></html>`;
+
+    const win = window.open("", "_blank", "width=860,height=700");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+  }
+
+  // ── Preview table (on-screen) ────────────────────────────────────────────
+  const dName = doctor?.displayName ?? sessionUser?.fullName ?? "Doctor";
+  const dQual = doctor?.qualifications ?? "";
+  const dSpec = doctor?.specialization ?? "";
+  const cName = fullChamber?.name ?? chamberNameProp;
+  const cAddr = fullChamber?.address ?? "";
+  const cPhone = fullChamber?.phone ?? "";
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto" onClick={onClose}>
       <div className="fixed inset-0 bg-black/60" />
@@ -1965,12 +2093,17 @@ function AppointmentListModal({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Toolbar */}
-          <div className="flex items-center justify-between border-b px-6 py-3 print:hidden">
-            <span className="font-semibold text-foreground">Appointment List</span>
+          <div className="flex items-center justify-between border-b px-6 py-3">
+            <span className="font-semibold text-foreground">
+              Appointment List — {formattedDate}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                ({filteredAppointments.length} appointment{filteredAppointments.length !== 1 ? "s" : ""})
+              </span>
+            </span>
             <div className="flex items-center gap-2">
-              <Button variant="outline" type="button" onClick={() => window.print()}>
+              <Button variant="outline" type="button" onClick={handlePrint}>
                 <Printer className="h-4 w-4" />
-                Print
+                Print (A4)
               </Button>
               <button
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
@@ -1982,82 +2115,72 @@ function AppointmentListModal({
             </div>
           </div>
 
-          {/* Printable content */}
-          <div className="px-8 py-6">
-            {/* Report header */}
-            <div className="flex items-start justify-between border-b pb-4">
+          {/* Preview content */}
+          <div className="px-6 py-4">
+            {/* Header preview */}
+            <div className="flex items-start justify-between border-b pb-3 mb-4">
               <div className="space-y-0.5">
-                <p className="text-base font-bold text-foreground">{doctorName || "Doctor"}</p>
-                <p className="text-sm text-muted-foreground">MBBS, BCS, FCPS, MCPS</p>
-                <p className="text-sm text-muted-foreground">Ophthalmology, General Physician</p>
+                <p className="text-sm font-bold">{dName}</p>
+                {dQual && <p className="text-xs text-muted-foreground">{dQual}</p>}
+                {dSpec && <p className="text-xs text-muted-foreground">{dSpec}</p>}
               </div>
               <div className="text-right space-y-0.5">
-                <p className="text-base font-bold text-foreground">{chamberName}</p>
-                <p className="text-sm text-muted-foreground">Appointment List</p>
-                <p className="text-sm text-muted-foreground">Date: {formattedDate}</p>
-                <p className="text-sm text-muted-foreground">Day: {dayName}</p>
+                {cName && <p className="text-sm font-bold">{cName}</p>}
+                {cAddr && <p className="text-xs text-muted-foreground">{cAddr}</p>}
+                {cPhone && <p className="text-xs text-muted-foreground">Phone: {cPhone}</p>}
+                <p className="text-xs font-semibold">Appointment List</p>
+                <p className="text-xs text-muted-foreground">Date: {formattedDate} ({dayName})</p>
               </div>
             </div>
 
-            {/* Appointments table */}
-            <div className="mt-4 overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs font-semibold uppercase text-muted-foreground">
-                  <th className="py-2 pr-3">#</th>
-                  <th className="py-2 pr-3">Patient Name</th>
-                  <th className="py-2 pr-3">Age</th>
-                  <th className="py-2 pr-3">Gender</th>
-                  <th className="py-2 pr-3">Phone</th>
-                  <th className="py-2 pr-3">Type</th>
-                  <th className="py-2 pr-3">Time</th>
-                  <th className="py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAppointments.length ? (
-                  filteredAppointments.map((apt, i) => (
-                    <tr key={apt.id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="py-2.5 pr-3 text-muted-foreground">{i + 1}</td>
-                      <td className="py-2.5 pr-3 font-medium">{apt.patientName}</td>
-                      <td className="py-2.5 pr-3 text-muted-foreground">{formatAge(apt)}</td>
-                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.gender}</td>
-                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.phone || "—"}</td>
-                      <td className="py-2.5 pr-3">
-                        <span className={cn("rounded px-2 py-0.5 text-xs font-medium",
-                          apt.appointmentType === "New"       && "bg-emerald-100 text-emerald-700",
-                          apt.appointmentType === "Follow-up" && "bg-amber-100 text-amber-700",
-                          apt.appointmentType === "Report"    && "bg-sky-100 text-sky-700",
-                        )}>
-                          {apt.appointmentType}
-                        </span>
-                      </td>
-                      <td className="py-2.5 pr-3 text-muted-foreground">{apt.time}</td>
-                      <td className="py-2.5">
-                        <span className={cn("rounded px-2 py-0.5 text-xs font-medium",
-                          apt.status === "Pending"   && "bg-yellow-100 text-yellow-700",
-                          apt.status === "Confirmed" && "bg-blue-100 text-blue-700",
-                          apt.status === "Completed" && "bg-green-100 text-green-700",
-                        )}>
-                          {apt.status}
-                        </span>
+            {/* Table preview */}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-muted/50 text-left text-[11px] font-semibold">
+                    <th className="w-[5%] border border-border px-2 py-1.5">#</th>
+                    <th className="w-[25%] border border-border px-2 py-1.5">Patient Name</th>
+                    <th className="w-[8%] border border-border px-2 py-1.5">Age</th>
+                    <th className="w-[10%] border border-border px-2 py-1.5">Gender</th>
+                    <th className="w-[15%] border border-border px-2 py-1.5">Phone</th>
+                    <th className="w-[10%] border border-border px-2 py-1.5">Type</th>
+                    <th className="w-[12%] border border-border px-2 py-1.5">Time</th>
+                    <th className="w-[15%] border border-border px-2 py-1.5">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAppointments.length ? (
+                    filteredAppointments.map((apt, i) => (
+                      <tr key={apt.id} className={cn("border-b", i % 2 === 0 ? "bg-background" : "bg-muted/30")}>
+                        <td className="border border-border px-2 py-1 text-muted-foreground">{i + 1}</td>
+                        <td className="border border-border px-2 py-1 font-medium">{apt.patientName}</td>
+                        <td className="border border-border px-2 py-1 text-muted-foreground">{formatAge(apt)}</td>
+                        <td className="border border-border px-2 py-1 text-muted-foreground">{apt.gender}</td>
+                        <td className="border border-border px-2 py-1 text-muted-foreground">{apt.phone || "—"}</td>
+                        <td className="border border-border px-2 py-1">{apt.appointmentType}</td>
+                        <td className="border border-border px-2 py-1 text-muted-foreground">{apt.time}</td>
+                        <td className="border border-border px-2 py-1">{apt.status}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={8} className="py-10 text-center text-muted-foreground">
+                        No appointments for this date.
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={8} className="py-10 text-center text-muted-foreground">
-                      No appointments booked.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {appointments.length > 0 && (
-              <p className="mt-4 text-right text-xs text-muted-foreground">
-                Total: {appointments.length} appointment{appointments.length !== 1 ? "s" : ""}
+            {filteredAppointments.length > 0 && (
+              <p className="mt-3 text-right text-xs text-muted-foreground">
+                Total: {filteredAppointments.length} appointment{filteredAppointments.length !== 1 ? "s" : ""}
+                {filteredAppointments.length > ROWS_PER_PAGE && (
+                  <span className="ml-2 text-primary font-medium">
+                    · {Math.ceil(filteredAppointments.length / ROWS_PER_PAGE)} pages when printed
+                  </span>
+                )}
               </p>
             )}
           </div>

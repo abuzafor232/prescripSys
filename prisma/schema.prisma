@@ -219,8 +219,9 @@ model Doctor {
   chambers      DoctorChamber[]
   prescriptions Prescription[]
   appointments  Appointment[]
-  favorites     DoctorFavoriteMedicine[]
-  templates     DosageTemplate[]
+  favorites            DoctorFavoriteMedicine[]
+  templates            DosageTemplate[]
+  prescriptionGroups   PrescriptionGroup[]
 
   @@unique([tenantId, bmdcNumber])
   @@index([tenantId, displayName])
@@ -677,4 +678,21 @@ model Setting {
 
   @@unique([tenantId, scope, key])
   @@map("settings")
+}
+
+model PrescriptionGroup {
+  id          String   @id @default(cuid())
+  tenantId    String
+  doctorId    String
+  sectionType String
+  name        String
+  items       Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, doctorId, sectionType, name])
+  @@index([tenantId, doctorId, sectionType])
+  @@map("prescription_groups")
 }

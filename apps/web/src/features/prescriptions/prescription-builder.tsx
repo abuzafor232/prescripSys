@@ -2,7 +2,7 @@
 
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ban,
   CalendarDays,
@@ -60,7 +60,13 @@ import {
   type MedicineSearchResult,
   type Patient,
   type PatientGender,
-  sendPrescriptionEmail
+  sendPrescriptionEmail,
+  fetchPrescriptionGroups,
+  createPrescriptionGroup,
+  updatePrescriptionGroup,
+  deletePrescriptionGroup,
+  type PrescriptionGroup,
+  type PrescriptionGroupSectionType,
 } from "@/lib/api";
 import { DOSE_PATTERNS, MEAL_INSTRUCTIONS } from "@/lib/prescription-constants";
 import { getDosageFormPosition } from "@/lib/dosage-form-position";
@@ -910,6 +916,8 @@ export function PrescriptionBuilder() {
   const pendingLoadRef = useRef<{ type: "draft"; item: RxDraft } | { type: "template"; item: RxTemplate } | null>(null);
   const forceSelectAfterRegisterRef = useRef(false);
   const clearAfterSaveRef = useRef(false);
+  // Stores queue patient data for retry when token hydrates after mount
+  const pendingQueueRegRef = useRef<CreatePatientInput | null>(null);
 
   // Read follow-up payload once at mount (lazy initializer so value survives Strict Mode double-run)
   const [followUpInit] = useState<{ patient: Patient; rx: FollowUpRxPayload | null } | null>(() => {
@@ -933,11 +941,21 @@ export function PrescriptionBuilder() {
   const [draftPopupOpen, setDraftPopupOpen] = useState(false);
   const [draftPopupName, setDraftPopupName] = useState("");
   const [draftPopupNote, setDraftPopupNote] = useState("");
-  const [draftPopupTags, setDraftPopupTags] = useState<string[]>([]);
+  const [draftAvailableTags, setDraftAvailableTags] = useState<string[]>([]);  // all tags shown
+  const [draftPopupTags, setDraftPopupTags] = useState<string[]>([]);           // selected (saved)
   const [draftPopupEditId, setDraftPopupEditId] = useState<string | null>(null);
+  const [tagEditingIdx, setTagEditingIdx] = useState<number | null>(null);
+  const [tagEditValue, setTagEditValue] = useState("");
+  const [tagDeletingIdx, setTagDeletingIdx] = useState<number | null>(null);
+  const [tagAddingOpen, setTagAddingOpen] = useState(false);
+  const [tagAddValue, setTagAddValue] = useState("");
+  const tagDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [templateNamePopupOpen, setTemplateNamePopupOpen] = useState(false);
   const [templateNameInput, setTemplateNameInput] = useState("");
   const [loadConflict, setLoadConflict] = useState<{ type: "draft"; item: RxDraft } | { type: "template"; item: RxTemplate } | null>(null);
+  const [prevRxSecsLeft, setPrevRxSecsLeft] = useState(0);
+  const [loadPrevRxBusy, setLoadPrevRxBusy] = useState(false);
+  const [prevRxDialog, setPrevRxDialog] = useState<{ type: "unsaved" | "diff-patient"; rx: Prescription } | null>(null);
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [patientForm, setPatientForm] = useState<PatientFormState>(initialPatientForm);
   const [patientFormError, setPatientFormError] = useState("");
@@ -1104,6 +1122,9 @@ export function PrescriptionBuilder() {
       if (variables.printAfterSave) {
         clearPrescriptionPad();
         setPrintSidebarRx(prescription);
+        localStorage.setItem("lastRxSavedAt", String(Date.now()));
+        localStorage.setItem("lastRxId", prescription.id);
+        setPrevRxSecsLeft(120);
       }
       if (variables.clearAfterSave) {
         clearPrescriptionPad();
@@ -1626,24 +1647,44 @@ export function PrescriptionBuilder() {
     saveToStorage(DRAFTS_STORAGE_KEY, updated);
   }
 
+  const DEFAULT_DRAFT_TAGS = ["Dilate", "IOP", "SPT", "BP", "RBS", "Refraction"];
+
+  function resetTagUiState() {
+    setTagEditingIdx(null); setTagEditValue("");
+    setTagDeletingIdx(null); setTagAddingOpen(false); setTagAddValue("");
+    if (tagDeleteTimerRef.current) clearTimeout(tagDeleteTimerRef.current);
+  }
+
   function openDraftPopup() {
+    if (!selectedPatient) {
+      showStatus("warning", "No patient loaded — please load a patient first before saving as draft.");
+      return;
+    }
     setDraftPopupName(selectedPatient?.name ?? "");
     setDraftPopupNote("");
-    setDraftPopupTags([]);
+    setDraftAvailableTags([...DEFAULT_DRAFT_TAGS]);
+    setDraftPopupTags([]);        // none selected initially
     setDraftPopupEditId(null);
+    resetTagUiState();
     setDraftPopupOpen(true);
   }
 
   function editDraftFromSidebar(draft: RxDraft) {
+    const saved = draft.tags ?? [];
+    // available = default set ∪ any previously saved tags not in the default
+    const extra = saved.filter((t) => !DEFAULT_DRAFT_TAGS.includes(t));
+    setDraftAvailableTags([...DEFAULT_DRAFT_TAGS, ...extra]);
+    setDraftPopupTags([...saved]);   // pre-select whatever was saved
     setDraftPopupName(draft.name);
     setDraftPopupNote(draft.note ?? "");
-    setDraftPopupTags(draft.tags ?? []);
     setDraftPopupEditId(draft.id);
+    resetTagUiState();
     setDraftDialogOpen(false);
     setDraftPopupOpen(true);
   }
 
   function handleDraftPopupSave() {
+    resetTagUiState();
     if (draftPopupEditId) {
       updateDraft(draftPopupEditId, {
         name: draftPopupName.trim() || undefined,
@@ -1656,6 +1697,7 @@ export function PrescriptionBuilder() {
       setDraftPopupName("");
       setDraftPopupNote("");
       setDraftPopupTags([]);
+      setDraftAvailableTags([]);
     } else {
       saveDraft(draftPopupName, draftPopupNote, draftPopupTags);
     }
@@ -1667,6 +1709,7 @@ export function PrescriptionBuilder() {
     );
     return Boolean(selectedPatient) || medicines.length > 0 || complaints.length > 0 || histories.length > 0 || rxInvestigations.length > 0 || rxDiagnoses.length > 0 || notesChanged;
   }
+
 
   function loadDraft(draft: RxDraft) {
     if (hasPadContent()) {
@@ -1776,6 +1819,37 @@ export function PrescriptionBuilder() {
     );
     setComplaints([]);
     setHistories([]);
+  }
+
+  async function handleLoadPrevRx() {
+    const rxId = localStorage.getItem("lastRxId");
+    if (!rxId || !token) return;
+    setLoadPrevRxBusy(true);
+    try {
+      const rx = await fetchPrescriptionById(rxId, token);
+      if (hasPadContent()) {
+        setPrevRxDialog({ type: "unsaved", rx });
+        return;
+      }
+      if (selectedPatient && selectedPatient.id !== rx.patient.id) {
+        setPrevRxDialog({ type: "diff-patient", rx });
+        return;
+      }
+      doLoadPrevRx(rx);
+    } catch {
+      showStatus("warning", "Previous Rx not found. It may have been deleted.");
+    } finally {
+      setLoadPrevRxBusy(false);
+    }
+  }
+
+  function doLoadPrevRx(rx: Prescription) {
+    setPrevRxDialog(null);
+    loadSavedPrescription(rx);
+    setPrevRxSecsLeft(0);
+    localStorage.removeItem("lastRxSavedAt");
+    localStorage.removeItem("lastRxId");
+    showStatus("success", "Previous prescription loaded successfully");
   }
 
   function deleteTemplate(id: string) {
@@ -1902,8 +1976,14 @@ export function PrescriptionBuilder() {
       return;
     }
 
-    if (registerPatient.isPending) {
+    if (registerPatient.isPending || pendingQueueRegRef.current) {
       showStatus("warning", "Registering patient, please wait a moment…");
+      return;
+    }
+
+    // Block if the patient's real DB id hasn't arrived yet (appointment UUID is still in place)
+    if (attendAptIdRef.current && selectedPatient.id === attendAptIdRef.current) {
+      showStatus("warning", "Patient registration in progress, please wait…");
       return;
     }
 
@@ -2173,7 +2253,7 @@ export function PrescriptionBuilder() {
     if (panel === "medication") {
       if (!medicines.length) return null;
       return (
-        <div className="mt-1 space-y-1">
+        <div className="mt-1 space-y-0.5">
           {medicines.map((item, index) => {
             const translatedDose = translateRxDose(item);
             const durationPart = translateDuration(item.duration);
@@ -2183,7 +2263,7 @@ export function PrescriptionBuilder() {
             return (
               <div
                 key={`${item.brandName}-${index}`}
-                className="group rounded-md border border-transparent bg-background/70 px-2 py-1.5 hover:border-border hover:bg-background"
+                className="group rounded-md border border-transparent bg-background/70 px-2 py-1 hover:border-border hover:bg-background"
               >
                 {/* Name row: [index. Name] [B R ↑ ↓] [×] */}
                 <div className="flex items-center gap-1.5">
@@ -2374,7 +2454,7 @@ export function PrescriptionBuilder() {
       const activeChips = followUpNoteChips.filter((c) => c.active);
       if (!dateLabel && activeChips.length === 0 && !notes.followUp) return null;
       return (
-        <div className="mt-0.5 space-y-1">
+        <div className="mt-0.5 space-y-px">
           {dateLabel && <div className="text-xs text-foreground">{dateLabel}</div>}
           {activeChips.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -2390,7 +2470,7 @@ export function PrescriptionBuilder() {
 
     if (panel === "complaint" && complaints.length > 0) {
       return (
-        <div className="mt-1 space-y-0.5">
+        <div className="mt-1 space-y-px">
           {complaints.map((c, index) => {
             const dur = c.forType === "For" && c.forAmount
               ? `for ${c.forAmount} ${c.forUnit}${Number(c.forAmount) !== 1 ? "s" : ""}`
@@ -2398,7 +2478,7 @@ export function PrescriptionBuilder() {
               ? `since ${c.forAmount} ${c.forUnit}${Number(c.forAmount) !== 1 ? "s" : ""}`
               : c.forType === "On" && c.forDate ? `on ${c.forDate}` : "";
             return (
-              <div key={c.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0.5 hover:border-border hover:bg-background">
+              <div key={c.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0 hover:border-border hover:bg-background">
                 <span className="mr-0.5 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
                 <span className={cn("flex-1 min-w-0 text-xs font-semibold text-primary", c.isBold && "font-bold", c.isRed && "text-red-600")}>
                   {c.name}
@@ -2432,15 +2512,15 @@ export function PrescriptionBuilder() {
         .map((t) => ({ tab: t, entries: histories.map((h, i) => ({ ...h, globalIdx: i })).filter((h) => h.tab === t) }))
         .filter((g) => g.entries.length > 0);
       return (
-        <div className="mt-1 space-y-1.5 text-foreground">
+        <div className="mt-1 space-y-1 text-foreground">
           {groups.map((group) => (
             <div key={group.tab}>
               <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{group.tab}</div>
-              <div className="space-y-0.5">
+              <div className="space-y-px">
                 {group.entries.map((h, localIdx) => {
                   const dur = h.duration ? formatHistoryDuration(h.duration) : "";
                   return (
-                    <div key={h.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0.5 hover:border-border hover:bg-background">
+                    <div key={h.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0 hover:border-border hover:bg-background">
                       <span className="mr-0.5 text-xs font-semibold text-muted-foreground">{localIdx + 1}.</span>
                       <span className={cn("flex-1 min-w-0 text-xs font-semibold text-primary", h.isBold && "font-bold", h.isRed && "text-red-600")}>
                         {h.name}
@@ -2561,9 +2641,9 @@ export function PrescriptionBuilder() {
 
     if (panel === "investigation" && rxInvestigations.length > 0) {
       return (
-        <div className="mt-1 space-y-0.5">
+        <div className="mt-1 space-y-px">
           {rxInvestigations.map((inv, index) => (
-            <div key={inv.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0.5 hover:border-border hover:bg-background">
+            <div key={inv.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0 hover:border-border hover:bg-background">
               <span className="shrink-0 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
               <span className={cn("flex-1 min-w-0 text-xs font-medium", inv.isBold && "font-bold", inv.isRed ? "text-red-600" : "text-foreground")}>
                 {inv.name}
@@ -2592,9 +2672,9 @@ export function PrescriptionBuilder() {
 
     if (panel === "diagnosis" && rxDiagnoses.length > 0) {
       return (
-        <div className="mt-1 space-y-0.5">
+        <div className="mt-1 space-y-px">
           {rxDiagnoses.map((d, index) => (
-            <div key={d.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0.5 hover:border-border hover:bg-background">
+            <div key={d.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0 hover:border-border hover:bg-background">
               <span className="shrink-0 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
               <span className={cn("flex-1 min-w-0 text-xs font-medium", d.isBold && "font-bold", d.isRed ? "text-red-600" : "text-foreground")}>
                 {d.name}
@@ -2625,7 +2705,7 @@ export function PrescriptionBuilder() {
       const selected = referrals.filter(referralHasContent);
       if (!selected.length && !notes.referral) return null;
       return (
-        <div className="mt-1 space-y-2 text-xs text-foreground">
+        <div className="mt-1 space-y-1 text-xs text-foreground">
           {selected.map((r) => (
             <div key={r.id} className="space-y-0.5">
               <div className="font-semibold text-muted-foreground">Referred to,</div>
@@ -2642,7 +2722,7 @@ export function PrescriptionBuilder() {
 
     const value = notes[panel];
     return value ? (
-      <div className="mt-0.5 whitespace-pre-line text-xs leading-4 text-foreground">
+      <div className="mt-0.5 whitespace-pre-line text-xs leading-[14px] text-foreground">
         {value}
       </div>
     ) : null;
@@ -2749,8 +2829,10 @@ export function PrescriptionBuilder() {
         bloodGroup: apt.bloodGroup || null,
       });
 
-      // Register in the backend in the background; onSuccess replaces the local patient with the real one
-      registerPatient.mutate({
+      // Register in the backend in the background; onSuccess replaces the local patient with the real one.
+      // If token hasn't hydrated yet (Zustand persist runs async on first render), store the input
+      // and let the [token] effect below retry once the token becomes available.
+      const regInput: CreatePatientInput = {
         name: apt.patientName,
         phone: apt.phone || undefined,
         gender: mappedGender,
@@ -2759,7 +2841,12 @@ export function PrescriptionBuilder() {
         ageMonths: toInt(apt.ageMonths),
         ageDays: toInt(apt.ageDays),
         bloodGroup: apt.bloodGroup || undefined,
-      });
+      };
+      if (token) {
+        registerPatient.mutate(regInput);
+      } else {
+        pendingQueueRegRef.current = regInput;
+      }
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2791,6 +2878,42 @@ export function PrescriptionBuilder() {
     return () => window.removeEventListener("storage", loadQueue);
   }, []);
 
+  // Retry queue patient registration once the session token hydrates
+  useEffect(() => {
+    if (!token || !pendingQueueRegRef.current) return;
+    const input = pendingQueueRegRef.current;
+    pendingQueueRegRef.current = null;
+    registerPatient.mutate(input);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // Restore "Load Previous Rx" countdown on page load/refresh
+  useEffect(() => {
+    const savedAt = parseInt(localStorage.getItem("lastRxSavedAt") ?? "0", 10);
+    if (!savedAt) return;
+    const remaining = Math.round((savedAt + 120_000 - Date.now()) / 1000);
+    if (remaining > 0) setPrevRxSecsLeft(remaining);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Countdown timer for "Load Previous Rx" button
+  const prevRxTimerActive = prevRxSecsLeft > 0;
+  useEffect(() => {
+    if (!prevRxTimerActive) return;
+    const id = window.setInterval(() => {
+      setPrevRxSecsLeft((s) => {
+        const next = s - 1;
+        if (next <= 0) {
+          localStorage.removeItem("lastRxSavedAt");
+          localStorage.removeItem("lastRxId");
+        }
+        return Math.max(0, next);
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prevRxTimerActive]);
+
   useEffect(() => {
     setNoteEditing(false);
     setPrevRxOpen(false);
@@ -2814,7 +2937,7 @@ export function PrescriptionBuilder() {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-40px)] -mt-2 -mb-3 flex-col lg:-ml-[38px]">
+      <div className="flex h-[calc(100vh-64px)] -mt-3 -mb-6 flex-col lg:-ml-[38px]">
         <div className="flex flex-1 min-h-0 gap-[5px]">
 
         {/* Left sidebar: Patient Queue only */}
@@ -3025,6 +3148,44 @@ export function PrescriptionBuilder() {
             ) : (
               /* ── No patient: search + register ── */
               <div className="flex gap-2 items-start">
+                {prevRxSecsLeft > 0 && (
+                  <div className="shrink-0 flex flex-col" style={{ borderRadius: 8, overflow: "hidden", boxShadow: "0 2px 8px rgba(14,165,233,0.35)" }}>
+                    <button
+                      type="button"
+                      disabled={loadPrevRxBusy}
+                      onClick={handleLoadPrevRx}
+                      style={{
+                        background: "linear-gradient(135deg, #0EA5E9, #0284C7)",
+                        border: "none",
+                        padding: "7px 14px 5px",
+                        color: "white",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        cursor: loadPrevRxBusy ? "default" : "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        whiteSpace: "nowrap",
+                        opacity: loadPrevRxBusy ? 0.75 : 1,
+                        transition: "opacity 0.2s",
+                      }}
+                    >
+                      {loadPrevRxBusy
+                        ? <Loader2 className="animate-spin" style={{ width: 13, height: 13 }} />
+                        : <RotateCcw style={{ width: 13, height: 13 }} />
+                      }
+                      Load Previous Rx ({Math.floor(prevRxSecsLeft / 60)}:{String(prevRxSecsLeft % 60).padStart(2, "0")})
+                    </button>
+                    <div style={{ height: 3, background: "rgba(14,165,233,0.15)" }}>
+                      <div style={{
+                        height: "100%",
+                        background: "linear-gradient(90deg, #7DD3FC, #0EA5E9)",
+                        width: `${(prevRxSecsLeft / 120) * 100}%`,
+                        transition: "width 1s linear",
+                      }} />
+                    </div>
+                  </div>
+                )}
                 <div className="relative flex-1">
                   <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -3279,6 +3440,7 @@ export function PrescriptionBuilder() {
           histories={histories}
           onClose={() => setActivePanel(null)}
           onSetHistories={setHistories}
+          token={token ?? null}
         />
       ) : activePanel === "findings" ? (
         <FindingsSidebar
@@ -3420,7 +3582,7 @@ export function PrescriptionBuilder() {
               <button
                 type="button"
                 className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted"
-                onClick={() => { setDraftPopupOpen(false); setDraftPopupEditId(null); }}
+                onClick={() => { resetTagUiState(); setDraftPopupOpen(false); setDraftPopupEditId(null); }}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -3447,34 +3609,182 @@ export function PrescriptionBuilder() {
                   onChange={(e) => setDraftPopupNote(e.target.value)}
                 />
               </div>
-              {/* Multi-select tags */}
+              {/* Tags */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Tags</label>
-                <div className="flex flex-wrap gap-2">
-                  {["Dilate", "IOP", "SPT", "BP", "RBS", "Refraction"].map((tag) => (
+                <div className="flex flex-wrap gap-x-1.5 gap-y-3 pt-2 overflow-visible">
+                  {draftAvailableTags.map((tag, idx) => {
+                    const isSelected = draftPopupTags.includes(tag);
+                    const isEditing  = tagEditingIdx  === idx;
+                    const isDeleting = tagDeletingIdx === idx;
+
+                    if (isEditing) {
+                      return (
+                        <div key={idx} className="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-1">
+                          <input
+                            autoFocus
+                            maxLength={20}
+                            value={tagEditValue}
+                            onChange={(e) => setTagEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && tagEditValue.trim()) {
+                                const newName = tagEditValue.trim();
+                                setDraftAvailableTags((prev) => prev.map((t, i) => i === idx ? newName : t));
+                                setDraftPopupTags((prev) => prev.includes(tag) ? prev.map((t) => t === tag ? newName : t) : prev);
+                                setTagEditingIdx(null);
+                              }
+                              if (e.key === "Escape") setTagEditingIdx(null);
+                            }}
+                            className="w-20 bg-transparent text-[11px] outline-none text-foreground placeholder:text-muted-foreground"
+                            placeholder="Tag name…"
+                          />
+                          <button
+                            type="button"
+                            className="text-primary hover:opacity-70"
+                            style={{ fontSize: 11 }}
+                            onClick={() => {
+                              const newName = tagEditValue.trim();
+                              if (newName) {
+                                setDraftAvailableTags((prev) => prev.map((t, i) => i === idx ? newName : t));
+                                setDraftPopupTags((prev) => prev.includes(tag) ? prev.map((t) => t === tag ? newName : t) : prev);
+                              }
+                              setTagEditingIdx(null);
+                            }}
+                          >✓</button>
+                          <button type="button" className="text-muted-foreground hover:text-destructive" style={{ fontSize: 11 }} onClick={() => setTagEditingIdx(null)}>×</button>
+                        </div>
+                      );
+                    }
+
+                    if (isDeleting) {
+                      return (
+                        <div
+                          key={idx}
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
+                          style={{ border: "1px solid #EF4444", background: "rgba(239,68,68,0.1)" }}
+                        >
+                          <span style={{ fontSize: 11, color: "#EF4444", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tag}</span>
+                          <button
+                            type="button"
+                            style={{ fontSize: 11, color: "#94A3B8", background: "none", border: "none", cursor: "pointer" }}
+                            onClick={() => { setTagDeletingIdx(null); if (tagDeleteTimerRef.current) clearTimeout(tagDeleteTimerRef.current); }}
+                          >Cancel</button>
+                          <button
+                            type="button"
+                            style={{ fontSize: 11, color: "#EF4444", fontWeight: 700, background: "none", border: "none", cursor: "pointer" }}
+                            onClick={() => {
+                              setDraftAvailableTags((prev) => prev.filter((_, i) => i !== idx));
+                              setDraftPopupTags((prev) => prev.filter((t) => t !== tag));
+                              setTagDeletingIdx(null);
+                              if (tagDeleteTimerRef.current) clearTimeout(tagDeleteTimerRef.current);
+                            }}
+                          >Delete?</button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={idx}
+                        className="inline-flex items-center cursor-pointer select-none transition-all"
+                        style={{
+                          borderWidth: 1, borderStyle: "solid", borderRadius: 999,
+                          padding: isSelected ? "4px 6px 4px 10px" : "4px 10px",
+                          gap: isSelected ? 4 : 0,
+                          background: isSelected ? "rgba(14,165,233,0.15)" : undefined,
+                          borderColor: isSelected ? "#0EA5E9" : undefined,
+                        }}
+                        onClick={() =>
+                          setDraftPopupTags((prev) =>
+                            prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+                          )
+                        }
+                      >
+                        <span
+                          className={cn(
+                            "whitespace-nowrap",
+                            isSelected ? "text-sky-500 dark:text-sky-400 font-semibold" : "dark:text-slate-200 text-slate-700"
+                          )}
+                          style={{ fontSize: 12 }}
+                        >{tag}</span>
+
+                        {isSelected && (
+                          <>
+                            <button
+                              type="button"
+                              className="text-slate-400 hover:text-sky-500 transition-colors flex-shrink-0"
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", display: "flex" }}
+                              onClick={(e) => { e.stopPropagation(); setTagEditingIdx(idx); setTagEditValue(tag); setTagDeletingIdx(null); }}
+                            ><Pencil style={{ width: 10, height: 10 }} /></button>
+                            <button
+                              type="button"
+                              className="text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", display: "flex" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTagDeletingIdx(idx);
+                                setTagEditingIdx(null);
+                                if (tagDeleteTimerRef.current) clearTimeout(tagDeleteTimerRef.current);
+                                tagDeleteTimerRef.current = setTimeout(() => setTagDeletingIdx(null), 3000);
+                              }}
+                            ><Trash2 style={{ width: 10, height: 10 }} /></button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Add Tag */}
+                  {tagAddingOpen ? (
+                    <div className="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-1">
+                      <input
+                        autoFocus
+                        maxLength={20}
+                        value={tagAddValue}
+                        onChange={(e) => setTagAddValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && tagAddValue.trim()) {
+                            const newTag = tagAddValue.trim();
+                            setDraftAvailableTags((prev) => [...prev, newTag]);
+                            setDraftPopupTags((prev) => [...prev, newTag]); // auto-select new tag
+                            setTagAddValue("");
+                            setTagAddingOpen(false);
+                          }
+                          if (e.key === "Escape") { setTagAddingOpen(false); setTagAddValue(""); }
+                        }}
+                        className="w-24 bg-transparent text-[11px] outline-none text-foreground placeholder:text-muted-foreground"
+                        placeholder="Tag name…"
+                      />
+                      <button
+                        type="button"
+                        className="text-primary hover:opacity-70"
+                        style={{ fontSize: 11 }}
+                        onClick={() => {
+                          const newTag = tagAddValue.trim();
+                          if (newTag) {
+                            setDraftAvailableTags((prev) => [...prev, newTag]);
+                            setDraftPopupTags((prev) => [...prev, newTag]);
+                          }
+                          setTagAddValue(""); setTagAddingOpen(false);
+                        }}
+                      >✓</button>
+                      <button type="button" className="text-muted-foreground hover:text-destructive" style={{ fontSize: 11 }} onClick={() => { setTagAddingOpen(false); setTagAddValue(""); }}>×</button>
+                    </div>
+                  ) : (
                     <button
-                      key={tag}
                       type="button"
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                        draftPopupTags.includes(tag)
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border text-muted-foreground hover:border-primary/60 hover:text-foreground"
-                      )}
-                      onClick={() =>
-                        setDraftPopupTags((prev) =>
-                          prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-                        )
-                      }
+                      onClick={() => { setTagAddingOpen(true); setTagEditingIdx(null); setTagDeletingIdx(null); }}
+                      className="inline-flex items-center justify-center transition-opacity hover:opacity-75"
+                      style={{ background: "transparent", border: "1.5px dashed #0EA5E9", borderRadius: 999, width: 24, height: 24, fontSize: 16, color: "#0EA5E9", cursor: "pointer", flexShrink: 0 }}
                     >
-                      {tag}
+                      +
                     </button>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t px-5 py-3">
-              <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => { setDraftPopupOpen(false); setDraftPopupEditId(null); }}>Cancel</button>
+              <button className="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => { resetTagUiState(); setDraftPopupOpen(false); setDraftPopupEditId(null); }}>Cancel</button>
               <Button type="button" onClick={handleDraftPopupSave}>
                 <FileText className="h-4 w-4" />
                 {draftPopupEditId ? "Update Draft" : "Save to Draft"}
@@ -3521,6 +3831,47 @@ export function PrescriptionBuilder() {
                 Discard &amp; Load
               </Button>
               <button className="w-full rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-destructive-foreground" type="button" onClick={() => setLoadConflict(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {prevRxDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm overflow-hidden rounded-xl border bg-card shadow-xl">
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <h2 className="text-base font-semibold">
+                {prevRxDialog.type === "unsaved" ? "Unsaved Data" : "Different Patient"}
+              </h2>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                onClick={() => setPrevRxDialog(null)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 text-sm text-muted-foreground">
+              {prevRxDialog.type === "unsaved"
+                ? "You have unsaved data. Loading the previous Rx will replace it. Continue?"
+                : `Previous Rx was for ${prevRxDialog.rx.patient.name}. Load anyway?`}
+            </div>
+            <div className="flex gap-2 border-t px-5 py-3">
+              <Button
+                type="button"
+                className="flex-1"
+                onClick={() => {
+                  const { rx } = prevRxDialog;
+                  if (prevRxDialog.type === "unsaved") {
+                    clearPrescriptionPad();
+                    doLoadPrevRx(rx);
+                  } else {
+                    doLoadPrevRx(rx);
+                  }
+                }}
+              >
+                {prevRxDialog.type === "unsaved" ? "Yes, Replace" : "Yes, Load"}
+              </Button>
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setPrevRxDialog(null)}>
+                {prevRxDialog.type === "unsaved" ? "Keep Current" : "Cancel"}
+              </Button>
             </div>
           </div>
         </div>
@@ -4623,7 +4974,6 @@ function ComplaintSidebar({
       ...complaints,
       { id: crypto.randomUUID(), name, value: "", forType: "For", forAmount: "", forUnit: "Day", forDate: "", note: "" }
     ]);
-    // SuggestionInput already calls persistSuggestion
   }
 
   function updateComplaint(id: string, patch: Partial<Omit<ComplaintEntry, "id">>) {
@@ -4632,6 +4982,20 @@ function ComplaintSidebar({
 
   function deleteComplaint(id: string) {
     onSetComplaints(complaints.filter((c) => c.id !== id));
+  }
+
+  function applyGroup(items: unknown[]) {
+    const newEntries = (items as { name: string; value: string }[]).map((item) => ({
+      id: crypto.randomUUID(),
+      name: item.name,
+      value: item.value ?? "",
+      forType: "For" as const,
+      forAmount: "",
+      forUnit: "Day" as const,
+      forDate: "",
+      note: "",
+    }));
+    onSetComplaints([...complaints, ...newEntries]);
   }
 
   return (
@@ -4647,22 +5011,14 @@ function ComplaintSidebar({
               <Check className="h-4 w-4" />
               Done
             </Button>
-            <Button
-              aria-label="Close complaint"
-              size="icon"
-              type="button"
-              variant="ghost"
-              onClick={onClose}
-            >
+            <Button aria-label="Close complaint" size="icon" type="button" variant="ghost" onClick={onClose}>
               <X className="h-5 w-5 text-destructive" />
             </Button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="mb-4">
-            <SuggestionInput suggKey={SUGG_COMPLAINT} placeholder="Type complaint name and press Enter…" onAdd={addComplaint} autoFocus />
-          </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <SuggestionInput suggKey={SUGG_COMPLAINT} placeholder="Type complaint name and press Enter…" onAdd={addComplaint} autoFocus />
 
           {complaints.length > 0 && (
             <div className="overflow-x-auto rounded-md border">
@@ -4796,12 +5152,462 @@ function ComplaintSidebar({
           )}
 
           {complaints.length === 0 && (
-            <p className="mt-8 text-center text-sm text-muted-foreground">
+            <p className="text-center text-sm text-muted-foreground">
               No complaints added yet. Type a name above and press Enter.
             </p>
           )}
+
+          <div className="border-t pt-4">
+            <GroupsPanel
+              sectionType="COMPLAINT"
+              currentItems={complaints.map((c) => ({ name: c.name, value: c.value }))}
+              onApplyGroup={applyGroup}
+              renderItemLabel={(item) => (item as { name: string }).name}
+            />
+          </div>
         </div>
       </aside>
+    </div>
+  );
+}
+
+// ─── Prescription Groups Panel ────────────────────────────────────────────────
+
+function GroupsPanel({
+  sectionType,
+  currentItems,
+  onApplyGroup,
+  renderItemLabel,
+}: {
+  sectionType: PrescriptionGroupSectionType;
+  currentItems: unknown[];
+  onApplyGroup: (items: unknown[]) => void;
+  renderItemLabel: (item: unknown) => string;
+}) {
+  const token = useSessionStore((s) => s.accessToken);
+  const qc = useQueryClient();
+  const queryKey = ["prescription-groups", sectionType];
+
+  const { data: groups = [], isLoading } = useQuery({
+    queryKey,
+    enabled: !!token,
+    queryFn: () => fetchPrescriptionGroups(sectionType, token!),
+  });
+
+  const [creating, setCreating] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editItems, setEditItems] = useState<unknown[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [flashingId, setFlashingId] = useState<string | null>(null);
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-cancel delete confirmation after 3 s
+  useEffect(() => {
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    if (deletingId) {
+      deleteTimerRef.current = setTimeout(() => setDeletingId(null), 3000);
+    }
+    return () => { if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current); };
+  }, [deletingId]);
+
+  const createMut = useMutation({
+    mutationFn: (name: string) =>
+      createPrescriptionGroup({ sectionType, name, items: currentItems }, token!),
+    onSuccess: () => { qc.invalidateQueries({ queryKey }); setCreating(false); setCreateName(""); },
+  });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { name?: string; items?: unknown[] } }) =>
+      updatePrescriptionGroup(id, body, token!),
+    onSuccess: () => { qc.invalidateQueries({ queryKey }); setEditingId(null); },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deletePrescriptionGroup(id, token!),
+    onSuccess: () => { qc.invalidateQueries({ queryKey }); setDeletingId(null); },
+  });
+
+  function startEdit(g: PrescriptionGroup) {
+    setEditingId(g.id);
+    setEditName(g.name);
+    setEditItems(g.items as unknown[]);
+    setDeletingId(null);
+    setCreating(false);
+  }
+
+  function handleApply(group: PrescriptionGroup) {
+    onApplyGroup(group.items as unknown[]);
+    setFlashingId(group.id);
+    setTimeout(() => setFlashingId(null), 600);
+  }
+
+  return (
+    <div className="space-y-2">
+
+      {/* ── Make Group capsule button ── */}
+      {currentItems.length >= 2 && !creating && (
+        <button
+          type="button"
+          onClick={() => { setCreating(true); setCreateName(""); setEditingId(null); setDeletingId(null); }}
+          className="inline-flex items-center gap-1 transition-opacity hover:opacity-80"
+          style={{
+            background: "transparent",
+            border: "1.5px dashed #0EA5E9",
+            borderRadius: 999,
+            padding: "3px 10px",
+            fontSize: 11,
+            color: "#0EA5E9",
+            cursor: "pointer",
+          }}
+        >
+          <Plus style={{ width: 11, height: 11 }} />
+          Make Group ({currentItems.length} items)
+        </button>
+      )}
+
+      {/* ── Create form ── */}
+      {creating && (
+        <div className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3">
+          <p className="text-xs font-semibold text-primary">Save {currentItems.length} items as a group</p>
+          <input
+            autoFocus
+            className="h-8 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+            placeholder="Group name…"
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && createName.trim()) createMut.mutate(createName.trim());
+              if (e.key === "Escape") setCreating(false);
+            }}
+          />
+          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto py-0.5">
+            {currentItems.map((item, i) => (
+              <span key={i} className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary">
+                {renderItemLabel(item)}
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+              disabled={!createName.trim() || createMut.isPending}
+              onClick={() => createMut.mutate(createName.trim())}
+            >
+              {createMut.isPending ? "Saving…" : "Save Group"}
+            </button>
+            <button type="button" className="rounded-lg border px-3 py-1.5 text-xs hover:bg-muted" onClick={() => setCreating(false)}>
+              Cancel
+            </button>
+          </div>
+          {createMut.isError && <p className="text-xs text-destructive">{getApiErrorMessage(createMut.error)}</p>}
+        </div>
+      )}
+
+      {/* ── Edit form ── */}
+      {editingId && (() => {
+        const group = groups.find((g) => g.id === editingId);
+        if (!group) return null;
+        return (
+          <div className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3">
+            <p className="text-xs font-semibold text-primary">Edit Group</p>
+            <input
+              autoFocus
+              className="h-8 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") setEditingId(null); }}
+            />
+            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto py-0.5">
+              {editItems.map((item, idx) => (
+                <span key={idx} className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-0.5 text-xs">
+                  {renderItemLabel(item)}
+                  <button
+                    type="button"
+                    className="ml-0.5 text-muted-foreground hover:text-destructive"
+                    onClick={() => setEditItems((prev) => prev.filter((_, i) => i !== idx))}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+                disabled={!editName.trim() || updateMut.isPending}
+                onClick={() => updateMut.mutate({ id: group.id, body: { name: editName.trim(), items: editItems } })}
+              >
+                {updateMut.isPending ? "Saving…" : "Save Changes"}
+              </button>
+              <button type="button" className="rounded-lg border px-3 py-1.5 text-xs hover:bg-muted" onClick={() => setEditingId(null)}>
+                Cancel
+              </button>
+            </div>
+            {updateMut.isError && <p className="text-xs text-destructive">{getApiErrorMessage(updateMut.error)}</p>}
+          </div>
+        );
+      })()}
+
+      {/* ── Saved groups capsules ── */}
+      {isLoading && (
+        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> Loading groups…
+        </div>
+      )}
+
+      {!isLoading && groups.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Saved Groups</p>
+          <div className="flex flex-wrap gap-1.5">
+            {groups.map((group) => {
+              const items = group.items as unknown[];
+              const isDeleting = deletingId === group.id;
+              const isFlashing = flashingId === group.id;
+
+              return (
+                <div
+                  key={group.id}
+                  className="inline-flex items-center dark:bg-slate-800 bg-slate-100 dark:border-slate-700 border-slate-300"
+                  style={{
+                    borderWidth: 1,
+                    borderStyle: "solid",
+                    borderColor: isFlashing ? "#0EA5E9" : isDeleting ? "#EF4444" : undefined,
+                    borderRadius: 999,
+                    padding: "4px 8px 4px 10px",
+                    gap: 6,
+                    maxWidth: 220,
+                    transition: "border-color 0.2s",
+                  }}
+                >
+                  {isDeleting ? (
+                    <>
+                      <span className="dark:text-red-400 text-red-600 max-w-[90px] overflow-hidden text-ellipsis whitespace-nowrap" style={{ fontSize: 11 }}>
+                        {group.name}
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        style={{ fontSize: 11, background: "none", border: "none", cursor: "pointer", padding: "1px 2px" }}
+                        onClick={() => setDeletingId(null)}
+                        title="Cancel"
+                      >
+                        ✕
+                      </button>
+                      <button
+                        type="button"
+                        className="shrink-0 text-red-500 hover:text-red-400"
+                        style={{ fontSize: 11, background: "none", border: "none", cursor: "pointer", padding: "1px 2px" }}
+                        disabled={deleteMut.isPending}
+                        onClick={() => deleteMut.mutate(group.id)}
+                        title="Confirm delete"
+                      >
+                        {deleteMut.isPending ? <Loader2 style={{ width: 10, height: 10 }} className="animate-spin" /> : <Trash2 style={{ width: 11, height: 11 }} />}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="dark:text-slate-200 text-slate-700 hover:text-sky-500 dark:hover:text-sky-400 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap transition-colors"
+                        style={{ fontSize: 12, background: "none", border: "none", cursor: "pointer", padding: 0, maxWidth: 120 }}
+                        onClick={() => handleApply(group)}
+                        title={`Apply "${group.name}" — ${items.length} items`}
+                      >
+                        {group.name}
+                      </button>
+                      <span
+                        className="shrink-0 text-white"
+                        style={{
+                          background: "#0EA5E9",
+                          borderRadius: 999,
+                          padding: "1px 5px",
+                          fontSize: 10,
+                          minWidth: 16,
+                          textAlign: "center",
+                        }}
+                      >
+                        {items.length}
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-slate-400 hover:text-sky-500 dark:hover:text-sky-400 transition-colors"
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}
+                        onClick={() => startEdit(group)}
+                        title="Edit group"
+                      >
+                        <Pencil style={{ width: 11, height: 11 }} />
+                      </button>
+                      <button
+                        type="button"
+                        className="shrink-0 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}
+                        onClick={() => { setDeletingId(group.id); setEditingId(null); setCreating(false); }}
+                        title="Delete group"
+                      >
+                        <Trash2 style={{ width: 11, height: 11 }} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DrugHistoryInput({
+  token,
+  onAdd,
+}: {
+  token: string | null;
+  onAdd: (name: string, genericName: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [dosageFilter, setDosageFilter] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const debouncedQuery = useDebounce(query);
+  const showSearchPanel = query.trim().length > 1 && !!token;
+  const waitingForDebounce = query.trim() !== debouncedQuery.trim();
+
+  const { data: searchData, isFetching } = useQuery({
+    queryKey: ["medicine-search-drug-history", debouncedQuery.trim(), token],
+    enabled: showSearchPanel && !waitingForDebounce,
+    queryFn: () => fetchMedicineList({ q: debouncedQuery.trim(), limit: 20 }, token!),
+  });
+
+  const { data: dosageFormOptions } = useQuery({
+    queryKey: ["medicine-dosage-forms"],
+    queryFn: () => apiFetch<string[]>("/medicines/dosage-forms", { token: token! }),
+    enabled: !!token,
+    staleTime: 10 * 60_000,
+  });
+
+  const searchPending = showSearchPanel && (waitingForDebounce || isFetching);
+  const allResults: MedicineSearchResult[] = (!waitingForDebounce && searchData?.data) ? searchData.data : [];
+  const filteredResults = dosageFilter
+    ? allResults.filter((r) => r.dosageForm === dosageFilter)
+    : allResults;
+
+  function select(item: MedicineSearchResult) {
+    const pos = getDosageFormPosition(item.dosageForm);
+    const name = pos === "before"
+      ? [item.dosageForm, item.brandName, normalizeMg(item.strength)].filter(Boolean).join(" ")
+      : [item.brandName, normalizeMg(item.strength), item.dosageForm].filter(Boolean).join(" ");
+    onAdd(name, "");
+    setQuery("");
+    inputRef.current?.focus();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (filteredResults[0]) {
+        select(filteredResults[0]);
+      } else if (query.trim()) {
+        onAdd(query.trim(), "");
+        setQuery("");
+      }
+    }
+    if (e.key === "Escape") setQuery("");
+  }
+
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        ref={inputRef}
+        autoFocus
+        className="h-9 bg-background pl-9 focus-visible:ring-primary"
+        placeholder="Search medicine by name or generic…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+      {showSearchPanel && (searchPending || allResults.length > 0) ? (
+        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+          {searchPending ? (
+            <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Searching medicines…
+            </div>
+          ) : allResults.length === 0 ? (
+            <div className="px-3 py-3 text-sm text-muted-foreground">No medicines found</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-1 p-1.5">
+                {filteredResults.length === 0 ? (
+                  <div className="col-span-2 px-3 py-3 text-sm text-muted-foreground">
+                    No {dosageFilter} results
+                  </div>
+                ) : filteredResults.map((item) => {
+                  const pos = getDosageFormPosition(item.dosageForm);
+                  const titleName = pos === "before"
+                    ? [item.dosageForm, item.brandName, normalizeMg(item.strength)].filter(Boolean).join(" ")
+                    : [item.brandName, normalizeMg(item.strength), item.dosageForm].filter(Boolean).join(" ");
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="w-full rounded-md bg-muted px-2.5 py-2 text-left transition-colors hover:bg-muted/70"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => select(item)}
+                    >
+                      <span className="block truncate text-[11px] font-bold leading-snug text-foreground">
+                        {titleName}
+                      </span>
+                      <div className="mt-0.5 flex items-center justify-between gap-1">
+                        <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
+                          {item.genericName}
+                        </span>
+                        {item.companyName && (
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {item.companyName}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {dosageFormOptions && dosageFormOptions.length > 0 && (
+                <div className="flex gap-1 overflow-x-auto border-t border-border px-2 py-1.5 [scrollbar-width:none]">
+                  <button
+                    type="button"
+                    className={cn(
+                      "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition",
+                      !dosageFilter ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
+                    )}
+                    onClick={() => setDosageFilter(null)}
+                  >
+                    RESET
+                  </button>
+                  {dosageFormOptions.map((form) => (
+                    <button
+                      key={form}
+                      type="button"
+                      className={cn(
+                        "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition",
+                        dosageFilter === form ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
+                      )}
+                      onClick={() => setDosageFilter(form === dosageFilter ? null : form)}
+                    >
+                      {form.replace(".", "").toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4809,29 +5615,30 @@ function ComplaintSidebar({
 function HistorySidebar({
   histories,
   onClose,
-  onSetHistories
+  onSetHistories,
+  token,
 }: {
   histories: HistoryEntry[];
   onClose: () => void;
   onSetHistories: (items: HistoryEntry[]) => void;
+  token: string | null;
 }) {
   const [tab, setTab] = useState<HistoryTab>("Medical");
 
   const tabEntries = histories.filter((h) => h.tab === tab);
 
-  function addEntry(name: string) {
+  function addEntry(name: string, genericName = "") {
     onSetHistories([
       ...histories,
       {
         id: crypto.randomUUID(),
         tab,
         name,
-        value: "",
+        value: genericName,
         note: "",
         duration: { type: (tab === "Investigation" || tab === "Surgery") ? "On" : "For", amount: "", unit: "Day", text: "", rangeTo: "" }
       }
     ]);
-    // SuggestionInput already calls persistSuggestion with the per-tab key
   }
 
   function updateEntry(id: string, patch: Partial<Omit<HistoryEntry, "id">>) {
@@ -4890,7 +5697,11 @@ function HistorySidebar({
 
         <div className="flex-1 overflow-y-auto p-4">
           <div className="mb-4">
-            <SuggestionInput suggKey={`${SUGG_HISTORY}-${tab}`} placeholder={`Type ${tab.toLowerCase()} history and press Enter…`} onAdd={addEntry} autoFocus />
+            {tab === "Drug" ? (
+              <DrugHistoryInput token={token} onAdd={addEntry} />
+            ) : (
+              <SuggestionInput suggKey={`${SUGG_HISTORY}-${tab}`} placeholder={`Type ${tab.toLowerCase()} history and press Enter…`} onAdd={addEntry} autoFocus />
+            )}
           </div>
 
           {tabEntries.length === 0 ? (
@@ -6934,6 +7745,12 @@ function MedicationSidebar({
     onClose();
   }
 
+  function applyMedicationGroup(items: unknown[]) {
+    for (const item of items as RxMedicine[]) {
+      onAddCustomMedicine(item);
+    }
+  }
+
   return (
     <RightDrawer title="Medication" onClose={handleClose}>
       <div className="space-y-3 pt-3">
@@ -7218,6 +8035,18 @@ function MedicationSidebar({
           onChange={onChange}
           onClearAll={onClear}
         />
+
+        <div className="border-t pt-3">
+          <GroupsPanel
+            sectionType="MEDICATION"
+            currentItems={medicines}
+            onApplyGroup={applyMedicationGroup}
+            renderItemLabel={(item) => {
+              const m = item as RxMedicine;
+              return m.strength ? `${m.brandName} ${m.strength}` : m.brandName;
+            }}
+          />
+        </div>
       </div>
 
       {/* Saved Doses dialog */}
@@ -8233,6 +9062,12 @@ function InvestigationSidebar({
   function deleteEntry(id: string) {
     onSetInvestigations(investigations.filter((i) => i.id !== id));
   }
+  function applyGroup(items: unknown[]) {
+    const newEntries = (items as { name: string; value: string }[]).map((item) => ({
+      id: crypto.randomUUID(), name: item.name, value: item.value ?? "",
+    }));
+    onSetInvestigations([...investigations, ...newEntries]);
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
@@ -8247,12 +9082,10 @@ function InvestigationSidebar({
             </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="mb-4">
-            <SuggestionInput suggKey={SUGG_INVESTIGATION} placeholder="Type investigation and press Enter…" onAdd={addEntry} autoFocus />
-          </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <SuggestionInput suggKey={SUGG_INVESTIGATION} placeholder="Type investigation and press Enter…" onAdd={addEntry} autoFocus />
           {investigations.length === 0 ? (
-            <p className="mt-8 text-center text-sm text-muted-foreground">No investigations added yet.</p>
+            <p className="text-center text-sm text-muted-foreground">No investigations added yet.</p>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <table className="w-full text-sm">
@@ -8284,6 +9117,14 @@ function InvestigationSidebar({
               </table>
             </div>
           )}
+          <div className="border-t pt-4">
+            <GroupsPanel
+              sectionType="INVESTIGATION"
+              currentItems={investigations.map((i) => ({ name: i.name, value: i.value }))}
+              onApplyGroup={applyGroup}
+              renderItemLabel={(item) => (item as { name: string }).name}
+            />
+          </div>
         </div>
       </aside>
     </div>
@@ -8308,6 +9149,12 @@ function DiagnosisSidebar({
   function deleteEntry(id: string) {
     onSetDiagnoses(diagnoses.filter((d) => d.id !== id));
   }
+  function applyGroup(items: unknown[]) {
+    const newEntries = (items as { name: string; value: string }[]).map((item) => ({
+      id: crypto.randomUUID(), name: item.name, value: item.value ?? "",
+    }));
+    onSetDiagnoses([...diagnoses, ...newEntries]);
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/20" onClick={onClose}>
@@ -8322,12 +9169,10 @@ function DiagnosisSidebar({
             </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="mb-4">
-            <SuggestionInput suggKey={SUGG_DIAGNOSIS} placeholder="Type diagnosis and press Enter…" onAdd={addEntry} autoFocus />
-          </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <SuggestionInput suggKey={SUGG_DIAGNOSIS} placeholder="Type diagnosis and press Enter…" onAdd={addEntry} autoFocus />
           {diagnoses.length === 0 ? (
-            <p className="mt-8 text-center text-sm text-muted-foreground">No diagnoses added yet.</p>
+            <p className="text-center text-sm text-muted-foreground">No diagnoses added yet.</p>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <table className="w-full text-sm">
@@ -8359,6 +9204,14 @@ function DiagnosisSidebar({
               </table>
             </div>
           )}
+          <div className="border-t pt-4">
+            <GroupsPanel
+              sectionType="DIAGNOSIS"
+              currentItems={diagnoses.map((d) => ({ name: d.name, value: d.value ?? "" }))}
+              onApplyGroup={applyGroup}
+              renderItemLabel={(item) => (item as { name: string }).name}
+            />
+          </div>
         </div>
       </aside>
     </div>
@@ -8457,6 +9310,11 @@ function AdviceSidebar({
     onChange(value ? `${value}\n${text}` : text);
   }
 
+  function applyGroup(items: unknown[]) {
+    const texts = (items as { text: string }[]).map((item) => item.text).filter(Boolean).join("\n");
+    if (texts) onChange(value ? `${value}\n${texts}` : texts);
+  }
+
   const selected = selectedId ? library.find((a) => a.id === selectedId) ?? null : null;
   const editing = editingId ? library.find((a) => a.id === editingId) ?? null : null;
 
@@ -8475,8 +9333,8 @@ function AdviceSidebar({
             </Button>
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto p-4">
+          <>
           <div className="mb-4 relative">
             <div className="flex gap-2">
               <Input
@@ -8605,7 +9463,18 @@ function AdviceSidebar({
               </div>
             </div>
           )}
-
+          <div className="mt-4 border-t pt-4">
+            <GroupsPanel
+              sectionType="ADVICE"
+              currentItems={value ? [{ text: value }] : []}
+              onApplyGroup={applyGroup}
+              renderItemLabel={(item) => {
+                const t = (item as { text: string }).text ?? "";
+                return t.length > 60 ? `${t.slice(0, 60)}…` : t;
+              }}
+            />
+          </div>
+          </>
         </div>
 
       {confirmDeleteAdvice !== null && typeof document !== "undefined" && createPortal(
@@ -9123,48 +9992,51 @@ function ReferralSidebar({
             No doctors match &quot;{searchQuery}&quot;.
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-5 gap-0">
             {filteredDoctors.map((doc) => {
               const selected = isDoctorSelected(doc);
               return (
-                <button
-                  key={doc.id}
-                  type="button"
-                  className={cn(
-                    "flex w-full cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition hover:border-primary/40",
-                    selected ? "border-primary/50 bg-primary/5" : "border-border bg-card"
-                  )}
-                  onClick={() => onToggleDoctor(doc)}
-                >
-                  <span
+                <div key={doc.id} className="group relative">
+                  <button
+                    type="button"
                     className={cn(
-                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition",
-                      selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
+                      "w-full border px-1 py-2.5 text-center transition hover:border-primary/50 hover:z-10 relative",
+                      selected
+                        ? "border-primary/60 bg-primary/10 text-primary z-10"
+                        : "border-border bg-card text-foreground"
                     )}
+                    onClick={() => onToggleDoctor(doc)}
                   >
-                    {selected ? <Check className="h-3 w-3" /> : null}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate text-xs font-semibold leading-tight">{doc.name}</p>
-                    {doc.specialty && <p className="truncate text-[10px] text-muted-foreground">{doc.specialty}</p>}
-                  </div>
-                  <div className="flex shrink-0 gap-0.5">
-                    <span
-                      role="button"
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    {selected && (
+                      <span className="mb-0.5 flex justify-center">
+                        <Check className="h-3.5 w-3.5 text-primary" />
+                      </span>
+                    )}
+                    <p className="break-words text-sm font-bold leading-tight">{doc.name}</p>
+                    {doc.specialty && (
+                      <p className="break-words text-xs leading-tight text-muted-foreground mt-0.5">{doc.specialty}</p>
+                    )}
+                  </button>
+                  {/* Edit / delete — appear on hover */}
+                  <div className="absolute -right-1 -top-1 z-20 hidden items-center gap-0.5 group-hover:flex">
+                    <button
+                      type="button"
+                      className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-muted-foreground hover:text-primary shadow-sm"
                       onClick={(e) => { e.stopPropagation(); openEditDialog(doc); }}
+                      title="Edit"
                     >
-                      <Pencil className="h-3 w-3" />
-                    </span>
-                    <span
-                      role="button"
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
+                      <Pencil className="h-2.5 w-2.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-destructive hover:bg-destructive/10 shadow-sm"
                       onClick={(e) => { e.stopPropagation(); setConfirmDeleteDoctor(doc); }}
+                      title="Delete"
                     >
-                      <Trash2 className="h-3 w-3" />
-                    </span>
+                      <Trash2 className="h-2.5 w-2.5" />
+                    </button>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

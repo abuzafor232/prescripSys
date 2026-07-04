@@ -84,6 +84,11 @@ type PadSettings = {
   footerText: string;
   footerAlignment: "left" | "center" | "right";
   footerShowDivider: boolean;
+  // Watermark
+  watermarkType: "none" | "image" | "text";
+  watermarkImage: string;
+  watermarkText: string;
+  watermarkOpacity: string;
   // Layout
   marginTop: string;
   marginBottom: string;
@@ -100,6 +105,7 @@ const DEFAULT_PAD: PadSettings = {
   newPatientFees: "", followUpFees: "", reportFees: "",
   headerEnLines: "", headerLogo: "", headerMidLines: "", headerBnLines: "",
   footerText: "", footerAlignment: "center", footerShowDivider: true,
+  watermarkType: "none", watermarkImage: "", watermarkText: "", watermarkOpacity: "0.12",
   marginTop: "0.6", marginBottom: "0.6", marginLeft: "0.6", marginRight: "0.6",
   headerHeight: "1.7", footerHeight: "0.8", bodyLeftPct: "35",
 };
@@ -905,9 +911,26 @@ function PadLivePreview({ pad, className }: { pad: PadSettings; className?: stri
               </div>
 
               {/* Body */}
-              <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+              <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+                {/* Watermark */}
+                {pad.watermarkType !== "none" && (
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    pointerEvents: "none", zIndex: 1,
+                    opacity: Math.min(1, Math.max(0, parseFloat(pad.watermarkOpacity) || 0.12)),
+                  }}>
+                    {pad.watermarkType === "image" && pad.watermarkImage ? (
+                      <img src={pad.watermarkImage} alt="" style={{ maxWidth: "65%", maxHeight: "65%", objectFit: "contain", display: "block" }} />
+                    ) : pad.watermarkType === "text" && pad.watermarkText ? (
+                      <span style={{ fontSize: 28, fontWeight: 800, color: "#000", transform: "rotate(-30deg)", whiteSpace: "nowrap", userSelect: "none" }}>
+                        {pad.watermarkText}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
                 {/* Left: clinical fields */}
-                <div style={{ width: `${bodyLeft}%`, flexShrink: 0, borderRight: "1px solid #bbb", padding: "8px", display: "flex", flexDirection: "column", gap: 7, overflow: "hidden" }}>
+                <div style={{ width: `${bodyLeft}%`, flexShrink: 0, borderRight: "1px solid #bbb", padding: "8px", display: "flex", flexDirection: "column", gap: 7, overflow: "hidden", position: "relative", zIndex: 2 }}>
                   {["Complaint", "History", "Findings", "Investigation", "Diagnosis"].map((label) => (
                     <div key={label}>
                       <div style={{ fontSize: 9.5, fontWeight: 700, color: "#444", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 2 }}>{label}</div>
@@ -916,7 +939,7 @@ function PadLivePreview({ pad, className }: { pad: PadSettings; className?: stri
                   ))}
                 </div>
                 {/* Right: prescription fields */}
-                <div style={{ flex: 1, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 7, overflow: "hidden" }}>
+                <div style={{ flex: 1, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 7, overflow: "hidden", position: "relative", zIndex: 2 }}>
                   {["Medication", "Glass Prescription", "Advice", "Follow-Up", "Referral"].map((label) => (
                     <div key={label}>
                       <div style={{ fontSize: 9.5, fontWeight: 700, color: "#444", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 2 }}>{label}</div>
@@ -968,38 +991,51 @@ const PAGE_IN: Record<string, { w: number; h: number }> = {
 type CanvasSection = "bn" | "mid" | "en" | "footer";
 
 // Crop transparent edges from a PNG data URL using canvas pixel inspection.
-function trimTransparentPng(dataUrl: string): Promise<string> {
+function trimImageWhitespace(imgSrc: string): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = img.naturalWidth;
-      c.height = img.naturalHeight;
-      const ctx = c.getContext("2d");
-      if (!ctx) { resolve(dataUrl); return; }
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(imgSrc); return; }
       ctx.drawImage(img, 0, 0);
-      const { data, width, height } = ctx.getImageData(0, 0, c.width, c.height);
-      let minX = width, minY = height, maxX = 0, maxY = 0;
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          if (data[(y * width + x) * 4 + 3] > 8) {
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
+
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = pixels.data;
+      let top = canvas.height, bottom = 0, left = canvas.width, right = 0;
+
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const alpha = data[(y * canvas.width + x) * 4 + 3];
+          if (alpha > 10) {
+            if (y < top)    top    = y;
+            if (y > bottom) bottom = y;
+            if (x < left)   left   = x;
+            if (x > right)  right  = x;
           }
         }
       }
-      if (maxX < minX || maxY < minY) { resolve(dataUrl); return; }
-      const cw = maxX - minX + 1, ch = maxY - minY + 1;
-      const out = document.createElement("canvas");
-      out.width = cw; out.height = ch;
-      const octx = out.getContext("2d")!;
-      octx.drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
-      resolve(out.toDataURL("image/png"));
+
+      if (right < left || bottom < top) { resolve(imgSrc); return; }
+
+      const padding = 2;
+      const trimmedCanvas = document.createElement("canvas");
+      trimmedCanvas.width  = (right - left) + padding * 2;
+      trimmedCanvas.height = (bottom - top) + padding * 2;
+      const trimCtx = trimmedCanvas.getContext("2d")!;
+      trimCtx.drawImage(
+        canvas,
+        left - padding, top - padding,
+        trimmedCanvas.width, trimmedCanvas.height,
+        0, 0,
+        trimmedCanvas.width, trimmedCanvas.height,
+      );
+      resolve(trimmedCanvas.toDataURL("image/png"));
     };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
+    img.onerror = () => resolve(imgSrc);
+    img.src = imgSrc;
   });
 }
 
@@ -1011,7 +1047,7 @@ function LogoUploadCanvas({ onChange }: { onChange: (v: string) => void }) {
     const reader = new FileReader();
     reader.onload = async () => {
       const raw = reader.result as string;
-      const trimmed = await trimTransparentPng(raw);
+      const trimmed = await trimImageWhitespace(raw);
       onChange(trimmed);
     };
     reader.readAsDataURL(file);
@@ -1041,6 +1077,12 @@ function WysiwygCanvas({
   const activeSectionRef = useRef<CanvasSection | null>(null);
   const [activeSection, setActiveSectionState] = useState<CanvasSection | null>(null);
   const [midMode, setMidMode] = useState<"logo" | "text">(() => pad.headerLogo ? "logo" : "text");
+  const [trimmedLogo, setTrimmedLogo] = useState<string>("");
+
+  useEffect(() => {
+    if (!pad.headerLogo) { setTrimmedLogo(""); return; }
+    trimImageWhitespace(pad.headerLogo).then(setTrimmedLogo);
+  }, [pad.headerLogo]);
 
   const bnRef    = useRef<HTMLDivElement>(null);
   const midRef   = useRef<HTMLDivElement>(null);
@@ -1122,7 +1164,6 @@ function WysiwygCanvas({
   const hH = (parseFloat(pad.headerHeight) || 1.7) * pxPerIn;
   const fH = (parseFloat(pad.footerHeight) || 0.8) * pxPerIn;
   const bodyLeft = parseInt(pad.bodyLeftPct) || 35;
-  const centerW  = Math.max(Math.round(hH * 1.5), 80);
 
   // ── Helpers ──
   function syncFmt() {
@@ -1412,19 +1453,22 @@ function WysiwygCanvas({
               {/* ── HEADER ── */}
               <div style={{
                 height: hH, flexShrink: 0,
-                display: "flex", alignItems: "stretch",
+                display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "stretch",
                 borderBottom: "2px solid #222", overflow: "hidden",
               }}>
 
                 {/* Bengali */}
                 <div {...sectionEvents("bn", bnRef)} className="rxce"
                   data-placeholder="ডাঃ নাম… (click to edit)"
-                  style={{ ...ceBase, flex: 1, minWidth: 0, padding: `${Math.round(pxPerIn * 0.06)}px ${Math.round(pxPerIn * 0.1)}px`,
+                  style={{ ...ceBase, padding: `${Math.round(pxPerIn * 0.06)}px ${Math.round(pxPerIn * 0.1)}px`,
                     borderRight: "1px solid #ddd", outline: sectionRing("bn"), outlineOffset: "-2px" }} />
 
-                {/* Center: Logo / Special Text */}
-                <div style={{ flexShrink: 0, width: centerW, display: "flex", flexDirection: "column",
-                  alignItems: "center", overflow: "hidden", borderRight: "1px solid #ddd" }}>
+                {/* Center: Logo / Special Text — auto column, sizes to logo natural width */}
+                <div style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", overflow: "hidden",
+                  borderRight: "1px solid #ddd",
+                  minWidth: (midMode === "text" || !pad.headerLogo) ? Math.max(80, Math.round(hH * 1.2)) : 40,
+                }}>
                   {/* Toggle */}
                   <div style={{ display: "flex", width: "100%", flexShrink: 0 }}>
                     {(["logo", "text"] as const).map((m) => (
@@ -1444,12 +1488,14 @@ function WysiwygCanvas({
                     ))}
                   </div>
                   {midMode === "logo" ? (
-                    <div style={{ flex: 1, width: "100%", position: "relative", overflow: "hidden" }}>
+                    <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, margin: 0 }}>
                       {pad.headerLogo ? (
                         <>
-                          <img src={pad.headerLogo} alt="Logo" style={{
-                            display: "block", width: "100%", height: "100%",
-                            objectFit: "contain", padding: 0, margin: 0,
+                          <img src={trimmedLogo || pad.headerLogo} alt="Logo" style={{
+                            display: "block",
+                            height: Math.max(20, hH - 16),
+                            width: "auto",
+                            padding: 0, margin: 0,
                           }} />
                           <button type="button"
                             className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white shadow"
@@ -1472,7 +1518,7 @@ function WysiwygCanvas({
                 {/* English */}
                 <div {...sectionEvents("en", enRef)} className="rxce"
                   data-placeholder="Dr. Name, MBBS… (click to edit)"
-                  style={{ ...ceBase, flex: 1, minWidth: 0, padding: `${Math.round(pxPerIn * 0.06)}px ${Math.round(pxPerIn * 0.1)}px`,
+                  style={{ ...ceBase, padding: `${Math.round(pxPerIn * 0.06)}px ${Math.round(pxPerIn * 0.1)}px`,
                     outline: sectionRing("en"), outlineOffset: "-2px" }} />
               </div>
 
@@ -1486,8 +1532,35 @@ function WysiwygCanvas({
               </div>
 
               {/* Body skeleton (non-editable) */}
-              <div style={{ flex: 1, display: "flex", background: "#f9f9f9", minHeight: Math.round(pxPerIn * 1.2) }}>
-                <div style={{ width: `${bodyLeft}%`, borderRight: "1px solid #ccc", padding: `${Math.round(pxPerIn * 0.08)}px ${Math.round(pxPerIn * 0.06)}px` }}>
+              <div style={{ flex: 1, display: "flex", background: "#f9f9f9", minHeight: Math.round(pxPerIn * 1.2), position: "relative" }}>
+
+                {/* Watermark overlay */}
+                {pad.watermarkType !== "none" && (
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    pointerEvents: "none", zIndex: 1,
+                    opacity: Math.min(1, Math.max(0, parseFloat(pad.watermarkOpacity) || 0.12)),
+                  }}>
+                    {pad.watermarkType === "image" && pad.watermarkImage ? (
+                      <img src={pad.watermarkImage} alt="" style={{ maxWidth: "65%", maxHeight: "65%", objectFit: "contain", display: "block" }} />
+                    ) : pad.watermarkType === "text" && pad.watermarkText ? (
+                      <span style={{
+                        fontSize: Math.round(pxPerIn * 0.45),
+                        fontWeight: 800,
+                        color: "#000",
+                        transform: "rotate(-30deg)",
+                        whiteSpace: "nowrap",
+                        userSelect: "none",
+                        letterSpacing: "0.02em",
+                      }}>
+                        {pad.watermarkText}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
+
+                <div style={{ width: `${bodyLeft}%`, borderRight: "1px solid #ccc", padding: `${Math.round(pxPerIn * 0.08)}px ${Math.round(pxPerIn * 0.06)}px`, position: "relative", zIndex: 2 }}>
                   {["Complaint", "History", "Investigation", "Diagnosis"].map(l => (
                     <div key={l} style={{ marginBottom: Math.round(pxPerIn * 0.12) }}>
                       <div style={{ fontSize: Math.max(7, Math.round(pxPerIn * 0.09)), fontWeight: 700, color: "#ccc", textTransform: "uppercase", letterSpacing: "0.04em" }}>{l}</div>
@@ -1495,7 +1568,7 @@ function WysiwygCanvas({
                     </div>
                   ))}
                 </div>
-                <div style={{ flex: 1, padding: `${Math.round(pxPerIn * 0.08)}px ${Math.round(pxPerIn * 0.1)}px` }}>
+                <div style={{ flex: 1, padding: `${Math.round(pxPerIn * 0.08)}px ${Math.round(pxPerIn * 0.1)}px`, position: "relative", zIndex: 2 }}>
                   {["Medication", "Advice", "Follow-Up", "Referral"].map(l => (
                     <div key={l} style={{ marginBottom: Math.round(pxPerIn * 0.12) }}>
                       <div style={{ fontSize: Math.max(7, Math.round(pxPerIn * 0.09)), fontWeight: 700, color: "#ccc", textTransform: "uppercase", letterSpacing: "0.04em" }}>{l}</div>
@@ -1506,8 +1579,10 @@ function WysiwygCanvas({
               </div>
 
               {/* ── FOOTER ── */}
-              <div style={{ height: fH, flexShrink: 0, borderTop: "2px solid #222", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                {pad.footerShowDivider && <div style={{ borderTop: "1px solid #666", margin: "2px 0" }} />}
+              <div style={{
+                height: fH, flexShrink: 0, overflow: "hidden", display: "flex", flexDirection: "column",
+                borderTop: pad.footerShowDivider ? "2px solid #222" : "1px dashed #ccc",
+              }}>
                 <div {...sectionEvents("footer", ftrRef)} className="rxce"
                   data-placeholder="Visiting hours · Address · Phone · Website…"
                   style={{ ...ceBase, flex: 1, padding: `${Math.round(pxPerIn * 0.04)}px ${Math.round(pxPerIn * 0.1)}px`,
@@ -1672,6 +1747,68 @@ function PadSettingsPanel({
             <div className="flex justify-between text-[10px] text-muted-foreground">
               <span>Patient info</span><span>Rx</span>
             </div>
+          </div>
+
+          {/* Watermark */}
+          <div className="rounded-xl border bg-card p-2.5 shadow-soft space-y-1.5">
+            <p className={settingLabel}>Watermark</p>
+            <div className="flex gap-1">
+              {(["none", "image", "text"] as const).map((t) => (
+                <button key={t} type="button"
+                  className={cn(
+                    "flex-1 rounded py-0.5 text-[9px] font-bold uppercase border transition-colors",
+                    pad.watermarkType === t
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-transparent text-muted-foreground border-border hover:border-primary/50",
+                  )}
+                  onClick={() => updatePad({ watermarkType: t })}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            {pad.watermarkType === "image" && (
+              pad.watermarkImage ? (
+                <div className="flex items-center gap-2">
+                  <img src={pad.watermarkImage} alt="" className="h-8 w-8 rounded border object-contain" />
+                  <button type="button" onClick={() => updatePad({ watermarkImage: "" })}
+                    className="ml-auto text-[9px] text-red-500 hover:underline">
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <label className="flex cursor-pointer items-center justify-center gap-1 rounded border border-dashed py-2 text-[10px] text-muted-foreground transition-colors hover:bg-muted/30">
+                  <span>+ Upload image</span>
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      const reader = new FileReader();
+                      reader.onload = async () => {
+                        const trimmed = await trimImageWhitespace(reader.result as string);
+                        updatePad({ watermarkImage: trimmed });
+                      };
+                      reader.readAsDataURL(f);
+                      e.target.value = "";
+                    }} />
+                </label>
+              )
+            )}
+            {pad.watermarkType === "text" && (
+              <input type="text" className={cn(inp, "w-full")} placeholder="Watermark text…"
+                value={pad.watermarkText}
+                onChange={(e) => updatePad({ watermarkText: e.target.value })} />
+            )}
+            {pad.watermarkType !== "none" && (
+              <div className="flex items-center gap-1.5">
+                <span className="shrink-0 text-[10px] text-muted-foreground">Opacity</span>
+                <input type="range" min="0.02" max="0.5" step="0.01" className="flex-1 accent-primary"
+                  value={pad.watermarkOpacity}
+                  onChange={(e) => updatePad({ watermarkOpacity: e.target.value })} />
+                <span className="w-7 shrink-0 text-right text-[10px] text-muted-foreground">
+                  {Math.round((parseFloat(pad.watermarkOpacity) || 0.12) * 100)}%
+                </span>
+              </div>
+            )}
           </div>
 
           {/* ── Save / Cancel — inside left column ── */}
@@ -2772,11 +2909,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setVerifying(true);
     setVerifyError("");
     try {
-      await loginWithPassword(user?.email ?? "", verifyPassword);
+      let email = user?.email;
+      if (!email && accessToken) {
+        const fresh = await fetchCurrentUser(accessToken);
+        email = fresh.email;
+        setUser(fresh);
+      }
+      if (!email) { setVerifyError("Session expired. Please refresh the page."); setVerifying(false); return; }
+      await loginWithPassword(email, verifyPassword);
       setVerifyOpen(false);
       verifyCallback.current();
-    } catch {
-      setVerifyError("Incorrect password. Please try again.");
+    } catch (err) {
+      const status = (err as { statusCode?: number })?.statusCode;
+      if (status === 401 || status === 403) {
+        setVerifyError("Incorrect password. Please try again.");
+      } else if (!status) {
+        setVerifyError("Cannot connect to server. Please check your connection.");
+      } else {
+        setVerifyError(`Verification failed (${status}). Please try again.`);
+      }
     } finally {
       setVerifying(false);
     }

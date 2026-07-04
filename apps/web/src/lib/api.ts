@@ -487,3 +487,55 @@ export function sendPrescriptionEmail(
     body: JSON.stringify(payload)
   });
 }
+
+// ─── Prescription Groups ────────────────────────────────────────────────────
+
+export type PrescriptionGroupSectionType =
+  | "COMPLAINT"
+  | "INVESTIGATION"
+  | "DIAGNOSIS"
+  | "MEDICATION"
+  | "ADVICE";
+
+export type PrescriptionGroup = {
+  id: string;
+  sectionType: PrescriptionGroupSectionType;
+  name: string;
+  items: unknown[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function fetchPrescriptionGroups(section: PrescriptionGroupSectionType, token: string) {
+  return apiFetch<PrescriptionGroup[]>(`/prescription-groups?section=${section}`, { token });
+}
+
+export function createPrescriptionGroup(
+  body: { sectionType: PrescriptionGroupSectionType; name: string; items: unknown[] },
+  token: string
+) {
+  return apiFetch<PrescriptionGroup>("/prescription-groups", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function updatePrescriptionGroup(
+  id: string,
+  body: { name?: string; items?: unknown[] },
+  token: string
+) {
+  return apiFetch<PrescriptionGroup>(`/prescription-groups/${id}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deletePrescriptionGroup(id: string, token: string) {
+  return apiFetch<{ success: boolean }>(`/prescription-groups/${id}`, {
+    method: "DELETE",
+    token,
+  });
+}

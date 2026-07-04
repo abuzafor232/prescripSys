@@ -16,6 +16,7 @@ import { PrescriptionsModule } from "./modules/prescriptions/prescriptions.modul
 import { PrismaModule } from "./modules/prisma/prisma.module";
 import { RedisModule } from "./modules/redis/redis.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { PrescriptionGroupsModule } from "./modules/prescription-groups/prescription-groups.module";
 import { SettingsModule } from "./modules/settings/settings.module";
 import { UsersModule } from "./modules/users/users.module";
 
@@ -35,6 +36,7 @@ import { UsersModule } from "./modules/users/users.module";
     PatientsModule,
     MedicinesModule,
     PrescriptionsModule,
+    PrescriptionGroupsModule,
     AppointmentsModule,
     BillingModule,
     NotificationsModule,
