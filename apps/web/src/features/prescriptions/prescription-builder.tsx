@@ -2480,10 +2480,10 @@ export function PrescriptionBuilder() {
             return (
               <div key={c.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0 hover:border-border hover:bg-background">
                 <span className="mr-0.5 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
-                <span className={cn("flex-1 min-w-0 text-xs font-semibold text-primary", c.isBold && "font-bold", c.isRed && "text-red-600")}>
+                <span className={cn("flex-1 min-w-0 text-xs font-normal text-foreground", c.isBold && "font-bold", c.isRed && "text-red-600")}>
                   {c.name}
-                  {dur && <span className={cn("font-normal", c.isRed ? "text-red-500" : "text-muted-foreground")}> · {dur}</span>}
-                  {c.value && <span className={cn("font-normal", c.isRed ? "text-red-500" : "text-muted-foreground")}> · {c.value}</span>}
+                  {dur && <span className={cn(c.isRed ? "text-red-500" : "text-muted-foreground")}> · {dur}</span>}
+                  {c.value && <span className={cn(c.isRed ? "text-red-500" : "text-muted-foreground")}> · {c.value}</span>}
                 </span>
                 <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                   <button type="button" title="Bold" onClick={(e) => { e.stopPropagation(); updateComplaint(c.id, { isBold: !c.isBold }); }}
@@ -2515,17 +2515,17 @@ export function PrescriptionBuilder() {
         <div className="mt-1 space-y-1 text-foreground">
           {groups.map((group) => (
             <div key={group.tab}>
-              <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{group.tab}</div>
+              <div className="mb-0.5 text-[12.5px] font-semibold text-muted-foreground">{group.tab}</div>
               <div className="space-y-px">
                 {group.entries.map((h, localIdx) => {
                   const dur = h.duration ? formatHistoryDuration(h.duration) : "";
                   return (
                     <div key={h.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0 hover:border-border hover:bg-background">
                       <span className="mr-0.5 text-xs font-semibold text-muted-foreground">{localIdx + 1}.</span>
-                      <span className={cn("flex-1 min-w-0 text-xs font-semibold text-primary", h.isBold && "font-bold", h.isRed && "text-red-600")}>
+                      <span className={cn("flex-1 min-w-0 text-xs font-normal text-foreground", h.isBold && "font-bold", h.isRed && "text-red-600")}>
                         {h.name}
-                        {h.value && <span className={cn("font-normal", h.isRed ? "text-red-500" : "text-muted-foreground")}>: {h.value}</span>}
-                        {dur && <span className={cn("font-normal", h.isRed ? "text-red-500" : "text-muted-foreground")}> · {dur}</span>}
+                        {h.value && <span className={cn(h.isRed ? "text-red-500" : "text-muted-foreground")}>: {h.value}</span>}
+                        {dur && <span className={cn(h.isRed ? "text-red-500" : "text-muted-foreground")}> · {dur}</span>}
                       </span>
                       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                         <button type="button" title="Bold" onClick={(e) => { e.stopPropagation(); updateHistory(h.id, { isBold: !h.isBold }); }}
@@ -2645,7 +2645,7 @@ export function PrescriptionBuilder() {
           {rxInvestigations.map((inv, index) => (
             <div key={inv.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0 hover:border-border hover:bg-background">
               <span className="shrink-0 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
-              <span className={cn("flex-1 min-w-0 text-xs font-medium", inv.isBold && "font-bold", inv.isRed ? "text-red-600" : "text-foreground")}>
+              <span className={cn("flex-1 min-w-0 text-xs font-normal", inv.isBold && "font-bold", inv.isRed ? "text-red-600" : "text-foreground")}>
                 {inv.name}
                 {inv.value && <span className={inv.isRed ? "text-red-500" : "text-muted-foreground"}>: {inv.value}</span>}
               </span>
@@ -2676,7 +2676,7 @@ export function PrescriptionBuilder() {
           {rxDiagnoses.map((d, index) => (
             <div key={d.id} className="group flex items-center gap-1 rounded-md border border-transparent px-1 py-0 hover:border-border hover:bg-background">
               <span className="shrink-0 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
-              <span className={cn("flex-1 min-w-0 text-xs font-medium", d.isBold && "font-bold", d.isRed ? "text-red-600" : "text-foreground")}>
+              <span className={cn("flex-1 min-w-0 text-xs font-normal", d.isBold && "font-bold", d.isRed ? "text-red-600" : "text-foreground")}>
                 {d.name}
                 {d.value && <span className={d.isRed ? "text-red-500" : "text-muted-foreground"}>: {d.value}</span>}
               </span>
@@ -4034,7 +4034,7 @@ export function buildPadHtml(prescription: Prescription, autoprint = true): stri
   const sec = (label: string, innerHtml: string) =>
     innerHtml.trim()
       ? `<div style="margin-bottom:7px">
-           <div style="font-size:10px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">${label}</div>
+           <div style="font-size:14px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">${label}</div>
            ${innerHtml}
          </div>`
       : "";
@@ -4097,8 +4097,7 @@ export function buildPadHtml(prescription: Prescription, autoprint = true): stri
   // Right column — Rx (medications)
   const meds = prescription.medicines ?? [];
   const medsHtml = meds.length
-    ? `<div style="font-style:italic;font-weight:700;font-size:15px;margin-bottom:4px">Rx</div>` +
-      meds.map((m, i) => {
+    ? meds.map((m, i) => {
         const title = [m.brandName, normalizeMg(m.strength)].filter(Boolean).join(" ");
         const detail = [m.dose, m.instruction, m.duration].filter(Boolean).join("  ");
         return `<div style="margin-bottom:5px">
@@ -4217,7 +4216,7 @@ export function buildPadHtml(prescription: Prescription, autoprint = true): stri
   // Glass section uses margin-bottom:2px (no gap before Advice)
   const glassSecHtml = glassBlockHtmlStr
     ? `<div style="margin-bottom:2px">
-         <div style="font-size:10px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Glass Prescription</div>
+         <div style="font-size:14px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Glass Prescription</div>
          ${glassBlockHtmlStr}
        </div>`
     : "";
@@ -4985,10 +4984,10 @@ function ComplaintSidebar({
   }
 
   function applyGroup(items: unknown[]) {
-    const newEntries = (items as { name: string; value: string }[]).map((item) => ({
+    const newEntries = (items as { name?: string; value?: string }[]).map((item) => ({
       id: crypto.randomUUID(),
-      name: item.name,
-      value: item.value ?? "",
+      name: item?.name ?? "",
+      value: item?.value ?? "",
       forType: "For" as const,
       forAmount: "",
       forUnit: "Day" as const,
@@ -9063,8 +9062,8 @@ function InvestigationSidebar({
     onSetInvestigations(investigations.filter((i) => i.id !== id));
   }
   function applyGroup(items: unknown[]) {
-    const newEntries = (items as { name: string; value: string }[]).map((item) => ({
-      id: crypto.randomUUID(), name: item.name, value: item.value ?? "",
+    const newEntries = (items as { name?: string; value?: string }[]).map((item) => ({
+      id: crypto.randomUUID(), name: item?.name ?? "", value: item?.value ?? "",
     }));
     onSetInvestigations([...investigations, ...newEntries]);
   }
@@ -9150,8 +9149,8 @@ function DiagnosisSidebar({
     onSetDiagnoses(diagnoses.filter((d) => d.id !== id));
   }
   function applyGroup(items: unknown[]) {
-    const newEntries = (items as { name: string; value: string }[]).map((item) => ({
-      id: crypto.randomUUID(), name: item.name, value: item.value ?? "",
+    const newEntries = (items as { name?: string; value?: string }[]).map((item) => ({
+      id: crypto.randomUUID(), name: item?.name ?? "", value: item?.value ?? "",
     }));
     onSetDiagnoses([...diagnoses, ...newEntries]);
   }
